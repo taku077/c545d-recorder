@@ -113,3 +113,14 @@ Interpretation:
 - This is a concrete retention-reduction patch, **NOT a verified fix for the residual Heap slope**. No real camera test or 24×365 validation was performed by public CI.
 - If build/CI passed and main was merged, use new main artifact only at a safe stop, preserving rollback to 2026-11-16 known-good baseline. Do not run the old and new recorders simultaneously.
 - No further user-installed tool is required for this candidate. Actual slope/quality changes require comparing existing Memory_Trend.csv over the same PID and checking MP4/AAC/dual-lens sync on the user PC.
+
+
+## Stage 2 native WinForms EXE — 2026-11-17 JST (PR #8)
+- User reported **stage-1 launcher EXE successfully starts recording on their PC**. This is a user-observed start/record result, NOT a passed stop/EOS/restart/long-run test.
+- The Stage-2 candidate replaces the stage-1 PowerShell GUI launcher with a **native C# WinForms controller** in src/C545D.Launcher/RecorderForm.cs. It retains the UNCHANGED Record.ps1/RecordGUIWorker.ps1 media path and original C545D_App.ps1/C545D_Start.vbs as rollback.
+- Native controller includes camera settings, same-user DPAPI secret via stdin-only PowerShell C545D_SettingsBridge.ps1, session-specific stop/ready markers, console Ctrl+C and GStreamer -e EOS, optional event-driven rename worker, restart after stop, tray actions, memory CSV and explicit emergency stop.
+- No modification to x264 medium, Quantizer 24, 2560×720/15fps, avdec_h264 preference, AAC, dual RTSP NTP/tcp timestamp or hourly MP4 splitting.
+- Public Windows GitHub Actions verifies compilation, synthetic native GUI startup and synthetic DPAPI round-trip. It CANNOT prove real-camera EOS stop, MP4 playback, RTSP sync or 24×365 stability. The user must preserve old stage-1 app until a normal real-PC stop→restart check is completed at a safe stop opportunity.
+- Artifact accessibility: user reported **Actions > Artifacts did not expose a clickable download**, despite existing artifacts. GitHub docs require a signed-in account with read access for Actions artifacts and note expiry. Stage-2 workflow publishes a numbered **prerelease asset** to https://github.com/taku077/c545d-recorder/releases after successful push to main; direct ZIP links from Releases are the preferred download path. Also attach ZIP directly in ChatGPT when possible.
+- This migration is NOT evidence that the unexplained private Heap increase (+5.64 MiB in ~18min VMMap comparison, historical post-warmup +6.17 MiB/h) has been fixed. Do not add user-installed diagnostics or 24–48h waiting loops as a default.
+- Confirm GitHub main HEAD / PR #8 merge / release asset URL / live CI before continuing. The last known working stage-1 build is separate; never run both versions simultaneously.
