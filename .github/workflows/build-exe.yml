@@ -88,7 +88,8 @@ jobs:
           $source = Join-Path $env:GITHUB_WORKSPACE 'C545D_SettingsBridge.ps1'
           $payload = @{camera_ip='192.0.2.10';camera_user='synthetic';output_folder=$folder;new_password='synthetic-only'} | ConvertTo-Json -Compress
           try {
-            $payload | & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source | Out-Null
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+            $encoded | & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Bridge initial save failed' }
             . (Join-Path $env:GITHUB_WORKSPACE 'CommonSettings.ps1')
             $s = Read-C545DSettings
@@ -104,7 +105,8 @@ jobs:
               $sec.Dispose()
             }
             $payload2 = @{camera_ip='192.0.2.10';camera_user='synthetic';output_folder=$folder;new_password=''} | ConvertTo-Json -Compress
-            $payload2 | & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source | Out-Null
+            $encoded2 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload2))
+            $encoded2 | & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Empty password preservation failed' }
             Write-Host 'PASS: synthetic settings and DPAPI existing-user compatibility'
           } finally {
