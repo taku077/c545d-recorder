@@ -73,3 +73,12 @@ Interpretation:
 2. Check current GitHub main SHA, Issue #1, open PRs and latest CI.
 3. Continue from current blocker / user-supplied version result; don't re-ask already answered constraints or repeat costly diagnostic loops.
 4. If the user only says **「続きから再開してください」** and multiple ongoing projects make the reference ambiguous, confirm this is the C545D recorder rather than silently choosing another project.
+
+
+## Follow-up: plugin scanner file exists (2026-11-16 JST)
+- User confirmed the PowerShell scanner existence probe returned **「補助プログラム：存在します」**.
+- Therefore, `gst-plugin-scanner.exe` is present at the path derived from the actual running GStreamer executable. The earlier warning `External plugin loader failed` means it could not be launched/used in that invocation; **file absence is ruled out**, but missing DLL dependencies, environment PATH/scanner configuration, permissions, etc. remain possible.
+- `gstpython.dll` failed to load with Windows' missing-module message. This can indicate a dependency of that DLL is absent; it does NOT prove the plugin file itself is missing. This optional Python plugin is not directly required by the C545D recorder pipeline.
+- **Next safe test**: run `gst-inspect-1.0 h264parse` from the currently running GStreamer executable's directory in a separate PowerShell process/session with temporary, process-local `PATH` prepended with its `bin` folder and `GST_PLUGIN_SCANNER` set explicitly to the existing scanner path. Do not write system environment variables or interrupt live recording. Compare warnings; note registry caching can suppress re-scans, so absence of warning in one run is not definitive.
+- If warning persists under correct environment, focus on missing dependency or scanner execution failure; do NOT reinstall or delete DLLs speculatively. Preserve `avdec_h264` stability and long-run memory work.
+- Official docs: https://gstreamer.freedesktop.org/documentation/installing/on-windows.html ; https://gstreamer.freedesktop.org/documentation/gstreamer/running.html
