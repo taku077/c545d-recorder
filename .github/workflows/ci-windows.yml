@@ -6,6 +6,8 @@ on:
       - '*.ps1'
       - '*.vbs'
       - 'README.txt'
+      - 'tests/**'
+      - '.github/workflows/ci-windows.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -37,6 +39,10 @@ jobs:
             if (@($errors).Count) { $errors | Out-String | Write-Host; throw "Parse error in $($_.Name)" }
             Write-Host "PASS $($_.Name)"
           }
+      - name: Check stable recording settings against accidental changes
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-Invariants.ps1
       - name: Reject sensitive file types from Git
         shell: powershell
         run: |
