@@ -67,6 +67,43 @@ $rootGst = Split-Path -Parent $bin
 $scanner = Join-Path $rootGst 'libexec\gstreamer-1.0\gst-plugin-scanner.exe'
 if (Test-Path -LiteralPath $scanner) { $env:GST_PLUGIN_SCANNER = $scanner }
 
+# GStreamer 1.28.2 fixed a gst_h264_parser_parse_nal() memory leak in
+# videoparsersbad (upstream issue #4966 / MR !11060).
+# The recorder uses h264parse on two RTSP inputs and the encoded output.
+# Log ONLY the plugin version so existing recording logs can distinguish
+# outdated parser builds from those known to include the upstream fix.
+# This does not connect to a camera, modify the pipeline, or update packages.
+$priorPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $parserInfo = @(& $inspect 'h264parse' 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        $parserVersion = $null
+        foreach ($infoLine in $parserInfo) {
+            if ([string]$infoLine -match '^\s*Version\s+(\d+\.\d+\.\d+)\b') {
+                $parserVersion = [version]$Matches[1]
+                break
+            }
+        }
+        if ($null -ne $parserVersion) {
+            Write-Host ('H264 parser plugin (videoparsersbad): ' + $parserVersion.ToString()) -ForegroundColor Cyan
+            if ($parserVersion.Major -eq 1 -and
+                ($parserVersion.Minor -lt 28 -or
+                 ($parserVersion.Minor -eq 28 -and $parserVersion.Build -lt 2))) {
+                Write-Warning ('The upstream H.264 parser memory-leak fix first shipped in 1.28.2. ' +
+                    'This installed plugin version may not contain it (backports are possible). ' +
+                    'No GStreamer files or recording settings were changed.')
+            }
+        } else {
+            Write-Host 'H264 parser plugin version: unavailable (gst-inspect output not recognized).' -ForegroundColor Yellow
+        }
+    }
+} catch {
+    # A metadata probe must never stop an otherwise valid recording.
+} finally {
+    $ErrorActionPreference = $priorPreference
+}
+
 $required = @('rtspsrc','rtph264depay','h264parse','decodebin','videoconvert',
               'videoscale','videorate','compositor','queue','x264enc',
               'splitmuxsink','mp4mux','fakesink',

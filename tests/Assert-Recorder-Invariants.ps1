@@ -27,4 +27,9 @@ Assert-Contains "'max-size-buffers=12'" 'bounded pre-encoder queue'
 Assert-Contains "'leaky=downstream'" 'drop old frames rather than buffering indefinitely'
 Assert-Contains "'video/x-raw,format=I420,width=1280,height=720,framerate=15/1'" 'per-camera 1280x720 15fps'
 Assert-Contains "'mux.audio_0'" 'single muxed AAC audio stream'
+# Keep the safe version gate visible in the startup log. This must be
+# informational only: never upgrade plugins or stop an existing recording.
+Assert-Contains 'H264 parser plugin \(videoparsersbad\)' 'parser plugin version logged at startup'
+Assert-Contains "h264parse' 2>" 'only plugin metadata is probed'
+Assert-Contains 'No GStreamer files or recording settings were changed' 'version gate never upgrades GStreamer'
 Write-Host 'Verified recorder baseline invariants PASS (static only).'
