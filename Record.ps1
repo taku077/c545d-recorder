@@ -46,6 +46,23 @@ $bin = Find-GstBin
 $gst = Join-Path $bin 'gst-launch-1.0.exe'
 $inspect = Join-Path $bin 'gst-inspect-1.0.exe'
 $env:PATH = "$bin;$env:PATH"
+# Capture the runtime version only at startup for correlating known GStreamer
+# memory fixes. No network connection, camera credentials, or pipeline edits.
+$originalPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $versionLines = @(& $gst '--gst-version' 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $versionLines.Count -gt 0) {
+        $versionLine = [string]$versionLines[0]
+        if ($versionLine -match '^GStreamer') {
+            Write-Host ('GStreamer runtime: ' + $versionLine) -ForegroundColor Cyan
+        }
+    }
+} catch {
+    # An unavailable version string must never abort a valid recording.
+} finally {
+    $ErrorActionPreference = $originalPreference
+}
 $rootGst = Split-Path -Parent $bin
 $scanner = Join-Path $rootGst 'libexec\gstreamer-1.0\gst-plugin-scanner.exe'
 if (Test-Path -LiteralPath $scanner) { $env:GST_PLUGIN_SCANNER = $scanner }

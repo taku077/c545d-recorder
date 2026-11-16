@@ -43,6 +43,14 @@ jobs:
         shell: powershell
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-Invariants.ps1
+      - name: Set up Python for offline memory-trend unit tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit-test per-PID memory trend analysis (synthetic fixtures only)
+        shell: powershell
+        run: |
+          python -m unittest discover -s tests -p test_memory_trend.py -v
       - name: Reject sensitive file types from Git
         shell: powershell
         run: |
