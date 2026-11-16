@@ -4,8 +4,10 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'CommonSettings.ps1')
 try {
-    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-    $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+    # ASCII/base64 transport avoids PowerShell 5.1 code-page corruption in
+    # Japanese folders/passwords. Raw credentials still travel only via stdin.
+    $encoded = [Console]::In.ReadToEnd().Trim()
+    $request = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded))) | ConvertFrom-Json
     $ip = ([string]$request.camera_ip).Trim()
     $user = ([string]$request.camera_user).Trim()
     $folder = ([string]$request.output_folder).Trim()
