@@ -226,7 +226,8 @@ namespace C545D.Recorder.Launcher
             using (var helper = Process.Start(psi))
             {
                 if (helper == null) throw new InvalidOperationException("設定処理を起動できません。");
-                helper.StandardInput.Write(new JavaScriptSerializer().Serialize(payload));
+                helper.StandardInput.Write(Convert.ToBase64String(Encoding.UTF8.GetBytes(
+                    new JavaScriptSerializer().Serialize(payload))));
                 helper.StandardInput.Close();
                 if (!helper.WaitForExit(15000))
                 {
