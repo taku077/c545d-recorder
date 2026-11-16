@@ -103,3 +103,13 @@ Interpretation:
 - User's Windows 10 22H2 has `.NET Framework 4.8` as part of the OS, so no extra .NET runtime or Visual Studio should be needed. Source: https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-10 .
 - Follow-on work is tracked in [Issue #6](https://github.com/taku077/c545d-recorder/issues/6): native C# WinForms **UI/control** port while retaining the working PowerShell/GStreamer back-end until confirmed stable. Preserve optional rename worker and safe stop/EOS semantics; test state transitions before on-device deployment.
 - Tomorrow's memory review: use the **existing** local `Memory_Trend.csv` (or sanitized aggregate) over the extended session. Compare post-warmup private-memory slope with prior ~+6.17 MB/hour and check plateau without disrupting recording. Do not demand repeated costly diagnostics if existing data suffices.
+
+
+## Memory mitigation candidate PR #7 — 2026-11-17 JST
+- User explicitly requested an actual code change, without installing further diagnostic tools or repeating 24–48h waiting loops.
+- Two VMMap snapshots from the same gst-launch PID (4820), about 18m04s apart, showed Heap committed roughly +5.64 MiB, with existing Heap about +3.39 MiB and one new Heap region about +2.23 MiB. This **does not identify** the allocating plugin, prove a leak or establish that any one branch caused the increase.
+- PR #7 changes only the **discarded** telephoto/stream6 RTP audio branch in Record.ps1: queue max-size-buffers=8/max-size-bytes=262144/max-size-time=250000000/leaky=downstream; fakesink enable-last-sample=false. Default GStreamer queue was already bounded (200 buffers/10 MB/1 s); do not claim the old queue was unbounded.
+- Recorded stream1 AAC, both videos, avdec_h264, x264 medium/Q24, 2560x720/15fps, NTP/tcp sync, splitmuxsink hourly segments, stop/EOS are not changed.
+- This is a concrete retention-reduction patch, **NOT a verified fix for the residual Heap slope**. No real camera test or 24×365 validation was performed by public CI.
+- If build/CI passed and main was merged, use new main artifact only at a safe stop, preserving rollback to 2026-11-16 known-good baseline. Do not run the old and new recorders simultaneously.
+- No further user-installed tool is required for this candidate. Actual slope/quality changes require comparing existing Memory_Trend.csv over the same PID and checking MP4/AAC/dual-lens sync on the user PC.
