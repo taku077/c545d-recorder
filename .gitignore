@@ -1,0 +1,22 @@
+# Personal settings, credentials and camera diagnostics (local only)
+**/settings.json
+**/camera_password.dpapi
+**/*.key
+**/*.pem
+**/.env
+**/.env.*
+**/*.mp4
+**/*.mkv
+**/*.etl
+**/*.dmp
+**/Recording_*.txt
+**/Memory_Trend*.csv
+**/Resource_Trend*.csv
+**/Resource_Detail*.csv
+**/Logs/**
+**/Control/**
+**/Results/**
+*.zip
+**/bin/**
+**/obj/**
+.vs/
