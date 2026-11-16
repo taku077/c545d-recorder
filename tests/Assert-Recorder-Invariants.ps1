@@ -27,6 +27,10 @@ Assert-Contains "'max-size-buffers=12'" 'bounded pre-encoder queue'
 Assert-Contains "'leaky=downstream'" 'drop old frames rather than buffering indefinitely'
 Assert-Contains "'video/x-raw,format=I420,width=1280,height=720,framerate=15/1'" 'per-camera 1280x720 15fps'
 Assert-Contains "'mux.audio_0'" 'single muxed AAC audio stream'
+# Guard discard-only audio memory bound, preserving actual AAC/video.
+Assert-Contains "'max-size-buffers=8','max-size-bytes=262144'" 'bounded discarded telephoto RTP audio queue'
+Assert-Contains "'max-size-time=250000000','leaky=downstream'" 'drop stale discarded audio'
+Assert-Contains "'fakesink','async=false','sync=false','enable-last-sample=false'" 'do not retain discarded audio sample'
 # Keep the safe version gate visible in the startup log. This must be
 # informational only: never upgrade plugins or stop an existing recording.
 Assert-Contains 'H264 parser plugin \(videoparsersbad\)' 'parser plugin version logged at startup'
