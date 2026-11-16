@@ -3,6 +3,18 @@
 **Last updated:** 2026-11-16 (JST)  
 **Purpose:** Canonical cross-chat handoff. When the user says **「続きから再開してください」** in the context of the C545D recorder, **read this document first**, inspect the current GitHub HEAD/CI/PRs and continue from the next action rather than restarting diagnosis.
 
+## Confirmed user environment result — 2026-11-16 (supersedes previous version blocker)
+
+- The read-only process-path-based `gst-inspect-1.0 h264parse` check **succeeded**.
+- Reported `h264parse` plugin version: **1.28.8.1**.
+- The GStreamer installation is a **per-user Windows MSVC x86_64 installation** under Local AppData (do not publish the personal Windows account name or absolute path).
+- Because upstream fixed `gst_h264_parser_parse_nal()` in **1.28.2**, the inspected 1.28.8.1 plugin is expected to **already contain that fix** in a standard official build. The specific previously suspected parser leak therefore drops in priority as explanation of the observed residual growth; do NOT recommend updating the runtime on the basis of that fix alone.
+- The command also emitted warnings: `External plugin loader failed` and `Failed to load plugin gstpython.dll` (unresolved DLL dependency). These warnings refer to the plugin-scanner helper and Python binding plugin, **not evidence that H.264 parsing or the active recording failed**. The requested `h264parse` version was returned successfully. The recorder does not directly require `gstpython.dll`; do not delete DLLs or reinstall while recording.
+- This version verification **completes the previous immediate blocker**. Do **not** ask for this same version again unless the installed GStreamer changes.
+- **Next engineering task:** investigate the still-unexplained positive private-memory slope, checking current 1.28.8.1 components and actual object lifetime, allocator/RTSP and muxer behavior, before proposing a targeted fix. Preserve `avdec_h264` CPU improvement and current A/V sync/recording settings. Do not add speculative diagnostic loops or daily auto-restarts.
+- The currently running recording is unaffected by the PowerShell inspection. No GitHub code changes to the recorder were needed for the version check.
+- References: https://gstreamer.freedesktop.org/releases/1.28/ ; https://gstreamer.freedesktop.org/documentation/installing/on-windows.html ; https://discourse.gstreamer.org/t/user-getting-error-priv-gst-plugin-load-file-for-registry-module-open-failed/4499
+
 ## Canonical repositories
 - Public source and GitHub Actions: https://github.com/taku077/c545d-recorder
 - Private sanitized development notes: `taku077/c545d-recorder-internal` (requires connected GitHub access).
