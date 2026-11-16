@@ -336,8 +336,14 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
     }
     else {
         # Discard the second copy of the same physical microphone.
+        # The telephoto RTSP audio is never recorded. Keep only a small,
+        # leaky handoff queue (instead of the default 200 buffers/10 MB/1 s).
+        # Discard stale *unused* audio, never stream1's AAC or either video.
+        # Do not retain the discarded last sample in fakesink.
         Add-Gst @("$name.",'!','application/x-rtp,media=audio',
-                  '!','queue','!','fakesink','async=false','sync=false')
+                  '!','queue','max-size-buffers=8','max-size-bytes=262144',
+                      'max-size-time=250000000','leaky=downstream',
+                  '!','fakesink','async=false','sync=false','enable-last-sample=false')
     }
 }
 Add-Input 'cam1' $wideURL 0
