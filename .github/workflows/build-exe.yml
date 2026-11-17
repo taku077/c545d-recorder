@@ -56,6 +56,18 @@ jobs:
           Copy-Item 'EXE_START_HERE.txt' -Destination $bundle
           Compress-Archive -Path "$bundle/*" -DestinationPath 'dist/C545D_Recorder_EXE_Win10_x64.zip' -Force
           Write-Host 'ZIP generated with native C# WinForms and unchanged recording worker sources.'
+      - name: Guard private hidden console and safe EOS stop semantics
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $ui = [IO.File]::ReadAllText('src/C545D.Launcher/RecorderForm.cs')
+          $entry = [IO.File]::ReadAllText('src/C545D.Launcher/Program.cs')
+          if ($ui -notmatch 'UseShellExecute = withConsole') { throw 'Native worker console hidden-window strategy missing' }
+          if ($ui -notmatch 'WindowStyle = ProcessWindowStyle.Hidden') { throw 'Native child console no longer hidden' }
+          if ($entry -notmatch 'SetEnvironmentVariable\("C545D_VIDEO_DECODER", "avdec"\)') { throw 'Decoder setting must be inherited by hidden worker' }
+          if ($ui -notmatch 'GenerateConsoleCtrlEvent\(0, 0\)') { throw 'Ctrl+C EOS stop unavailable' }
+          if ($ui -notmatch 'File.WriteAllText\(stopFile') { throw 'Durable stop marker unavailable' }
+          Write-Host 'PASS: hidden worker console and EOS invariants'
       - name: Smoke-test native WinForms startup (no camera)
         shell: powershell
         run: |
