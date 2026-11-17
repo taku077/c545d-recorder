@@ -44,7 +44,7 @@ function Is-USTEnabled {
   return (($n -band 0x1000) -ne 0)
 }
 function Is-Admin {
-  $p=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+  $p=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
   return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 function Need-Tools {
