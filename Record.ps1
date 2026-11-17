@@ -6,10 +6,15 @@ param([string]$StopFile = '')
 $ErrorActionPreference = 'Stop'
 
 function Test-C545DStopRequested {
-    # A per-recording stop marker survives a lost console event and must
-    # suppress reconnects, including while GStreamer is being initialized.
-    if ($StopFile -and (Test-Path -LiteralPath $StopFile -PathType Leaf)) { return $true }
-    try { return [C545DWorkerStopSignal]::StopRequested } catch { return $false }
+    # Only the GUI's durable, session-specific stop marker authorizes the
+    # recorder to terminate instead of reconnecting. An unrelated CTRL+C
+    # must not permanently stop a 24x365 evidence recorder.
+    # This also protects normal stop while Gst is still initializing.
+    return [bool]($StopFile -and (Test-Path -LiteralPath $StopFile -PathType Leaf))
+}
+function Take-C545DUnexpectedCtrlCCount {
+    try { return [int][C545DWorkerStopSignal]::TakeCtrlCSignals() }
+    catch { return 0 }
 }
 
 function Find-GstBin {
@@ -441,21 +446,38 @@ try {
             $ErrorActionPreference = $previousErrorAction
             $gstArgs = $null
         }
-        Write-Host ('GStreamer returned; exitCode=' + $rc + '; stopMarker=' + (Test-Path -LiteralPath $StopFile))
-        if (Test-C545DStopRequested) {
+        $ctrlCEvents = Take-C545DUnexpectedCtrlCCount
+        $authorizedStop = Test-C545DStopRequested
+        Write-Host ('GStreamer returned; exitCode=' + $rc + '; stopMarker=' +
+            $authorizedStop + '; consoleCtrlCEvents=' + $ctrlCEvents)
+        if ($authorizedStop) {
             if ($rc -eq 0) {
-                Write-Host 'Recording stopped normally; MP4 finalization complete.' -ForegroundColor Green
+                Write-Host 'Recording stopped by GUI; GStreamer EOS completed.' -ForegroundColor Green
             } else {
-                Write-Warning "Stop requested; GStreamer returned exit code $rc. Inspect final MP4 with ffprobe. No reconnection will occur."
+                Write-Warning "GUI stop requested; GStreamer exit=$rc. Final MP4 may need checking. No reconnect."
             }
             break
         }
-        if ($rc -eq 0) {
-            Write-Host 'GStreamer ended normally; MP4 finalization complete.' -ForegroundColor Green
+        if (-not $StopFile -and $rc -eq 0) {
+            # Preserve manual console invocation semantics: interactive
+            # CTRL+C ends a standalone Record.ps1 session.
+            Write-Host 'Standalone recording ended without GUI control session.' -ForegroundColor Yellow
             break
         }
+        # An unsolicited CTRL+C can cause gst-launch -e to exit with code 0.
+        # Previously this was mistaken for an authorized stop and the 24x365
+        # recording was silently abandoned (2026-11-17 worker PIDs
+        # 660/11292/11120). The GUI stop marker is the only authority.
+        # A clean or nonzero unexpected exit both reconnect after backoff;
+        # force-restarting without EOS would risk corrupting the current MP4.
+        if ($ctrlCEvents -gt 0) {
+            Write-Warning ('UNEXPECTED_CTRL_C without GUI stop marker; ' +
+                'previous GStreamer EOS finished; recovering capture.')
+        } elseif ($rc -eq 0) {
+            Write-Warning 'UNEXPECTED_GSTREAMER_EXIT (code 0, no GUI stop); recovering capture.'
+        }
         # Do not propagate a transient EOF as a fatal PowerShell exception.
-        # Back off before retrying. Retrying cannot recover a gap in recordings.
+        # Back off before retrying. Retrying cannot recover an existing gap.
         $seconds = [Math]::Min(60, [Math]::Max(20, (10 * $attempt)))
         Write-Warning "GStreamer exited with code $rc. Retry in $seconds seconds unless stopped."
         # Poll instead of one uninterruptible long sleep. The GUI can stop
