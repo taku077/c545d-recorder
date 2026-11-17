@@ -43,6 +43,10 @@ jobs:
         shell: powershell
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-Invariants.ps1
+      - name: Test recording exit policy without connecting cameras
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-ExitPolicy.ps1
       - name: Set up Python for offline memory-trend unit tests
         uses: actions/setup-python@v5
         with:
