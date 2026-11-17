@@ -1,7 +1,20 @@
 # HANDOFF_CURRENT — C545D recorder
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
-## 最優先：現在の作業状態（2026-11-17 JST）— 以下の古い記述より優先
+
+### 最新の再開地点：2026-11-17 — HeapTrace v3 UMDH標準エラー問題を修正（次の実機Compare待ち）
+
+- **新しい実機エラー**：ユーザーは修正v2を `-Mode Compare` 実行すると、`HeapTrace.ps1` **279行**で `umdh.exe : Warning: The -v switch is obsolete. Verbose is always on.` および `NativeCommandError` が発生したと報告。**文字化けパス復旧は少なくともUMDH起動まで進んだ**が、UMDHの差分比較はまだ成功していない。
+- **新しい修正v3**：[PR #24](https://github.com/taku077/c545d-recorder/pull/24) はmainにマージ済み。UMDH比較から廃止済み `-v` を削除、Windows PowerShell 5.1の `2>&1` と `ErrorActionPreference=Stop` によるstderr警告の例外化を回避。標準出力/標準エラーを.NET ProcessStartInfoで別取得し、終了コード判定＋raw stdoutの保存を実装。
+- **Windows CI PASS**：PowerShell 5.1構文、既存の日本語JSON復旧・曖昧拒否、安全parser、さらに**stderrに警告/終了0なら継続、終了19なら失敗**の合成テストPASS。GitHub Actions [HeapTrace test](https://github.com/taku077/c545d-recorder/actions/runs/44106226506) と [source validation](https://github.com/taku077/c545d-recorder/actions/runs/44106226459)。実機の差分完遂/Heap割当元/録画安定性は**未検証**。
+- **実体を確認したv3 ZIP**：`C545D_HeapTrace_Diagnostics_v3.zip` を同じチャットに添付済み（GitHub Actions実体取得→二重ZIP解除、3ファイル・CRC・コード内容検証）。**新しいチャットで旧sandboxパスを流用しない**。ユーザー側へv3展開を案内したが、実際の展開は未確認。
+- **次の1操作**：ユーザーがv3を展開後、**通常権限PowerShell**でv3の `HeapTrace.ps1 -Mode Compare` を1回だけ実行。例えば `%USERPROFILE%\Downloads\C545D_HeapTrace_Diagnostics_v3\HeapTrace.ps1`。**PID9424のT1/T2再Captureはしない、録画EXEは変更しない。** 成功なら `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_HEAP_SAFE_REPORT_PID9424.zip` だけを受け取り解析。失敗時はその新エラーに限定して修正する。
+- **保存先の区別**：v3スクリプト展開先は例示で、ユーザー申告のv2展開先・旧キット・RC35 EXE・RAWデータ保存先とは別。既知の**正確なローカルパス**は非公開引継ぎ文書に記載、公開側にユーザー名は載せない。
+- UMDHの比較stderrが出た場合ローカルに `UMDH_RAW_DIFF_PID9424.stderr.txt` が残り得る。RAW・stderr・MP4・個人設定ファイルは公開しない。**安全ZIPのみ提出**。USTがまだ有効でこのキットの管理下なら検証後に管理者PowerShellで `-Mode Restore`。
+- これ以前のCURRENTブロック内「v2をダウンロードして比較する」という説明は**v3に置き換わった**。旧v2は今回の警告バグを含む。根本のネイティブメモリ増加はまだ未解決。
+
+
+## 旧時点の作業要約（2026-11-17）— 直上のv3修正が優先
 
 **再開地点はRC35 GStreamer録画のUMDHヒープ差分比較。VMMap・新規計測・GStreamerバージョン確認には戻らない。** 会話名「tapo録画2」「tapo録画3」「続きを再開」でこのプロジェクトを指す場合、まずこのブロックと非公開 companion の同名ファイルを読む。履歴セクションには旧日付の `IMMEDIATE NEXT STEP` が残るが、その指示は失効している。
 
