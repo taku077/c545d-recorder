@@ -25,12 +25,15 @@ public static class C545DWorkerStopSignal {
     private static extern bool SetConsoleCtrlHandler(ConsoleHandler handler, bool add);
     private static bool Handle(uint controlType) {
         if (controlType == 0) { // CTRL_C_EVENT
-            Interlocked.Exchange(ref _requested, 1);
+            Interlocked.Increment(ref _requested);
             return true;  // Do not let PowerShell abort gst-launch prematurely.
         }
         return false;
     }
     public static bool StopRequested { get { return Interlocked.CompareExchange(ref _requested, 0, 0) != 0; } }
+    // Record.ps1 reads a count after gst-launch returns. No I/O is performed
+    // on the Windows console control callback thread.
+    public static int TakeCtrlCSignals() { return Interlocked.Exchange(ref _requested, 0); }
     public static bool Install() {
         _handler = new ConsoleHandler(Handle); // rooted for process lifetime
         return SetConsoleCtrlHandler(_handler, true);
@@ -53,7 +56,8 @@ try {
         Write-Host 'Stop requested before recording startup.'
     } else {
         & (Join-Path $PSScriptRoot 'Record.ps1') -StopFile $stopFile
-        Write-Host ('Record.ps1 returned; stopMarker=' + (Test-Path -LiteralPath $stopFile))
+        Write-Host ('Record.ps1 returned; stopMarker=' + (Test-Path -LiteralPath $stopFile) +
+            '; pendingCtrlCEvents=' + [C545DWorkerStopSignal]::TakeCtrlCSignals())
     }
 }
 catch {
