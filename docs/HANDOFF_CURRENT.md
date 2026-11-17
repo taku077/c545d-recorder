@@ -2,6 +2,18 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## 最新の再開地点（2026-11-18 JST）— v5実機結果確認済み・録画復旧優先
+
+- ユーザーが `C545D_HEAP_SAFE_REPORT_PID9424_V3.zip` を提出。ZIP CRC PASS、内部 `C545D_HEAP_SAFE_SUMMARY_PID9424_V3.txt` の実バイトを確認済み。**v5オフライン再解析は完了**。v3/v4/v5の再実行や新規Captureは不要。
+- v5安全レポート実測：`parsed_backtraces=182`、`parsed_positive_delta_bytes=693428`、`parsed_negative_delta_bytes=-736853`、`parsed_net_delta_bytes=-43425`。正差分は `positive_no-recognized-frames_traces=27`、`bytes=693389`、`positive_recognized-non-system_traces=22`、`bytes=39`、Windows-runtime-only / other-module-symbol / address-like-no-symbol はそれぞれ0。
+- 上位3件の正差分 +380928B、+178176B、+94208B（合計653312B、正差分の約94.21%）は全て `no-recognized-frames`、各 `nonempty_lines=0`、認識されたwindows/other/non-system/address行0。**元のUMDH生ログにフレームが全くないという証明ではない**：差分のヘッダーに隣接する行を現スクリプトが取得できない/別セクションにある等もあり得る。正差分の合計値を直ちに真のヒープ増加・リークと断定しない。
+- Microsoft公式[UMDH比較解釈](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison)はBackTraceと対応コールスタックの調査が前提。これ以上パーサの推測修正やv6連続配布は優先しない。原本 `UMDH_RAW_DIFF_PID9424.txt` はローカルで保全し、必要時に**構造だけ**を非機密情報で診断する。RAW/スタック/ユーザーパスの送信は要求しない。
+- **未解決で高優先度**：ユーザーは「録画ツールを起動できていない状態が続いている」と報告。UMDH用GFlags USTの解除を提案済みだが、**実際に `UST for gst-launch: OFF` となったか、通常のRC35が起動したかの結果はまだ提出されていない**。USTが起動失敗の原因だとは未証明。
+- **次の実行優先順位**： (1) 既存 `HeapTrace.ps1 -Mode Check` でUST状態確認、ONならこの診断のマーカーがある場合に限り管理者PowerShellから `-Mode Restore`、(2) `Check`でOFF確認、(3) 通常ユーザー権限で既知のRC35 EXEを直接起動して録画復旧を優先、(4) 失敗時には起動メッセージ/ログで具体的原因を調査。診断用 `-Mode Launch` は使わない。古い/rawログの再測定、新たな長時間計測や追加キットは提案しない。
+- 診断キットv5のCI PASSとPR #28は既にマージ済みで新規修正なし。旧版の実行先は非公開 `taku077/c545d-recorder-internal/docs/HANDOFF_CURRENT.md` に保持し、公開repoに絶対Windowsユーザー名を置かない。次回は本ブロック＋非公開ブロック＋ユーザー直近のUST/起動結果を最初に読む。
+
+
+
 ### **CURRENT 2026-11-18 — v4 Safe Report受領、v5オフライン分類テストPASS、実機v5実行待ち（これが最優先）**
 
 - ユーザーが **`C545D_HEAP_SAFE_REPORT_PID9424_V2.zip`** をチャットに添付。実物ZIP/CRCと内部 `C545D_HEAP_SAFE_SUMMARY_PID9424_V2.txt` を直接読んだ。これは **v4キット**の出力（`V2`は安全レポートのスキーマ名）。**v3のUMDH Compareは既に成功した。再測定・再Compare不要。**
