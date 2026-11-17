@@ -66,3 +66,27 @@ C545D_Start.vbs は従来PowerShell GUIを開く入口として同梱してあ�
 - x264 medium/Q24、AAC、2画面NTP同期、1時間分割を変更していません。
 - メモリリークと libav no frame!/DTS 警告の実機改善は未確認です。
 - 現在の録画を停止せずに差し替えないでください。
+
+
+■ RC13 — libav no frame / MP4 DTS 補正候補（試験版）
+今回の修正対象はH.264入力デコードと、AAC音声の時刻連続性です。
+1) H.264 RTPデペイロード後のパーサーでSPS/PPSの毎IDR再挿入を停止し、
+   access unit単位のbyte-streamへ整列します。
+   起動前の合成RTP映像試験が成功した場合のみ有効になります。
+   C545D_H264_INPUT=legacy で以前の方式に戻せます。
+2) AAC側はaudiorate（40ms許容、skip-to-first=true）を追加し、
+   MP4に渡す音声タイムスタンプを安定させます。
+   起動前の合成AAC→MP4試験が成功した場合のみ有効になります。
+   C545D_AUDIO_TS=legacy で元に戻せます。
+3) RC10導入済みのh264timestamper（映像DTS補正）を保持します。
+   ログの 'MP4 DTS guard:' で有効かどうか確認できます。
+
+起動時ログの 'H264 RTP input guard:' と 'AAC timestamp guard:' に
+各機能の有効／フォールバック状態を記録します。
+両方式ともGStreamer付属機能だけを使用し、新規ソフト導入は不要です。
+
+重要：合成テストでは実際のC545Dストリームに依存するno frame/DTS
+警告の解消までは検証できません。警告は抑制せずログに残します。
+音声補正は、時刻が大きくずれた部分でサンプルの補間・削除を
+行う場合があります。画質・x264 quantizer・映像同期を変更しません。
+録画中の旧版を停止せずに新しいEXEへ切り替えないでください。
