@@ -48,6 +48,20 @@ jobs:
           $ErrorActionPreference='Stop'
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File diagnostics/Reanalyze-HeapDiff.ps1 -Mode SelfTest
           if($LASTEXITCODE -ne 0) {throw 'Offline UMDH safe module attribution self-test failed'}
+      - name: Offline original UMDH BackTrace join (PS5.1 synthetic + privacy)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'diagnostics/Resolve-ExistingUMDHBacktraces.ps1'),
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if(@($errors).Count) {
+            $errors | Out-String | Write-Host
+            throw 'Original BackTrace join PS5.1 syntax failed'
+          }
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File diagnostics/Resolve-ExistingUMDHBacktraces.ps1 -Mode SelfTest
+          if($LASTEXITCODE -ne 0) {throw 'Original BackTrace join self-test failed'}
       - name: Check action is read-only (no GFlags changes)
         shell: powershell
         run: |
@@ -67,6 +81,7 @@ jobs:
           Compress-Archive -LiteralPath @(
             'diagnostics/HeapTrace.ps1',
             'diagnostics/Reanalyze-HeapDiff.ps1',
+            'diagnostics/Resolve-ExistingUMDHBacktraces.ps1',
             'diagnostics/Check-HeapTools.cmd',
             'diagnostics/README_HEAP_TRACE_JA.md'
           ) -DestinationPath dist/C545D_HeapTrace_Diagnostics_Kit.zip -CompressionLevel Optimal -Force
@@ -82,14 +97,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='c545d-heaptrace-diagnostics-v5'
+          $tag='c545d-heaptrace-original-backtrace-join-20261118'
           $zip='dist/C545D_HeapTrace_Diagnostics_Kit.zip'
           if (-not (Test-Path -LiteralPath $zip)) { throw 'Diagnostic ZIP missing' }
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $tag $zip --repo $env:GITHUB_REPOSITORY --title 'C545D UMDH HeapTrace diagnostic kit v5 (offline trace-class diagnostics; NOT recorder EXE)' --notes 'Opt-in Windows Heap diagnostic kit v5. Offline read-only stack classification separates system-only symbols, address-like lines, non-system symbols and unrecognized frames. No recapture, no recorder changes, no raw stack export. Does not modify recorder EXE or media settings. Needs separately installed Microsoft Debugging Tools for Windows x64. Read README_HEAP_TRACE_JA.md before any UST registry change. Synthetic Windows tests only; user camera/UMDH runtime not yet validated.' --prerelease --latest=false
+            gh release create $tag $zip --repo $env:GITHUB_REPOSITORY --title 'C545D UMDH original BackTrace join (offline original T2; NOT recorder EXE)' --notes 'Opt-in offline-only original UMDH T2 BackTrace join. Includes safe allowlist summary of top three positive diff traces. Reuses existing PID9424 raw files, does not capture/restart/change UST. No raw stack export. Does not modify recorder EXE or media settings. Needs separately installed Microsoft Debugging Tools for Windows x64. Read README_HEAP_TRACE_JA.md before any UST registry change. Synthetic Windows tests only; user camera/UMDH runtime not yet validated.' --prerelease --latest=false
           }
           if ($LASTEXITCODE -ne 0) { throw 'Release asset publication failed' }
           Write-Host 'PASS: direct-download HeapTrace diagnostic ZIP published'
