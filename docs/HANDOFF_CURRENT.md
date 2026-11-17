@@ -143,3 +143,12 @@ Interpretation:
 - No changes to video x264 medium/Q24, 2560×720 15fps, two NTP-linked sources, AAC target, 1h MP4 split, or stop/EOS. No filtering or suppression of GStreamer error messages.
 - Synthetic pipeline success demonstrates negotiation only. It is **not proof** that camera-specific libav errors, MP4 DTS, or increasing Heap usage are fixed. Do not claim production validation.
 - No extra user software installations or destructive MP4 testing. Existing worker transcript will show H264 RTP input guard, AAC timestamp guard and MP4 DTS guard states.
+
+
+## 2026-11-17 — RC16 opt-in media diagnostic launcher
+- User consented to a comprehensive evidence-first investigation, with tool/log requirements declared upfront, focused on `libav: no frame!`, `qtmux decreasing DTS`, and subsequent Heap retention.
+- PR adding `START_DIAGNOSTIC.cmd`: no recorder pipeline edits, no new tools, and no debug logging in normal EXE start. Run only after normally stopping any active recorder.
+- Launcher sets `GST_DEBUG=*:2,rtph264depay:5,h264parse:5,rtpjitterbuffer:4,qtmux:5,audiorate:4,splitmuxsink:4`, `GST_DEBUG_FILE=%LOCALAPPDATA%\C545D_GStreamer\Logs\GST_DIAG_%p_%r.log`, `GST_DEBUG_NO_COLOR=1` **only for subprocesses started from launcher**. Each child process gets unique file by PID/random. On short (~5–10min) diagnostic recording, provide Recording_*.txt, relevant largest gst-launch GST_DIAG_*.log (after checking for any RTSP credentials), optional Stop_Control.log only for genuine stop problem, Memory_Trend.csv if memory is focus.
+- GStreamer official documentation confirms debug categories and GST_DEBUG_FILE %p and %r substitution. Do not assume warning-count=damaged frame-count; first attribute to stream and actual decoder damage.
+- No extra tools now. If Heap cause demanded later, Microsoft Debugging Tools package GFlags+UMDH should be disclosed as one staged dependency (needs per-image UST prior to process launch). Wireshark already present optional for evidence of network packet anomaly.
+- Stage RC16 is *diagnostic capture only*, not a cure for existing decode/DTS or Heap warnings.
