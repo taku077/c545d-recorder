@@ -258,7 +258,7 @@ jobs:
           }
           Remove-Item Env:C545D_SEI_AU_FILTER -ErrorAction SilentlyContinue
           $ui=[IO.File]::ReadAllText('src/C545D.Launcher/RecorderForm.cs')
-          if ($ui -notmatch 'Log\("SEI filter requested=" \+ seiMode') { throw 'SEI choice not logged' }
+          if ($ui -notmatch 'Log\("SEI-only AU filter requested=" \+ seiMode') { throw 'SEI choice not logged' }
           if ($ui -notmatch 'ApplySeiFilterChoice\(\);[\s\S]*?StartScript\("RecordGUIWorker.ps1"') {
             throw 'SEI environment choice must be applied before launching recorder worker'
           }
