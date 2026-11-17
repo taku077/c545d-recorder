@@ -16,6 +16,13 @@ function Take-C545DUnexpectedCtrlCCount {
     try { return [int][C545DWorkerStopSignal]::TakeCtrlCSignals() }
     catch { return 0 }
 }
+# Pure exit-policy function; tested in Windows CI without camera hardware.
+# A clean gst-launch exit is NOT an authorized stop for a managed session.
+function Get-C545DExitAction([bool]$authorizedStop, [bool]$managedSession, [int]$exitCode) {
+    if ($authorizedStop) { return 'stop' }
+    if (-not $managedSession -and $exitCode -eq 0) { return 'stop' }
+    return 'reconnect'
+}
 
 function Find-GstBin {
     $candidates = @(
@@ -450,18 +457,18 @@ try {
         $authorizedStop = Test-C545DStopRequested
         Write-Host ('GStreamer returned; exitCode=' + $rc + '; stopMarker=' +
             $authorizedStop + '; consoleCtrlCEvents=' + $ctrlCEvents)
-        if ($authorizedStop) {
-            if ($rc -eq 0) {
-                Write-Host 'Recording stopped by GUI; GStreamer EOS completed.' -ForegroundColor Green
+        $exitAction = Get-C545DExitAction $authorizedStop ([bool]$StopFile) $rc
+        Write-Host ('Recorder exit policy: ' + $exitAction)
+        if ($exitAction -eq 'stop') {
+            if ($authorizedStop) {
+                if ($rc -eq 0) {
+                    Write-Host 'Recording stopped by GUI; GStreamer EOS completed.' -ForegroundColor Green
+                } else {
+                    Write-Warning "GUI stop requested; GStreamer exit=$rc. Final MP4 may need checking. No reconnect."
+                }
             } else {
-                Write-Warning "GUI stop requested; GStreamer exit=$rc. Final MP4 may need checking. No reconnect."
+                Write-Host 'Standalone recording ended without GUI control session.' -ForegroundColor Yellow
             }
-            break
-        }
-        if (-not $StopFile -and $rc -eq 0) {
-            # Preserve manual console invocation semantics: interactive
-            # CTRL+C ends a standalone Record.ps1 session.
-            Write-Host 'Standalone recording ended without GUI control session.' -ForegroundColor Yellow
             break
         }
         # An unsolicited CTRL+C can cause gst-launch -e to exit with code 0.
