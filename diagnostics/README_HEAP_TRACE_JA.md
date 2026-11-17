@@ -1,3 +1,25 @@
+## 2026-11-18：既存RAW T2のBackTraceを照合する最終確認（録画は通常稼働中）
+
+Microsoft公式UMDH手順では、差分の`BackTrace`番号を**元の測定ログ**で検索して割り当て元を確認する（差分ファイルの各増加行の直後にスタックが必ずあるとは限らない）。旧v5は差分ファイルの行をそのままスタックとして読んだため、上位3件が`no-recognized-frames`になった。これは元のUMDH T2にスタックがない証拠ではない。
+
+録画はユーザー報告で通常起動に復旧、UST解除済み。**録画を停止しない、USTを再度ONにしない、再Capture・再Compareしない**。
+
+追加した `Resolve-ExistingUMDHBacktraces.ps1` は既存の `UMDH_RAW_DIFF_PID9424.txt` から正の差分上位3件のBackTrace番号を抽出し、同一PIDの保存済みT2を**オフラインで** `umdh.exe T2ファイル` として解釈し、番号で照合する。メモリ取得コマンド `-p` は使わない。符号付き差分レコード/RAWスナップショット/録画ファイルは変更しない。
+
+正確な元データは `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\` 内に保存済み。通常権限のPowerShellから、スクリプトを展開したフォルダーの実際のパスを指定して次を1回だけ実行する：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Resolve-ExistingUMDHBacktraces.ps1" -TargetPid 9424
+```
+
+ローカルでのみUMDHを動かして既存T2ログを解釈するため、処理中は一時的にCPU/I/O負荷が増える場合がある。録画の安全を優先すること。`-Mode SelfTest` のWindows CIは合成ログでの照合・秘密情報不出力の検査であり、実機のシンボル解決やRAWフォーマットの検証は未完了。
+
+生成する安全ZIPは `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_SAFE_ORIGINAL_BACKTRACES_PID9424.zip` のみ提出すること。RAWログ・DIFFログ・画面に表示されるスタック・ユーザーパス/アドレス・認証情報は絶対に共有しない。安全ZIPには追跡IDや関数シンボル、ローカルパスを含めない。
+
+上位のスタックとDLLファミリーが認識できれば、その候補から原因調査を進める。オフラインUMDHでも対応する番号が見つからない場合は、RAWログの取得条件/形式/シンボル設定などを確認するが、未検証の漏れ原因は断定しない。
+
+公式：https://learn.microsoft.com/ja-jp/windows-hardware/drivers/debugger/using-umdh-to-find-a-user-mode-memory-leak
+
 ## v5：unknownの意味を分離するための既存UMDH差分の安全再解析（2026-11-18）
 
 ユーザーから提出されたv4の安全レポート（`C545D_HEAP_SAFE_REPORT_PID9424_V2.zip`）を確認した。比較されたBackTrace 182件、正の差分+693,428B、負の差分−736,853B、純差−43,425B。増加上位は+380,928B、+178,176B、+94,208Bで、3件だけで正の差分約94.2%。v4の3件ともモジュール`unknown`。非システムモジュールを認識したトレースは81件だが、上位3件の原因は不明。
