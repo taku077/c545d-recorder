@@ -1,3 +1,31 @@
+## v3: Compare時に「Warning: The -v switch is obsolete」で止まる場合（2026-11-17）
+
+旧v2では、実在するT1/T2の発見・復旧後、UMDHの実行まで進んでも、
+現在のUMDHがstderrに `Warning: The -v switch is obsolete. Verbose is always on.` と出すと、
+Windows PowerShell 5.1の `$ErrorActionPreference='Stop'` と `2>&1` の組合せで
+`NativeCommandError` となり、その時点で処理が中断する場合があります。
+
+v3ではUMDH比較呼出しから不要な `-v` を外し、.NET ProcessStartInfoで
+標準出力と標準エラーを別々に取り込み、**実際の終了コード**を確認します。
+warningが出た場合もstderrはHeapTraceのローカルにだけ保存し、rawログ・録画に触れません。
+Windows CIは警告stderrがあってexit 0なら成功し、exit 19なら失敗する合成テストを追加。
+
+**すでに保存されているPID9424のRAWログ2本は再測定不要**。
+更新したv3の `HeapTrace.ps1` だけを使用し、通常権限PowerShellで
+`-Mode Compare` をもう一度実行してください。v2と録画RC35のEXEを混同しないでください。
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\HeapTrace.ps1" -Mode Compare
+```
+
+成功時に提出するのは従来通り `C545D_HEAP_SAFE_REPORT_PID9424.zip` **のみ**。
+`UMDH_RAW*.txt`、`UMDH_RAW_DIFF*.txt`、`UMDH_RAW_DIFF*.stderr.txt`
+は個人情報やアドレスを含み得るため提出しないでください。
+
+実機UMDHの差分出力形式が未知の場合は安全レポートが生成できず
+`UMDH diff format unknown` になる可能性があります。その場合も再Captureは不要です。
+誤って「メモリ増加なし」と判定しないでください。
+
 ## v2: 日本語ユーザーフォルダーにおけるCompareエラーを修復
 
 Windows PowerShell 5.1では、BOMのないUTF-8 JSONを既定のANSIで読み込むため、
