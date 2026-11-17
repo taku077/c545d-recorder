@@ -76,6 +76,37 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Filter end-to-end test compile failed' }
           & "$env:RUNNER_TEMP\test_sei_plugin.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Filter SEI/picture end-to-end test failed' }
+      - name: REQUIRED gate - parse entire production RTSP/compositor/x264/AAC/MP4 graph using GStreamer (no camera)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $inc=@("/I$root\include\gstreamer-1.0","/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
+          $parser=Join-Path $env:RUNNER_TEMP 'parse_complete_graph.exe'
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('native/sei_filter/test_full_pipeline_parse.c',"/Fe:$parser",'/link',"/LIBPATH:$root\lib",'gstreamer-1.0.lib','gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0) { throw 'Full graph GStreamer parser build failed' }
+          $env:PATH="$root\bin;$env:PATH"
+          $env:GST_PLUGIN_PATH_1_0=Join-Path $env:RUNNER_TEMP 'c545d-plugins'
+          $env:GST_REGISTRY=Join-Path $env:RUNNER_TEMP 'gst-recorder-full-graph-ci.bin'
+          $index=0
+          foreach($sei in @(0,1)) {
+            foreach($h264 in @(0,1)) {
+              foreach($audio in @(0,1)) {
+                foreach($dts in @(0,1)) {
+                  $index++
+                  $tokens=Join-Path $env:RUNNER_TEMP "C545D_full_graph_$index.txt"
+                  & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'tests/Export-RecorderGraphForCI.ps1' -OutputPath $tokens -SeiFilter $sei -H264InputGuard $h264 -AudioTsGuard $audio -DtsGuard $dts
+                  if ($LASTEXITCODE -ne 0) { throw "Production graph extraction failed, variant $index" }
+                  & $parser $tokens
+                  if ($LASTEXITCODE -ne 0) {
+                    throw "GStreamer rejected ACTUAL production graph. Variant=$index sei=$sei h264=$h264 audio=$audio dts=$dts. DO NOT RELEASE."
+                  }
+                }
+              }
+            }
+          }
+          if ($index -ne 16) { throw 'Full graph matrix incomplete' }
+          Write-Host 'PASS: GStreamer parsed all 16 exact PowerShell-built production graph variants'
       - name: Build x64 .NET Framework 4.8 WinExe
         shell: powershell
         run: |
