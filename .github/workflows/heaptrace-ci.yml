@@ -1,0 +1,70 @@
+name: HeapTrace diagnostics safety and syntax
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'diagnostics/**'
+      - '.github/workflows/heaptrace-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'diagnostics/**'
+      - '.github/workflows/heaptrace-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Windows PowerShell 5.1 parser (do not run live capture)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='diagnostics/HeapTrace.ps1'
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $path),[ref]$tokens,[ref]$errors)|Out-Null
+          if(@($errors).Count) {
+            $errors|Out-String|Write-Host
+            throw 'Windows PowerShell 5.1 HeapTrace parse failed'
+          }
+          Write-Host 'PASS: no PowerShell syntax errors'
+      - name: Safe UMDH differential report against synthetic secret/PII
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File diagnostics/HeapTrace.ps1 -Mode SelfTest
+          if($LASTEXITCODE -ne 0) {throw 'UMDH schema-only self-test failed'}
+      - name: Check action is read-only (no GFlags changes)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $reg='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\gst-launch-1.0.exe'
+          $before=(Get-ItemProperty -LiteralPath $reg -Name GlobalFlag -ErrorAction SilentlyContinue).GlobalFlag
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File diagnostics/HeapTrace.ps1 -Mode Check
+          if($LASTEXITCODE -ne 0) {throw 'Preflight failed'}
+          $after=(Get-ItemProperty -LiteralPath $reg -Name GlobalFlag -ErrorAction SilentlyContinue).GlobalFlag
+          if($before -ne $after) {throw 'Read-only check unexpectedly changed GFlags'}
+          Write-Host 'PASS: read-only preflight does not change image GFlags'
+      - name: Package standalone diagnostic-only helper (not recorder EXE)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -LiteralPath @(
+            'diagnostics/HeapTrace.ps1',
+            'diagnostics/Check-HeapTools.cmd',
+            'diagnostics/README_HEAP_TRACE_JA.md'
+          ) -DestinationPath dist/C545D_HeapTrace_Diagnostics_Kit.zip -CompressionLevel Optimal -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c545d-heaptrace-diagnostic-kit-windows
+          path: dist/C545D_HeapTrace_Diagnostics_Kit.zip
+          retention-days: 14
