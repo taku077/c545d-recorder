@@ -1,0 +1,27 @@
+name: Memory monitor Windows PowerShell 5.1 selftest
+on:
+  pull_request:
+    paths:
+      - diagnostics/Monitor-C545DMemory.ps1
+      - .github/workflows/c545d-memory-monitor-ci.yml
+  push:
+    paths:
+      - diagnostics/Monitor-C545DMemory.ps1
+      - .github/workflows/c545d-memory-monitor-ci.yml
+jobs:
+  powershell51:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse source and run CSV selftest on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $file=(Resolve-Path 'diagnostics/Monitor-C545DMemory.ps1')
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $file,[ref]$tokens,[ref]$errors) | Out-Null
+          if(@($errors).Count) {throw 'PowerShell syntax failure'}
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -SelfTest
+          if($LASTEXITCODE -ne 0) {throw 'Memory monitor selftest failed'}
