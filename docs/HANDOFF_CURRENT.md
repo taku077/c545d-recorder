@@ -2,6 +2,15 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 — PowerShell差分ヘッダー正規表現の誤検出：91件
+
+- ユーザーの実行結果：提示したread-onlyの差分ブロック抽出コードが `差分レコード数が想定と異なります: 91` で中断。これは**元UMDHログが欠損した証拠ではない**。従来のより緩い解析条件では182件検出していた。直前コードのヘッダー正規表現 `...\ballocs\s+BackTrace...` が余分な固定条件となり、一部の行を落とした可能性が高い。
+- **次の対応**：同じ既存 `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\UMDH_RAW_DIFF_PID9424.txt` を再読込する前に、`$headerRx` を `'(?i)^\s*([+-])\s+(?:0x)?([0-9a-f]{1,16})\s+\([^)]*\).*?BackTrace[0-9a-f]+\b'` に1行修正する。旧 `\ballocs\s+` 条件だけを削除。**実機での182件への復帰はまだ未検証**。再Capture、再UMDH比較、USTの再ON、録画停止なし。
+- 上位3差分は既存値+380928B（124行）、+178176B（145行）、+94208B（166行）。次の正負ヘッダー直前までを各ブロックとして区切り、既知のGStreamer/FFmpeg/GLibモジュール名だけを安全表示する。上位3件の原因DLLは**未特定**。
+- ユーザーはUST解除済み・通常録画再開済み。新しい診断ツール配布を繰り返さず、現在のPowerShellコード1行修正の実行結果を待つ。
+- Microsoft公式: https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison
+
+
 ## CURRENT — 2026-11-18: UMDH差分の上位3件の位置関係を実測確認
 - 録画は再開済み、UST解除済み。再キャプチャ・再比較・録画停止は不要。
 - UMDH差分の正増加上位3件：+380928 Bは124行、+178176 Bは145行、+94208 Bは166行。差分レコード見出しは21行間隔。187行が次の見出しかは未確認。
