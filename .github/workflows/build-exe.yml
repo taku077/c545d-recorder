@@ -150,6 +150,8 @@ jobs:
             }
             $writer.WriteLine('0:00:50.000000000 12596 10556 ERROR libav :0:: no frame!')
             $writer.WriteLine('0:00:51.000000000 12596 12484 ERROR qtmux decreasing DTS value 0:00:46.111111111 < 0:00:46.222222222')
+            $writer.WriteLine('0:00:52.000000000 12596 ERROR: erroneous pipeline: syntax error user-pw=SUPER_TEST_SECRET_923')
+            $writer.WriteLine('GStreamer returned; exitCode=1; stopMarker=False')
           } finally { $writer.Dispose() }
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'Export-SafeDiagnostics.ps1' -LogsDirectory $src -OutputDirectory $dst
           if ($LASTEXITCODE -ne 0) { throw "Safe export returned $LASTEXITCODE" }
@@ -160,6 +162,10 @@ jobs:
           $events=[IO.File]::ReadAllText((Join-Path $unpack 'media_events.tsv'))
           $summary=[IO.File]::ReadAllText((Join-Path $unpack 'summary.txt'))
           $rates=[IO.File]::ReadAllText((Join-Path $unpack 'event_rates.tsv'))
+          if ($summary -notmatch 'GST_PIPELINE_ERROR=1' -or $summary -notmatch 'GST_EXIT=1') {
+            throw 'Fatal gst-launch pipeline parse errors or exit status missing from safe export'
+          }
+          if ($events -notmatch 'exit_code=1') { throw 'Nonzero exit code not safely exported' }
           if ($summary -notmatch 'LIBAV_NO_FRAME=2' -or $summary -notmatch 'QTMUX_DTS_BACKWARD=2') {
             throw 'Error counts did not cover the full log after 20000 debug lines'
           }
