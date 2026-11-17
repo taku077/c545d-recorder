@@ -354,10 +354,10 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
       '!','queue','max-size-buffers=300','max-size-bytes=8388608',
           'max-size-time=2000000000',
       '!','rtph264depay','request-keyframe=true','wait-for-keyframe=true',
-      '!','h264parse','config-interval=-1',
-      # Ensure complete H.264 access units before decoding. The depayloader
-      # still requests and waits for new keyframes after packet loss.
-      '!','video/x-h264,alignment=au','!')
+      # Force AU output from the depayloader, enabling its documented
+      # wait-for-keyframe recovery after RTP packet loss.
+      '!','video/x-h264,alignment=au',
+      '!','h264parse','config-interval=-1','!')
     Add-Gst $decoder
     Add-Gst @('!','videoconvert','!','videoscale','!')
     Add-Gst $script:videoRateArgs
