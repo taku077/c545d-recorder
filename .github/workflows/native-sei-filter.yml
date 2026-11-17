@@ -1,0 +1,77 @@
+name: Native SEI AU filter candidate (Windows GStreamer 1.28)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/sei_filter/**'
+      - '.github/workflows/native-sei-filter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile classifier tests (no GStreamer required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cl.exe /nologo /W4 /MD /O2 /TC /Fe:"$env:RUNNER_TEMP\test_au_classifier.exe" native/sei_filter/test_au_classifier.c
+          if ($LASTEXITCODE -ne 0) { throw 'Classifier compile failed' }
+          & "$env:RUNNER_TEMP\test_au_classifier.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Classifier tests failed' }
+      - name: Install official GStreamer 1.28.8 MSVC SDK (CI only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer = Join-Path $env:RUNNER_TEMP 'gstreamer-1.28.8-msvc-installer.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180 -MaximumRedirection 5
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'GStreamer SDK installer unexpectedly small' }
+          $root = Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$root")
+          $proc = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "SDK installer failed $($proc.ExitCode)" }
+          if (-not (Test-Path "$root\include\gstreamer-1.0\gst\gst.h")) { throw 'GStreamer headers missing' }
+          if (-not (Test-Path "$root\lib\gstreamer-1.0.lib")) { throw 'MSVC import libraries missing' }
+      - name: Build native plugin x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $out=Join-Path $env:RUNNER_TEMP 'native-plugins'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $headers=@("/I$root\include\gstreamer-1.0","/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
+          $links=@("gstreamer-1.0.lib","gstbase-1.0.lib","gobject-2.0.lib","glib-2.0.lib")
+          $build=@('/nologo','/W4','/MD','/O2','/LD','/TC')+$headers+@('native/sei_filter/gstc545dsei.c',
+            "/Fe:$out\gstc545dsei.dll","/link","/LIBPATH:$root\lib")+$links
+          & cl.exe @build
+          if ($LASTEXITCODE -ne 0) { throw 'Native GStreamer plugin compile/link failed' }
+          if (-not (Test-Path "$out\gstc545dsei.dll")) { throw 'Plugin DLL missing' }
+      - name: Smoke-test plugin registration and picture pass-through (synthetic only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $env:PATH="$root\bin;$env:PATH"
+          $env:GST_PLUGIN_PATH_1_0=Join-Path $env:RUNNER_TEMP 'native-plugins'
+          $env:GST_REGISTRY=Join-Path $env:RUNNER_TEMP 'gst-registry-c545d.bin'
+          & "$root\bin\gst-inspect-1.0.exe" c545dseifilter
+          if ($LASTEXITCODE -ne 0) { throw 'Plugin registration failed' }
+          & "$root\bin\gst-launch-1.0.exe" '-e' '-q' videotestsrc num-buffers=60 '!' 'video/x-raw,format=I420,width=320,height=240,framerate=15/1' '!' x264enc speed-preset=ultrafast '!' h264parse '!' 'video/x-h264,stream-format=byte-stream,alignment=au' '!' c545dseifilter '!' avdec_h264 '!' fakesink
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic video picture decode failed with optional filter' }
+      - name: Publish candidate plugin DLL for review (not live recorder)
+        uses: actions/upload-artifact@v4
+        with:
+          name: c545d-sei-filter-plugin-win10-x64-candidate
+          path: ${{ runner.temp }}/native-plugins/gstc545dsei.dll
+          retention-days: 14
