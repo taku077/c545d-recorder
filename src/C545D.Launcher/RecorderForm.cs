@@ -26,6 +26,7 @@ namespace C545D.Recorder.Launcher
         private readonly bool smoke;
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         private TextBox ip, user, password, output;
+        private CheckBox seiFilter;
         private Label passwordStatus, status, elapsed, memory;
         private Button start, stop, save, browse, emergency, quit;
         private NotifyIcon tray;
@@ -70,7 +71,8 @@ namespace C545D.Recorder.Launcher
                 {
                     string p = Environment.GetEnvironmentVariable("C545D_NATIVE_SMOKE_OUTPUT");
                     if (!string.IsNullOrEmpty(p))
-                        File.WriteAllText(p, "PASS NATIVE WINFORMS", Encoding.UTF8);
+                        File.WriteAllText(p, "PASS NATIVE WINFORMS;SEI=" +
+                            ApplySeiFilterChoice(), Encoding.UTF8);
                     BeginInvoke((Action)(() => { allowExit = true; Close(); }));
                     return;
                 }
@@ -121,6 +123,18 @@ namespace C545D.Recorder.Launcher
             output = T(160, 208, 420);
             browse = B("参照…", 590, 205, 110, 34, Browse);
             save = B("設定を保存", 160, 257, 170, 38, () => SaveWithError());
+            // The user-verified RC32 filter is ON for direct EXE launch.
+            // Keep an in-app fallback switch; no CMD/PowerShell launcher needed.
+            seiFilter = new CheckBox {
+                Text = "SEI対策を有効化（推奨）",
+                Location = new Point(347, 260),
+                Size = new Size(350, 32),
+                Checked = !string.Equals(
+                    Environment.GetEnvironmentVariable("C545D_SEI_AU_FILTER"),
+                    "off", StringComparison.OrdinalIgnoreCase),
+                AutoSize = false
+            };
+            Controls.Add(seiFilter);
             start = B("● 録画開始", 24, 322, 215, 48, StartRecording);
             stop = B("■ 録画停止", 251, 322, 215, 48, RequestStop);
             B("保存先を開く", 478, 322, 222, 48, () => OpenFolder(output.Text));
@@ -278,6 +292,7 @@ namespace C545D.Recorder.Launcher
             bool active = Alive(worker);
             ip.Enabled = user.Enabled = password.Enabled = output.Enabled = !active;
             browse.Enabled = save.Enabled = start.Enabled = !active;
+            seiFilter.Enabled = !active;
             stop.Enabled = active && (!stopRequested || stopSignalFailed);
             stop.Text = stopSignalFailed ? "■ 停止通知を再試行" : "■ 録画停止";
             emergency.Visible = active && stopRequested;
@@ -295,6 +310,18 @@ namespace C545D.Recorder.Launcher
                     Encoding.UTF8);
             }
             catch { }
+        }
+        // Windows child processes inherit environment variables from this
+        // EXE. This is applied BEFORE launching the hidden PowerShell worker,
+        // and never changes global/user environment or GStreamer installation.
+        // Record.ps1 still performs its DLL/element/synthetic compatibility
+        // preflight; if unavailable it falls back to the legacy decoder path.
+        private string ApplySeiFilterChoice()
+        {
+            string mode = seiFilter.Checked ? "on" : "off";
+            Environment.SetEnvironmentVariable("C545D_SEI_AU_FILTER",
+                mode, EnvironmentVariableTarget.Process);
+            return mode;
         }
         private void StartRecording()
         {
@@ -315,6 +342,9 @@ namespace C545D.Recorder.Launcher
                 sessionId = Guid.NewGuid().ToString("N");
                 stopFile = Path.Combine(Control, "session_" + sessionId + ".stop");
                 readyFile = Path.Combine(Control, "session_" + sessionId + ".ready");
+                string seiMode = ApplySeiFilterChoice();
+                Log("SEI-only AU filter requested=" + seiMode +
+                    " (effective state recorded in Recording log after preflight)");
                 worker = StartScript("RecordGUIWorker.ps1", "-SessionId " + sessionId, true);
                 if (worker == null) throw new InvalidOperationException("録画プロセスを起動できません。");
                 startedAt = DateTime.Now;
