@@ -96,7 +96,18 @@ jobs:
           0:00:42.1 12596 DEBUG rtph264depay user-pw=SUPER_TEST_SECRET_923 rtsp://camerauser:SUPER_TEST_SECRET_923@192.0.2.123:554/stream1
           0:00:43.1 12596 WARN rtpjitterbuffer authorization Basic c3VwZXJzZWNyZXQ=
           '@
-          [IO.File]::WriteAllText((Join-Path $src 'GST_DIAG_123_456.log'),$raw)
+          $fakeLog = Join-Path $src 'GST_DIAG_123_456.log'
+          [IO.File]::WriteAllText($fakeLog,$raw)
+          # Old exporter silently dropped error events after its 18000-row cap.
+          # Saturate it with routine debug before appending essential errors.
+          $writer=[IO.StreamWriter]::new($fakeLog,$true)
+          try {
+            for ($i=0; $i -lt 20000; $i++) {
+              $writer.WriteLine('0:00:45.000000000 12596 10556 DEBUG rtph264depay synthetic sample')
+            }
+            $writer.WriteLine('0:00:50.000000000 12596 10556 ERROR libav :0:: no frame!')
+            $writer.WriteLine('0:00:51.000000000 12596 12484 ERROR qtmux decreasing DTS value 0:00:46.111111111 < 0:00:46.222222222')
+          } finally { $writer.Dispose() }
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'Export-SafeDiagnostics.ps1' -LogsDirectory $src -OutputDirectory $dst
           if ($LASTEXITCODE -ne 0) { throw "Safe export returned $LASTEXITCODE" }
           $zip=Get-ChildItem -LiteralPath $dst -Filter 'C545D_SAFE_DIAGNOSTICS_*.zip' | Select-Object -First 1
@@ -105,10 +116,18 @@ jobs:
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $unpack -Force
           $events=[IO.File]::ReadAllText((Join-Path $unpack 'media_events.tsv'))
           $summary=[IO.File]::ReadAllText((Join-Path $unpack 'summary.txt'))
+          $rates=[IO.File]::ReadAllText((Join-Path $unpack 'event_rates.tsv'))
+          if ($summary -notmatch 'LIBAV_NO_FRAME=2' -or $summary -notmatch 'QTMUX_DTS_BACKWARD=2') {
+            throw 'Error counts did not cover the full log after 20000 debug lines'
+          }
+          if ($summary -notmatch 'Scan status: COMPLETE') { throw 'Log scan was silently truncated' }
+          if ($rates -notmatch 'QTMUX_DTS_BACKWARD' -or $rates -notmatch 'LIBAV_NO_FRAME') {
+            throw 'Per-second event-rate data missing'
+          }
           if ($events -notmatch 'LIBAV_NO_FRAME' -or $events -notmatch 'QTMUX_DTS_BACKWARD') {
             throw 'Essential sanitized diagnostic events were lost'
           }
-          $combined=$events+$summary
+          $combined=$events+$summary+$rates
           foreach ($secret in @('SUPER_TEST_SECRET_923','camerauser','192.0.2.123','c3VwZXJzZWNyZXQ=','user-pw','authorization')) {
             if ($combined -match [regex]::Escape($secret)) { throw "Secret leaked in safe export" }
           }
