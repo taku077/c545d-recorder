@@ -1,3 +1,21 @@
+## v5：unknownの意味を分離するための既存UMDH差分の安全再解析（2026-11-18）
+
+ユーザーから提出されたv4の安全レポート（`C545D_HEAP_SAFE_REPORT_PID9424_V2.zip`）を確認した。比較されたBackTrace 182件、正の差分+693,428B、負の差分−736,853B、純差−43,425B。増加上位は+380,928B、+178,176B、+94,208Bで、3件だけで正の差分約94.2%。v4の3件ともモジュール`unknown`。非システムモジュールを認識したトレースは81件だが、上位3件の原因は不明。
+
+**重要**：v4の`unknown`は「スタック自体がない」「シンボルが全て解決不能」を意味しない。v4は`ntdll`/`kernelbase`等Windows標準モジュールだけのスタックも`unknown`と出力し、代替情報は表示していなかった。
+
+v5の`Reanalyze-HeapDiff.ps1`は、すでにPCに残る`UMDH_RAW_DIFF_PID9424.txt`だけを読み、各正の差分を次の**非機密カテゴリー**に分ける：`recognized-non-system`、`windows-runtime-only`、`other-module-symbol`、`address-like-no-symbol`、`no-recognized-frames`。上位30件にカテゴリーと該当パターン行数だけ表示。住所・シンボル関数名・生スタックは出力しない。未知モジュール名は`other-module`に抽象化。これは形状判定で、原因DLLや漏れを断定しない。
+
+v5のキットを展開して、通常権限PowerShellから1回だけ実行する（v4/v3のファイルは上書きしない）：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Reanalyze-HeapDiff.ps1" -TargetPid 9424
+```
+
+出力：`%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_HEAP_SAFE_REPORT_PID9424_V3.zip` のみ共有。末尾の`V3`は安全レポートのスキーマであり、キットはv5。既存RAWスナップショットやRAW差分をアップロードしない。新規Capture、録画停止、UMDH比較、UST有効化、ソフト追加は不要。
+
+Microsoft公式：https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison
+
 ## v4：既存UMDH差分から割り当て元を追加抽出（2026-11-17）
 
 ユーザー提出の `C545D_HEAP_SAFE_REPORT_PID9424.zip` は、PID9424の実機Compareに成功し、25.54分のPrivate Memory 632.28→633.43MB、`parsed_backtraces=182`、UMDH差分 `parsed_net_delta_bytes=-43425` を報告。ただし上位30件が **すべて `first_dll=unknown`** で、原因DLLは未特定。
