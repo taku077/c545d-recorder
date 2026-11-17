@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18: UMDH 2-line record format explains blank top-three stack output
+
+- ユーザーが実機で完全版 top3 parser を実行した結果：Rank1 380928B StartLine=124 EndLine=124; Rank2 178176B StartLine=145 EndLine=145; Rank3 94208B StartLine=166 EndLine=166; 3件とも SymbolLines=0 / MediaModules=none。録画は通常継続、UST OFF。
+- **公式資料で原因解明**：Microsoft AskPerf `Two Minute Drill: UMDH.EXE` は各スタック差分を (1) `+ BYTES_DELTA ... allocs BackTrace TRACEID`、(2) `+ COUNT_DELTA ... BackTrace TRACEID allocations`、(3) stack frames の形式と説明。従来の広い `^\s*[+-]...\(` 正規表現は同一スタックの2つの見出しをそれぞれ別レコードと誤認した。よって182件は91組の2行を数えた可能性が高く、`allocs`に限定した91件こそ真のヒープ差分ブロック数の候補。
+- **StartLine=EndLineの直接原因**：124行のbytes headerの直後（125行と推定）にあるcount headerを次の論理ブロックの境界にして、スタック範囲を空にした。上位3件の `none` はDLL欠落/リーク無しを示さない。
+- **次の操作**：録画を止めず、既存 `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\UMDH_RAW_DIFF_PID9424.txt` を読み取り専用で再解析。**bytesヘッダー `allocs\s+BackTrace` のみをlogical block開始として使用**し、次の同形式bytesヘッダー直前までをモジュール抽出範囲とする。91件を固定検証でエラーにせず、ByteRows / CountRows / TotalHeaderRows を別々に報告し、上位3件の符号付きBytesと範囲・既知DLLだけ表示。以前の182件を必須とする案内は破棄。
+- 原本T1/T2/DIFF再キャプチャ・再比較・UST再有効化・録画再起動は不要。関数名/アドレス/個人パス/未許可モジュール名は出力しない。リーク原因は未確定。
+- 出典 Microsoft TechCommunity https://techcommunity.microsoft.com/blog/askperf/two-minute-drill-umdh-exe/373180/ と Microsoft Learn https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison
+
+
 ## CURRENT 2026-11-18 JST — 完全版 UMDH 91/182境界解析を実装しWindows PS5.1 CI合格、実機出力待ち
 
 - ユーザーの最後の実機エラーは`差分レコード数が想定と異なります: 91`。先行の緩いヘッダー検出では182件。旧PowerShellの正規表現は`allocs BackTrace`を必須としていたため一部形式を取りこぼした可能性。元ログ破損は示さない。
