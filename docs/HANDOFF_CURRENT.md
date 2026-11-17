@@ -2,6 +2,19 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## 最優先CURRENT（2026-11-18 JST）— 通常録画復旧済み・既存UMDH原本とのBackTrace照合待ち
+
+- **新しいユーザー確定報告**：「解除を実行して通常録画はもう開始している」。UST（GFlags +ust）はユーザーが解除操作を実行済みで、**通常録画は再開済み**。これを次回の起動確認待ちとして扱わない。録画再起動/停止・UST再有効化・再Captureを求めない。
+- **前回までの最重要根拠**：PID9424のUMDH比較には182差分、正+693428 B、負-736853 B、差分合計-43425 B。上位3件+380928、+178176、+94208 Bの正差分（合計約94.2%）は旧v5スクリプトで`no-recognized-frames`、`nonempty_lines=0`となった。しかしこれは元のRAWにスタックがない意味ではない。
+- **原因が分かった解析設計ミス**：Microsoft公式[Using UMDH to Find a User-Mode Memory Leak](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/using-umdh-to-find-a-user-mode-memory-leak)は、UMDH比較結果の`BackTrace`番号を**元の測定ログ**で検索するよう説明。旧v3/v4/v5の解析は差分出力の行の直後からスタックを探していたため、根本的に元のT2を照合していない。漏れ元を`unknown`と断定しない。
+- **実装済みの再開作業**：公開GitHub [PR #31](https://github.com/taku077/c545d-recorder/pull/31) はmainマージ。`diagnostics/Resolve-ExistingUMDHBacktraces.ps1` が既存`UMDH_RAW_DIFF_PID9424.txt`の正の差分上位3件を選び、既存T2スナップショットを`umdh.exe T2ログ`で**オフライン解釈**し、BackTrace IDで照合する。RAWや録画に書き込みなし・`-p`新規キャプチャなし・UST/GFlags操作なし。実際のWindows UMDHによるT2シンボル解決はまだ未検証。
+- **CI合格**：PowerShell5.1構文、合成テストでBackTrace番号結合・プライバシー除外をPASS（Actions runs [44116225097](https://github.com/taku077/c545d-recorder/actions/runs/44116225097) と [44116225189](https://github.com/taku077/c545d-recorder/actions/runs/44116225189)）。
+- **ユーザーに渡すファイル**：`C545D_UMDH_OriginalStackJoin_20261118.zip`（GitHub CIから正規のプログラムを取り出し、照合用のps1と日本語READMEだけ入れたZIP。zip CRC検査済み）。新しいチャットに古いsandboxリンクを引き回さず、再取得して実在確認する。
+- **次の1操作（録画継続のまま）**：ZIP展開したディレクトリで通常PowerShellから `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Resolve-ExistingUMDHBacktraces.ps1" -TargetPid 9424` を一度だけ実行する。出力は `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_SAFE_ORIGINAL_BACKTRACES_PID9424.zip` **のみ**チャットに提出。RAWログ・差分RAW・スタック・ソースパス等は提出しない。既存T2ログのオフライン解析時は一時的なCPU/ディスク負荷の可能性があるので録画優先。
+- **今後の分岐**：元T2の3本のBackTraceが特定できれば安全なモジュール分類から絞り込む。元T2で見つからなければフォーマット・シンボル解決に問題がある可能性を整理する。メモリリーク原因は依然未確定、測定をやり直す根拠なし。
+- 他の旧CURRENT（録画未復旧、v5の安全レポート作成待ち、UMDH `Capture` 待ち、GStreamerバージョン確認待ち）は**過去の履歴**であり、現在の手順ではない。次のチャットはこのCURRENTを最優先で参照する。ユーザー固有のWindows絶対パスは非公開リポジトリのみ。
+
+
 ## 最新の再開地点（2026-11-18 JST）— v5実機結果確認済み・録画復旧優先
 
 - ユーザーが `C545D_HEAP_SAFE_REPORT_PID9424_V3.zip` を提出。ZIP CRC PASS、内部 `C545D_HEAP_SAFE_SUMMARY_PID9424_V3.txt` の実バイトを確認済み。**v5オフライン再解析は完了**。v3/v4/v5の再実行や新規Captureは不要。
