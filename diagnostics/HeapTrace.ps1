@@ -158,7 +158,12 @@ if($Mode -eq 'SelfTest') {
     }
     $test.first='MOJIBAKE1';$test.second='MOJIBAKE2'
     $fixed=Resolve-ExistingSnapshots $test $unicodeFolder
-    if($fixed.first -cne $p1 -or $fixed.second -cne $p2) {
+    # Windows may normalize directory casing when enumerating FileInfo.
+    # Prove the resolved files are precisely the expected raw captures.
+    if(-not [IO.File]::Exists($fixed.first) -or
+       -not [IO.File]::Exists($fixed.second) -or
+       [IO.Path]::GetFileName($fixed.first) -ne [IO.Path]::GetFileName($p1) -or
+       [IO.Path]::GetFileName($fixed.second) -ne [IO.Path]::GetFileName($p2)) {
       throw 'Existing unique same-PID snapshot recovery failed.'
     }
     Out-Status 'PASS UTF-8 Japanese JSON roundtrip and same-PID T1/T2 recovery.'
