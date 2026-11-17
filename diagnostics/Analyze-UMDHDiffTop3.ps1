@@ -19,7 +19,7 @@ function Read-DiffHeaders([string[]]$lines) {
         if (-not $m.Success) { continue }
         $value = [Convert]::ToUInt64($m.Groups[2].Value, 16)
         if ($value -gt [long]::MaxValue) {
-            throw '差分値が64ビット整数の範囲外です。ファイルは変更していません。'
+            throw 'Diff value exceeds signed 64-bit range. No files changed.'
         }
         [void]$records.Add([PSCustomObject]@{
             Index = $i
@@ -64,7 +64,7 @@ function Get-SafeModule([string]$rawName) {
 
 function Get-TopDetails([string[]]$lines, [object[]]$headers) {
     $positives = @($headers | Where-Object { $_.Sign -eq '+' })
-    if ($positives.Count -lt 3) { throw '正の差分が3件未満で、上位3件を解析できません。' }
+    if ($positives.Count -lt 3) { throw 'Fewer than three positive diff records; cannot rank top three.' }
     $top = @($positives | Sort-Object Bytes -Descending | Select-Object -First 3)
     $rank = 0
     foreach ($h in $top) {
@@ -159,16 +159,16 @@ if ($SelfTest) {
 }
 
 if (-not (Test-Path -LiteralPath $DiffPath -PathType Leaf)) {
-    throw '保存済みUMDH差分ファイルが見つかりません。再測定は不要です。'
+    throw 'Existing UMDH diff file not found; do not recapture.'
 }
 $lines = [IO.File]::ReadAllLines($DiffPath)
 $headers = @(Read-DiffHeaders $lines)
 $positiveCount = @($headers | Where-Object { $_.Sign -eq '+' }).Count
 $negativeCount = @($headers | Where-Object { $_.Sign -eq '-' }).Count
-Write-Output ('差分レコード数={0}  正={1}  負={2}' -f $headers.Count, $positiveCount, $negativeCount)
+Write-Output ('DiffRecords={0}  Positive={1}  Negative={2}' -f $headers.Count, $positiveCount, $negativeCount)
 if ($headers.Count -ne 182) {
-    Write-Warning ('過去に確認した182件と一致しません（今回は{0}件）。結果を慎重に解釈してください。' -f $headers.Count)
+    Write-Warning ('Expected 182 rows from prior probe, got {0}; interpret cautiously.' -f $headers.Count)
 }
 $details = @(Get-TopDetails $lines $headers)
 $details | Format-List | Out-String -Width 220 | Write-Output
-Write-Output '読み取り専用の解析が完了しました。録画・UST・元ファイルに変更はありません。'
+Write-Output 'Read-only analysis completed. Recorder, UST, and raw data unchanged.'
