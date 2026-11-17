@@ -33,6 +33,18 @@ Assert-Contains "'video/x-h264,alignment=au'" 'depayloader emits access units af
 Assert-Contains "'h264timestamper'" 'optional output DTS correction supported'
 Assert-Contains "C545D_DTS_GUARD" 'DTS correction rollback switch'
 Assert-Contains "Test-C545DDtsPath" 'synthetic DTS compatibility preflight'
+# H.264 decoder fixes: complete AU negotiation, avoiding duplicate SPS/PPS
+# insertion into avdec, and a reversible fallback to the unchanged path.
+Assert-Contains 'Test-C545DH264InputPath' 'synthetic RTP depay/parse/decode preflight'
+Assert-Contains 'C545D_H264_INPUT' 'H264 input guard rollback'
+Assert-Contains "''config-interval=0''" 'avoid repeated injected H264 parameter sets'
+Assert-Contains "'video/x-h264,stream-format=byte-stream,alignment=au'" 'parser outputs complete decoder access units'
+# AAC timestamp continuity before mux, with bounded audio tolerance.
+Assert-Contains 'Test-C545DAudioTimestampPath' 'synthetic AAC timestamp preflight'
+Assert-Contains 'C545D_AUDIO_TS' 'AAC timestamp rollback'
+Assert-Contains "'audiorate'" 'jitter-tolerant AAC input audio rate correction'
+Assert-Contains "'skip-to-first=true'" 'do not synthesize pre-roll audio'
+Assert-Contains "'tolerance=40000000'" 'AAC timestamp tolerance 40ms'
 # Guard discard-only audio memory bound, preserving actual AAC/video.
 Assert-Contains "'max-size-buffers=8','max-size-bytes=262144'" 'bounded discarded telephoto RTP audio queue'
 Assert-Contains "'max-size-time=250000000','leaky=downstream'" 'drop stale discarded audio'
