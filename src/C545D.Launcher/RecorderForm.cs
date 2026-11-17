@@ -318,6 +318,7 @@ namespace C545D.Recorder.Launcher
                 worker = StartScript("RecordGUIWorker.ps1", "-SessionId " + sessionId, true);
                 if (worker == null) throw new InvalidOperationException("録画プロセスを起動できません。");
                 startedAt = DateTime.Now;
+                status.ForeColor = Color.FromArgb(28, 81, 123);
                 stopRequested = stopSignalFailed = emergencyRequested = false;
                 noticed15 = noticed60 = quitAfterStop = false;
                 Log("Worker launched PID=" + worker.Id);
@@ -542,13 +543,27 @@ namespace C545D.Recorder.Launcher
                 Log("Worker exited, code=" + ec + " stopped=" + stopped);
                 stopRequested = stopSignalFailed = emergencyRequested = false;
                 ClearSessionMarkers();
-                status.Text = stopped ?
-                    "録画処理が終了しました。最後のMP4の再生可否をご確認ください。" :
-                    "録画プロセスが終了しました（終了コード " + ec + "）。ログを確認してください。";
+                if (stopped)
+                {
+                    status.Text = "録画停止処理が終了しました。最後のMP4の確定をご確認ください。";
+                }
+                else
+                {
+                    // A worker ending without the user's stop marker is NOT
+                    // a successful stop even if PowerShell returned code 0.
+                    status.Text = "録画が予期せず終了しました（終了コード " + ec +
+                        "）。録画ログをご確認ください。";
+                    status.ForeColor = Color.Firebrick;
+                    Log("UNEXPECTED_WORKER_EXIT without GUI stop; code=" + ec);
+                }
                 RefreshButtons();
-                if (quitAfterStop)
+                if (quitAfterStop && stopped)
                 {
                     quitAfterStop = false; allowExit = true; Close();
+                }
+                else if (quitAfterStop)
+                {
+                    quitAfterStop = false; // Keep an unexpected failure visible.
                 }
             }
         }
