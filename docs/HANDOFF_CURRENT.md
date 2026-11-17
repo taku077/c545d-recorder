@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## 最優先CURRENT — 2026-11-18：実機UMDH原本/差分の形式件数確認済み、差分内の対応関係を調べる
+
+- ユーザー本人が **UST解除・通常録画開始済み**と報告。録画停止、UST再ON、UMDH再Capture/Compare、再インストールは不要。
+- ユーザー実測の読み取り専用の行数：**T1** `UMDH_RAW_PID9424_T1_20261117_223501.txt` 358550行 / BackTraceを含む71882行 / OriginalHeaders 0 / SymbolLines 0 / DiffRows 0。**T2** `UMDH_RAW_PID9424_T2_20261117_230044.txt` 357535行 / BackTrace 71018 / OriginalHeaders 0 / SymbolLines 0 / DiffRows 0。**DIFF** `UMDH_RAW_DIFF_PID9424.txt` 2853行 / BackTrace 182 / OriginalHeaders 0 / **SymbolLines 2366** / DiffRows 182。
+- Microsoft公式 `Interpreting a UMDH Log`（https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-umdh-log ）により、**取得RAWがシンボル未解決なのは通常あり得る**。差分に2366行の `module!function` 形状があるため、少なくとも一部の割り当て元を解決できている。**OriginalHeaders=0は旧スクリプトが検索した`by: BackTrace...`に一致しなかっただけ**。USTスタック欠落を断定しない。
+- **従来のv5 safe summary**：182レコード、正差分693428B、負差分-736853B、純-43425B、正の上位3件380928/178176/94208B（94.2%）が `no-recognized-frames` だった。しかし原本/差分件数から、**プログラムが差分とスタックの配置・対応を正しく扱っていない疑いが強い**。測定成功/失敗をこの数値だけで断定しない。
+- **次の1操作**：同じ保存済み `UMDH_RAW_DIFF_PID9424.txt` の差分ヘッダー上位3件について、**各行の前後30行のシンボル形状行数と差分行数のみ**を読み取り専用PowerShellで集計。行本文、BackTrace ID、アドレス、関数名、個人パスは表示・共有しない。得られた前後の構造を確認するまで次のv7ツールを作らない。
+- その結果を踏まえ、必要なら既存差分ファイル内でBackTraceの対応を抽出する小さな安全パーサを一度だけ検討。Microsoft出力例：https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison と https://jpdscore.github.io/blog/debugging/UMDH/ 。原因DLL/真のメモリリークはまだ未確定。
+- 絶対パスは非公開 `taku077/c545d-recorder-internal/docs/HANDOFF_CURRENT.md` のみ保管。公開側にWindowsユーザー名は記録しない。
+
+
 ## 最新CURRENT：2026-11-18 JST — 原本UMDH照合エラー、実データ形式の安全確認へ
 
 - **ユーザーの最新実機結果**：`Resolve-ExistingUMDHBacktraces.ps1` を実行したが、155行目で `No recognized BackTrace section in offline UMDH output. No new capture required.` とエラー。`ctx.headers=0`となったという意味で、**保存済みRAW T2にスタックが存在しないとは断定できない**。
