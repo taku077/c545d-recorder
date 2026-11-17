@@ -520,14 +520,18 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
         Add-Gst @('!','h264parse','config-interval=-1','!')
     }
     if ($script:useSeiAuFilter) {
-        # Opt-in: exactly one filter on each raw RTSP branch before decoder.
-        # Force Annex B AU caps as required by the conservative byte scanner.
-        # No change to the output encoder, NTP clock, AAC or splitmuxsink.
-        # Input parser already ends with '!'. Adding another separator here
-        # produced '! !', causing gst-launch to reject the ENTIRE pipeline
-        # before decode, composition or x264 encoding could start.
-        Add-Gst @('video/x-h264,stream-format=byte-stream,alignment=au',
-                  '!','c545dseifilter','!')
+        # Opt-in. h264parse's guarded path already ends in an Annex B
+        # access-unit capsfilter and '!'. A second capsfilter immediately
+        # afterward causes GStreamer 1.28 to reject the graph:
+        # "no element video". Reuse the existing caps when guard is ON.
+        if ($script:useH264InputGuard) {
+            Add-Gst @('c545dseifilter','!')
+        } else {
+            # Legacy parser still needs to negotiate byte-stream/AU before
+            # the SEI-only buffer classifier.
+            Add-Gst @('video/x-h264,stream-format=byte-stream,alignment=au',
+                      '!','c545dseifilter','!')
+        }
     }
     Add-Gst $decoder
     Add-Gst @('!','videoconvert','!','videoscale','!')
