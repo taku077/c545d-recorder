@@ -38,6 +38,9 @@ namespace C545D.Recorder.Launcher
                 }
                 try
                 {
+                    // Inherited by the hidden private-console recording worker.
+                    // Do not pass environment variables through ShellExecuteEx.
+                    Environment.SetEnvironmentVariable("C545D_VIDEO_DECODER", "avdec");
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
                     // Stage 2: native C# WinForms controller. The tested PS/GStreamer
