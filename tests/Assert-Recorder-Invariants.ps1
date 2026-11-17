@@ -27,6 +27,12 @@ Assert-Contains "'max-size-buffers=12'" 'bounded pre-encoder queue'
 Assert-Contains "'leaky=downstream'" 'drop old frames rather than buffering indefinitely'
 Assert-Contains "'video/x-raw,format=I420,width=1280,height=720,framerate=15/1'" 'per-camera 1280x720 15fps'
 Assert-Contains "'mux.audio_0'" 'single muxed AAC audio stream'
+# Repair the known repeated H.264 decoder errors and MP4 DTS regressions without
+# changing x264 quality, RTSP clock, or replacing the known-good media backend.
+Assert-Contains "'video/x-h264,alignment=au'" 'depayloader emits access units after packet loss'
+Assert-Contains "'h264timestamper'" 'optional output DTS correction supported'
+Assert-Contains "C545D_DTS_GUARD" 'DTS correction rollback switch'
+Assert-Contains "Test-C545DDtsPath" 'synthetic DTS compatibility preflight'
 # Guard discard-only audio memory bound, preserving actual AAC/video.
 Assert-Contains "'max-size-buffers=8','max-size-bytes=262144'" 'bounded discarded telephoto RTP audio queue'
 Assert-Contains "'max-size-time=250000000','leaky=downstream'" 'drop stale discarded audio'
