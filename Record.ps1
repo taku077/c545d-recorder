@@ -452,6 +452,23 @@ $teleURL = "rtsp://${cameraIP}:554/stream6"
 $pipeline = New-Object 'System.Collections.Generic.List[string]'
 function Add-Gst([string[]]$p) { foreach ($v in $p) { [void]$pipeline.Add($v) } }
 
+# Validate command-line graph syntax BEFORE gst-launch can loop on a syntax
+# failure. Never echo the pipeline because it holds camera credentials.
+# This is a tokenizer sanity check, not a guarantee of RTSP negotiation.
+function Assert-C545DPipelineSeparators([string[]]$parts) {
+    if ($null -eq $parts -or $parts.Length -eq 0) {
+        throw 'C545D pipeline empty (no recording started).'
+    }
+    for ($idx = 0; $idx -lt $parts.Length; $idx++) {
+        if ($parts[$idx] -ne '!') { continue }
+        if ($idx -eq 0 -or $idx -eq ($parts.Length - 1) -or
+            $parts[$idx - 1] -eq '!' -or $parts[$idx + 1] -eq '!') {
+            throw ('C545D pipeline invalid element separator near token ' +
+                $idx + '; launch aborted safely (no credentials logged).')
+        }
+    }
+}
+
 Add-Gst @(
     'compositor','name=mix','background=black','ignore-inactive-pads=true',
       'sink_0::xpos=0','sink_1::xpos=1280',
@@ -506,7 +523,10 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
         # Opt-in: exactly one filter on each raw RTSP branch before decoder.
         # Force Annex B AU caps as required by the conservative byte scanner.
         # No change to the output encoder, NTP clock, AAC or splitmuxsink.
-        Add-Gst @('!','video/x-h264,stream-format=byte-stream,alignment=au',
+        # Input parser already ends with '!'. Adding another separator here
+        # produced '! !', causing gst-launch to reject the ENTIRE pipeline
+        # before decode, composition or x264 encoding could start.
+        Add-Gst @('video/x-h264,stream-format=byte-stream,alignment=au',
                   '!','c545dseifilter','!')
     }
     Add-Gst $decoder
@@ -549,6 +569,9 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
 }
 Add-Input 'cam1' $wideURL 0
 Add-Input 'cam2' $teleURL 1
+# No camera session or output file is opened if syntax is malformed.
+Assert-C545DPipelineSeparators $pipeline.ToArray()
+Write-Host 'GStreamer separator validation: PASS' -ForegroundColor Cyan
 
 # Never echo the pipeline: it includes camera credentials in memory.
 # The video graph and bounded queues are preserved; stop is now an explicit state.

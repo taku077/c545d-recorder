@@ -43,6 +43,10 @@ jobs:
         shell: powershell
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-Invariants.ps1
+      - name: Verify actual H264 camera graph token assembly and separator safety
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Assert-Recorder-GraphSyntax.ps1
       - name: Test recording exit policy without connecting cameras
         shell: powershell
         run: |

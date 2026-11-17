@@ -62,6 +62,9 @@ try {
                 $kind = ''
                 if ($line -match '(?i)\bno frame!') { $kind = 'LIBAV_NO_FRAME' }
                 elseif ($line -match '(?i)\bdecreasing DTS value\b') { $kind = 'QTMUX_DTS_BACKWARD' }
+                elseif ($line -match '(?i)(?:erroneous pipeline|syntax error|could not link|no element|could not construct pipeline|failed to parse|pipeline could not be constructed|not-negotiated|not-linked)') { $kind = 'GST_PIPELINE_ERROR' }
+                elseif ($line -match 'GStreamer returned; exitCode=') { $kind = 'GST_EXIT' }
+                elseif ($line -match 'GStreamer launching \(EOS enabled\)') { $kind = 'GST_LAUNCH' }
                 elseif ($line -match '(?i)\b(?:lost packet|packet lost|packet loss|missing packet)\b') { $kind = 'RTP_PACKET_LOSS' }
                 elseif ($line -match '(?i)\bdiscont(?:inuity)?\b') { $kind = 'DISCONTINUITY' }
                 elseif ($line -match '(?i)\b(?:invalid timestamp|timestamp jump|out.of.order|dropped frame)\b') { $kind = 'TIMESTAMP_OR_FRAME_WARNING' }
@@ -111,6 +114,10 @@ try {
                 $header = [regex]::Match($line,'^\s*\d{1,2}:\d\d:\d\d\.\d+\s+\d{1,10}\s+([0-9a-fA-F]{1,16})\s+')
                 if ($header.Success) { $thread = $header.Groups[1].Value }
                 $metric = '-'
+                if ($kind -eq 'GST_EXIT') {
+                    $m = [regex]::Match($line,'exitCode=([0-9]{1,3})')
+                    if ($m.Success) { $metric = 'exit_code=' + $m.Groups[1].Value }
+                }
                 if ($kind -eq 'QTMUX_DTS_BACKWARD') {
                     $offset = $line.IndexOf('decreasing DTS value',[StringComparison]::OrdinalIgnoreCase)
                     $tail = $line.Substring($offset)
