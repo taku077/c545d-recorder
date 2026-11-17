@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## 最新CURRENT：2026-11-18 JST — 原本UMDH照合エラー、実データ形式の安全確認へ
+
+- **ユーザーの最新実機結果**：`Resolve-ExistingUMDHBacktraces.ps1` を実行したが、155行目で `No recognized BackTrace section in offline UMDH output. No new capture required.` とエラー。`ctx.headers=0`となったという意味で、**保存済みRAW T2にスタックが存在しないとは断定できない**。
+- Microsoft公式の `umdh [options] File1` 単独ログ解析構文は正しい。問題はUMDHの標準出力/標準エラーの内容や原本T2形式が、旧 `by: BackTrace...` というパーサの予測と一致したか未検証だったこと。PR #31のWindows CIは**合成データのみ**で、実機UMDH形式を保証しない。
+- **次の1操作**：既存の `UMDH_RAW_PID9424_T1_20261117_223501.txt`、`UMDH_RAW_PID9424_T2_20261117_230044.txt`、`UMDH_RAW_DIFF_PID9424.txt` の行数・`BackTrace`行数・`by:BackTrace`行数・シンボルらしき行数・比較差分行数だけを**読み取り専用**PowerShellで計測。本文、関数、アドレス、実パス、認証情報は表示せず、集計だけ共有する。これでデータ形式を確かめる前にv7の解析ツールを推測で作らない。
+- **録画と追跡状態**：ユーザーがUST解除を実行済みと報告し、**通常録画は開始済み**。録画停止/再起動、GFlags再Enable、UMDH再Capture/Compare、追加ソフトは必要ない。UMDH RAW/差分は保存。
+- **既存解析値**：182差分、正693428B、負-736853B、正の上位3件380928/178176/94208B（正差分94.2%）、v5の`no-recognized-frames`は差分に隣接する行を見つけられなかったことしか示さない。原因ライブラリやメモリリークは未確定。
+- 優先順位：**実機の形式を確認→その形式に合う安全な原本照合**。従来の`BackTrace`を想像した連続パッチ配布を避ける。公開repoは個人名を含む絶対Windowsパスを保存しない。
+
+
 ## 最優先CURRENT（2026-11-18 JST）— 通常録画復旧済み・既存UMDH原本とのBackTrace照合待ち
 
 - **新しいユーザー確定報告**：「解除を実行して通常録画はもう開始している」。UST（GFlags +ust）はユーザーが解除操作を実行済みで、**通常録画は再開済み**。これを次回の起動確認待ちとして扱わない。録画再起動/停止・UST再有効化・再Captureを求めない。
