@@ -37,7 +37,7 @@ Assert-Contains "Test-C545DDtsPath" 'synthetic DTS compatibility preflight'
 # insertion into avdec, and a reversible fallback to the unchanged path.
 Assert-Contains 'Test-C545DH264InputPath' 'synthetic RTP depay/parse/decode preflight'
 Assert-Contains 'C545D_H264_INPUT' 'H264 input guard rollback'
-Assert-Contains "''config-interval=0''" 'avoid repeated injected H264 parameter sets'
+Assert-Contains "'config-interval=0'" 'avoid repeated injected H264 parameter sets'
 Assert-Contains "'video/x-h264,stream-format=byte-stream,alignment=au'" 'parser outputs complete decoder access units'
 # AAC timestamp continuity before mux, with bounded audio tolerance.
 Assert-Contains 'Test-C545DAudioTimestampPath' 'synthetic AAC timestamp preflight'
