@@ -75,14 +75,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='c545d-heaptrace-diagnostics-v1'
+          $tag='c545d-heaptrace-diagnostics-v2'
           $zip='dist/C545D_HeapTrace_Diagnostics_Kit.zip'
           if (-not (Test-Path -LiteralPath $zip)) { throw 'Diagnostic ZIP missing' }
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $tag $zip --repo $env:GITHUB_REPOSITORY --title 'C545D UMDH HeapTrace diagnostic kit v1 (NOT recorder EXE)' --notes 'Opt-in Windows Heap allocation diagnostic helper. Does not modify the recorder EXE or media settings. Needs separately installed Microsoft Debugging Tools for Windows x64. Read README_HEAP_TRACE_JA.md before any UST registry change. Synthetic Windows tests only; user camera/UMDH runtime not yet validated.' --prerelease --latest=false
+            gh release create $tag $zip --repo $env:GITHUB_REPOSITORY --title 'C545D UMDH HeapTrace diagnostic kit v2 (UTF-8 path recovery; NOT recorder EXE)' --notes 'Opt-in Windows Heap allocation diagnostic helper v2. Fixes Japanese path UTF-8 state decoding and recovers existing same-PID UMDH snapshots without repeating measurements. Does not modify recorder EXE or media settings. Needs separately installed Microsoft Debugging Tools for Windows x64. Read README_HEAP_TRACE_JA.md before any UST registry change. Synthetic Windows tests only; user camera/UMDH runtime not yet validated.' --prerelease --latest=false
           }
           if ($LASTEXITCODE -ne 0) { throw 'Release asset publication failed' }
           Write-Host 'PASS: direct-download HeapTrace diagnostic ZIP published'
