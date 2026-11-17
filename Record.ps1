@@ -267,6 +267,84 @@ Write-Host ('MP4 DTS guard: ' + $(if ($script:useDtsGuard) {
     'legacy path (guard absent, failed or disabled)'
 })) -ForegroundColor Cyan
 
+# The old incoming H.264 parser re-inserted SPS/PPS at EVERY IDR
+# (config-interval=-1). The submitted RTSP logs show repeated FFmpeg "no
+# frame!" errors near the camera's ~2s GOP cadence on both lenses. FFmpeg's
+# code emits that error when a packet contains no decodable slice. Avoid
+# unnecessarily injecting extra codec headers into the decoder stream.
+# An independent synthetic RTP encode/depay/parse/decode EOS test confirms
+# the new caps route is negotiable with the installed GStreamer runtime.
+# This cannot prove the physical camera emits perfect packets.
+# Set C545D_H264_INPUT=legacy before app start to restore original parser.
+function Test-C545DH264InputPath {
+    if (-not (Has-GstElement 'rtph264pay')) { return $false }
+    $test = @('-e','-q','videotestsrc','num-buffers=45','pattern=smpte',
+        '!','video/x-raw,format=I420,width=320,height=240,framerate=15/1',
+        '!','x264enc','speed-preset=ultrafast','key-int-max=30',
+        '!','h264parse','!','rtph264pay','config-interval=1',
+        '!','rtph264depay','request-keyframe=true','wait-for-keyframe=true',
+        '!','video/x-h264,alignment=au',
+        '!','h264parse','config-interval=0',
+        '!','video/x-h264,stream-format=byte-stream,alignment=au','!') +
+        @($decoder) + @('!','fakesink','sync=false')
+    $p = $null
+    try {
+        $p = Start-Process -FilePath $gst -ArgumentList ($test -join ' ') -WorkingDirectory $bin -WindowStyle Hidden -PassThru -ErrorAction Stop
+        if (-not $p.WaitForExit(12000)) {
+            try { $p.Kill() } catch { }
+            try { [void]$p.WaitForExit(1000) } catch { }
+            return $false
+        }
+        return ($p.ExitCode -eq 0)
+    } catch { return $false }
+    finally { if ($p) { try { $p.Dispose() } catch { } } }
+}
+$script:useH264InputGuard = $false
+if ($env:C545D_H264_INPUT -ne 'legacy') {
+    $script:useH264InputGuard = Test-C545DH264InputPath
+}
+Write-Host ('H264 RTP input guard: ' + $(if ($script:useH264InputGuard) {
+    'SPS/PPS reinsertion disabled; parser output AU (synthetic RTP PASS)'
+} else {
+    'legacy parser (disabled, unavailable or synthetic RTP test failed)'
+})) -ForegroundColor Cyan
+
+# AAC timestamp jitter can generate non-monotonic decode timestamps at qtmux.
+# audiorate keeps an already-decoded audio stream continuous. The 40ms
+# tolerance is the documented default; skip-to-first avoids synthesizing
+# silence prior to the first genuine RTSP sample. The element may add/drop
+# samples only where timestamps are discontinuous, so this is intentionally
+# scoped to stream1 audio, NOT either video input or output timestamp clock.
+# Set C545D_AUDIO_TS=legacy before startup to disable.
+function Test-C545DAudioTimestampPath {
+    if (-not (Has-GstElement 'audiorate')) { return $false }
+    $test = @('-e','-q','audiotestsrc','num-buffers=36','wave=sine',
+        '!','audioconvert','!','audioresample',
+        '!','audiorate','skip-to-first=true','tolerance=40000000',
+        '!',$audioCaps,'!') + @($audioEncoder) +
+        @('!','aacparse','!','mp4mux','!','fakesink','sync=false')
+    $p = $null
+    try {
+        $p = Start-Process -FilePath $gst -ArgumentList ($test -join ' ') -WorkingDirectory $bin -WindowStyle Hidden -PassThru -ErrorAction Stop
+        if (-not $p.WaitForExit(12000)) {
+            try { $p.Kill() } catch { }
+            try { [void]$p.WaitForExit(1000) } catch { }
+            return $false
+        }
+        return ($p.ExitCode -eq 0)
+    } catch { return $false }
+    finally { if ($p) { try { $p.Dispose() } catch { } } }
+}
+$script:useAudioTimestampGuard = $false
+if ($env:C545D_AUDIO_TS -ne 'legacy') {
+    $script:useAudioTimestampGuard = Test-C545DAudioTimestampPath
+}
+Write-Host ('AAC timestamp guard: ' + $(if ($script:useAudioTimestampGuard) {
+    'audiorate 40ms (synthetic AAC/MP4 PASS)'
+} else {
+    'legacy audio timestamp path'
+})) -ForegroundColor Cyan
+
 Write-Host "Audio: stream1 only, AAC mono 48kHz 192kbps target via $audioEncoderLabel [synthetic MP4 check PASS]" -ForegroundColor Cyan
 Write-Host "Decoder: $decoderLabel" -ForegroundColor Cyan
 # Long-running CPU-growth guard.  A fall-back switch is provided for a clean
@@ -366,10 +444,15 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
       '!','queue','max-size-buffers=300','max-size-bytes=8388608',
           'max-size-time=2000000000',
       '!','rtph264depay','request-keyframe=true','wait-for-keyframe=true',
-      # Force AU output from the depayloader, enabling its documented
-      # wait-for-keyframe recovery after RTP packet loss.
-      '!','video/x-h264,alignment=au',
-      '!','h264parse','config-interval=-1','!')
+      # Keep RTP packet-loss recovery in AU mode.
+      '!','video/x-h264,alignment=au')
+    if ($script:useH264InputGuard) {
+        # Do not add duplicate SPS/PPS at every keyframe; output whole AUs.
+        Add-Gst @('!','h264parse','config-interval=0',
+                  '!','video/x-h264,stream-format=byte-stream,alignment=au','!')
+    } else {
+        Add-Gst @('!','h264parse','config-interval=-1','!')
+    }
     Add-Gst $decoder
     Add-Gst @('!','videoconvert','!','videoscale','!')
     Add-Gst $script:videoRateArgs
@@ -387,8 +470,12 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
               '!','queue','max-size-buffers=400','max-size-bytes=4194304',
                   'max-size-time=3000000000','leaky=downstream',
               '!','decodebin',
-              '!','audioconvert','!','audioresample',
-              '!',$audioCaps,'!')
+              '!','audioconvert','!','audioresample')
+        if ($script:useAudioTimestampGuard) {
+            Add-Gst @('!','audiorate','skip-to-first=true',
+                      'tolerance=40000000')
+        }
+        Add-Gst @('!',$audioCaps,'!')
         Add-Gst $audioEncoder
         Add-Gst @('!','aacparse','!','mux.audio_0')
     }
