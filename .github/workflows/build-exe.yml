@@ -49,7 +49,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $bundle = 'dist/C545D_Recorder'
           New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','README.txt')
+          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','README.txt')
           foreach ($item in $required) {
             if (-not (Test-Path -LiteralPath $item -PathType Leaf)) { throw "Missing $item" }
             Copy-Item -LiteralPath $item -Destination $bundle -Force
@@ -83,6 +83,37 @@ jobs:
             throw 'Diagnostics launcher must not kill recording or delete files'
           }
           Write-Host 'PASS: opt-in diagnostics shipped with per-process log isolation'
+      - name: Verify safe diagnostic ZIP export with synthetic credentials (no camera)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Join-Path $env:RUNNER_TEMP 'fake C545D logs'
+          $dst=Join-Path $env:RUNNER_TEMP 'safe C545D downloads'
+          New-Item -ItemType Directory -Force -Path $src,$dst | Out-Null
+          $raw=@'
+          0:00:40.570391500 12596 10556 ERROR libav :0:: no frame!
+          0:00:40.325344600 12596 12484 ERROR qtmux gstqtmux.c:5627: decreasing DTS value 0:00:37.225127817 < 0:00:37.235009266
+          0:00:42.1 12596 DEBUG rtph264depay user-pw=SUPER_TEST_SECRET_923 rtsp://camerauser:SUPER_TEST_SECRET_923@192.0.2.123:554/stream1
+          0:00:43.1 12596 WARN rtpjitterbuffer authorization Basic c3VwZXJzZWNyZXQ=
+          '@
+          [IO.File]::WriteAllText((Join-Path $src 'GST_DIAG_123_456.log'),$raw)
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'Export-SafeDiagnostics.ps1' -LogsDirectory $src -OutputDirectory $dst
+          if ($LASTEXITCODE -ne 0) { throw "Safe export returned $LASTEXITCODE" }
+          $zip=Get-ChildItem -LiteralPath $dst -Filter 'C545D_SAFE_DIAGNOSTICS_*.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'Sanitized ZIP not produced' }
+          $unpack=Join-Path $env:RUNNER_TEMP 'safe C545D unpacked'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $unpack -Force
+          $events=[IO.File]::ReadAllText((Join-Path $unpack 'media_events.tsv'))
+          $summary=[IO.File]::ReadAllText((Join-Path $unpack 'summary.txt'))
+          if ($events -notmatch 'LIBAV_NO_FRAME' -or $events -notmatch 'QTMUX_DTS_BACKWARD') {
+            throw 'Essential sanitized diagnostic events were lost'
+          }
+          $combined=$events+$summary
+          foreach ($secret in @('SUPER_TEST_SECRET_923','camerauser','192.0.2.123','c3VwZXJzZWNyZXQ=','user-pw','authorization')) {
+            if ($combined -match [regex]::Escape($secret)) { throw "Secret leaked in safe export" }
+          }
+          if ($combined -match 'rtsp://|[A-Z]:\\') { throw 'Raw path/URI leaked in safe export' }
+          Write-Host 'PASS: schema-only safe ZIP retains media error evidence and excludes credentials'
       - name: Smoke-test native WinForms startup (no camera)
         shell: powershell
         run: |
