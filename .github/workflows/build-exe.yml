@@ -223,7 +223,7 @@ jobs:
           if ($rec -notmatch 'if \(\$script:useSeiAuFilter\)') { throw 'AU guard not conditional' }
           $test=[IO.File]::ReadAllText('dist/C545D_Recorder/START_SEI_FILTER_DIAGNOSTIC.cmd')
           if ($test -notmatch 'C545D_SEI_AU_FILTER=on') { throw 'Trial launcher missing' }
-          Write-Host 'PASS: opt-in only; no modification to normal recorder launch'
+          Write-Host 'PASS: GStreamer filter stays conditional with EXE-controlled ON/OFF, and trial CMD remains compatible'
       - name: Smoke-test native WinForms startup (no camera)
         shell: powershell
         run: |
@@ -241,10 +241,31 @@ jobs:
           }
           if ($process.ExitCode -ne 0) { throw "Native EXE exit code: $($process.ExitCode)" }
           if (-not (Test-Path $env:C545D_NATIVE_SMOKE_OUTPUT)) { throw 'Native WinForms did not initialize' }
-          if ((Get-Content $env:C545D_NATIVE_SMOKE_OUTPUT -Raw).Trim() -ne 'PASS NATIVE WINFORMS') {
-            throw 'Native WinForms startup marker unexpected'
+          if ((Get-Content $env:C545D_NATIVE_SMOKE_OUTPUT -Raw).Trim() -ne 'PASS NATIVE WINFORMS;SEI=on') {
+            throw 'Direct EXE must default SEI filter ON'
           }
-          Write-Host 'PASS: Native WinForms startup in Japanese path (no RTSP, no camera)'
+          # Explicit opt-out must remain available without extra CMD launchers.
+          $env:C545D_SEI_AU_FILTER = 'off'
+          Remove-Item $env:C545D_NATIVE_SMOKE_OUTPUT -Force
+          $fallback = Start-Process -FilePath $launcher -ArgumentList '--smoke' -WorkingDirectory $smokeDir -PassThru
+          if (-not $fallback.WaitForExit(15000)) {
+            try { $fallback.Kill() } catch {}
+            throw 'Native SEI OFF fallback smoke timed out'
+          }
+          if ($fallback.ExitCode -ne 0 -or
+              (Get-Content $env:C545D_NATIVE_SMOKE_OUTPUT -Raw).Trim() -ne 'PASS NATIVE WINFORMS;SEI=off') {
+            throw 'Native fallback must preserve SEI OFF'
+          }
+          Remove-Item Env:C545D_SEI_AU_FILTER -ErrorAction SilentlyContinue
+          $ui=[IO.File]::ReadAllText('src/C545D.Launcher/RecorderForm.cs')
+          if ($ui -notmatch 'Log\("SEI-only AU filter requested=" \+ seiMode') { throw 'SEI choice not logged' }
+          if ($ui -notmatch 'ApplySeiFilterChoice\(\);[\s\S]*?StartScript\("RecordGUIWorker.ps1"') {
+            throw 'SEI environment choice must be applied before launching recorder worker'
+          }
+          if (-not (Test-Path 'dist/C545D_Recorder/plugins/gstc545dsei.dll')) {
+            throw 'Native default ON requires bundled SEI plugin DLL'
+          }
+          Write-Host 'PASS: Direct EXE defaults SEI ON; OFF fallback works, ZIP includes DLL (no camera)'
       - name: Check DPAPI settings bridge round trip with synthetic data
         shell: powershell
         run: |

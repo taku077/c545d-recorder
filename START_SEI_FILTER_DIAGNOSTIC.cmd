@@ -1,6 +1,7 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Opt-in C545D H264 SEI-only AU filter candidate. Normal EXE stays OFF.
+rem Legacy diagnostic entry: forces SEI filter ON plus verbose GST_DEBUG.
+rem Current native EXE already defaults to SEI ON without verbose GST_DEBUG.
 rem First stop the old recorder using its usual GUI EOS button.
 if not exist "%~dp0plugins\gstc545dsei.dll" (
   echo Optional native H264 filter DLL is absent. No test was started.

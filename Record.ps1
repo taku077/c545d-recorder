@@ -355,7 +355,7 @@ Write-Host ('SEI-only AU filter: ' + $(if ($script:useSeiAuFilter) {
 } elseif ($script:seiFilterRequested) {
     'UNAVAILABLE (legacy path; DLL absent or synthetic preflight failed)'
 } else {
-    'OFF (default; unchanged decoding path)'
+    'OFF (legacy path or GUI unchecked)'
 })) -ForegroundColor Cyan
 
 # AAC timestamp jitter can generate non-monotonic decode timestamps at qtmux.
