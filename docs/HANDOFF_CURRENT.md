@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 JST — UMDH上位3スタックの実機解析成功：isomp4 MP4 mux経路、原因は未確定
+
+- ユーザーの **最新の実機PowerShell出力**：`ByteDeltaRecords=91 Positive=27 Negative=64`, `CountDeltaRows=91`, `AllSignedHeaderRows=182`。**182は91個のByte/Count差分ペア**であり、これまでの`parsed_backtraces=182`と、量と件数の混合集計`parsed_net_delta_bytes=-43425`はメモリ純増減として**無効**。過去の正差分693428BもCountDeltaが混じったため要訂正。
+- ByteDeltaの上位3件 (1) +380928 B line 124–144、(2) +178176 B line 145–165、(3) +94208 B line 166–186。**3件全て同じ** SymbolLines17 / WindowsFrames6 / MediaFrames11 / OtherFrames0 / MediaModules=`glib-2.0-0, gstisomp4, gstbase-1.0-0, gstreamer-1.0-0`。上位3件合計 +653312 B。これらは正確なByteDelta値。
+- 公開レコーダーソース `Record.ps1` を再確認：`splitmuxsink name=mux max-size-time=3600000000000 async-finalize=false send-keyframe-requests=true`。明示的な muxer 変更はなく、GStreamer `splitmuxsink`公式既定は`mp4mux`。**実際のユーザー実行RC35 EXEと公開ソースがバイト一致する検証は行っていない**が、現行ソースのMP4 muxing経路と今回のgstisomp4スタックは整合。
+- GStreamer公式qtmuxソース：https://github.com/GStreamer/gst-plugins-good/blob/master/gst/isomp4/gstqtmux.c は、通常MP4がEOS時にmoov/sample tablesを書き、完成までテーブルを増やし得ると明記。**最優先仮説**は正常なMP4サンプル/インデックス情報の一時蓄積。`gstisomp4`が共通だからといってプラグインの解放漏れと断定しない。代替はmuxerがファイル切替後にも保持し続けるリーク。
+- **次に判定すべきこと**：同じgst-launch PIDで、各1時間MP4の切替直後（例：5分後）を連続2〜3セグメントの同条件で比較し、PrivateMemoryと必要に応じてWorkingSetが平衡/再利用されるか確認する。ファイル切替の一時的な増減だけでは判定不可：正常にfreeされてもヒープがOSに即座に返されないことがある。録画を止めず、UST OFF維持、再Captureしない。**単一25.54分のUMDH差分では真のリーク未確定**。
+- 解析の次順位として、保存済み差分の上位3スタック内の**許可済みgstisomp4関数の種別**を調べれば、サンプルテーブル追加経路か別処理か判別可能。ただし個人名・アドレス・RAWスタックの提出を求めず、コードを無理に変更しない。
+- 事実/仮説の区別：観測値=91組、上位3 +653312B、同一モジュール群；仮説=moov/index一時蓄積。レコーダー/GUI/入力RTSP/時刻同期/エンコード品質/分割設定はいじらない。
+
+
 ## CURRENT — 2026-11-18: UMDH 2-line record format explains blank top-three stack output
 
 - ユーザーが実機で完全版 top3 parser を実行した結果：Rank1 380928B StartLine=124 EndLine=124; Rank2 178176B StartLine=145 EndLine=145; Rank3 94208B StartLine=166 EndLine=166; 3件とも SymbolLines=0 / MediaModules=none。録画は通常継続、UST OFF。
