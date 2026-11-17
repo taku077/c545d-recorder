@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 JST — 完全版 UMDH 91/182境界解析を実装しWindows PS5.1 CI合格、実機出力待ち
+
+- ユーザーの最後の実機エラーは`差分レコード数が想定と異なります: 91`。先行の緩いヘッダー検出では182件。旧PowerShellの正規表現は`allocs BackTrace`を必須としていたため一部形式を取りこぼした可能性。元ログ破損は示さない。
+- **新コード**：公開repo `diagnostics/Analyze-UMDHDiffTop3.ps1` [PR #37](https://github.com/taku077/c545d-recorder/pull/37) **mainマージ済み**。緩い差分ヘッダー正負両認識、上位3件を次の正負いずれかのヘッダーで区切り、許可済みメディアDLL名と安全な件数のみ表示。固定182件不一致は警告するが即終了しない。録画/GFlags/UST/RAW変更なし。
+- **Windows CI確定**：Windows PowerShell 5.1構文/サンプル182レコード（正91・負91、`allocs`半分のみ）/上位3順位/ブロック分離/個人識別文字列の出力排除のSelfTest **PASS**。workflow [44125638221](https://github.com/taku077/c545d-recorder/actions/runs/44125638221) と [44125638533](https://github.com/taku077/c545d-recorder/actions/runs/44125638533)成功。**実機UMDHの差分分類はまだ実行結果を受領していない**。
+- 初回CIではBOMなし日本語.ps1がPowerShell 5.1で誤認識されsyntax error。修正して**PS1本体をASCII限定**にし再CI成功。今後BOMなし日本語スクリプトを安易に配布しない。日本語READMEは別ファイル。
+- **現在のチャットの提供物**：`C545D_UMDH_Top3_Fixed_20261118.zip`（PowerShellスクリプトと日本語README）。ローカル生成ZIP CRC PASS、PS1はGitHub版と同じ文字数・ASCIIで確認。別チャットでは旧sandboxリンクを推測せず、必要なら実在するファイルを再生成・確認する。
+- **次のユーザー操作**：ZIPを展開したフォルダーから `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Analyze_UMDH_Top3_Fixed.ps1" -SelfTest`、成功後同じコマンドから`-SelfTest`を除いて既存 `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\UMDH_RAW_DIFF_PID9424.txt`を解析。**出力は安全な件数・許可済みDLL名のみ**なのでそのテキストをこのチャットへ貼付。元UMDH RAW/DIFF全文の提出不要。
+- ユーザー報告でUST解除・通常録画再開済み。再Capture/再UMDH比較/録画停止/UST再ONは要求しない。メモリリークの原因は未確定。前回までのブロック±30行集計は隣のレコードの混入を起こすので再実行しない。
+
+
 ## CURRENT 2026-11-18 — PowerShell差分ヘッダー正規表現の誤検出：91件
 
 - ユーザーの実行結果：提示したread-onlyの差分ブロック抽出コードが `差分レコード数が想定と異なります: 91` で中断。これは**元UMDHログが欠損した証拠ではない**。従来のより緩い解析条件では182件検出していた。直前コードのヘッダー正規表現 `...\ballocs\s+BackTrace...` が余分な固定条件となり、一部の行を落とした可能性が高い。
