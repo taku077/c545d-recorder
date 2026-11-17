@@ -3,10 +3,10 @@
 # which would contact a real camera. The same tokens are sent to gst-launch.
 param(
   [Parameter(Mandatory=$true)][string]$OutputPath,
-  [bool]$SeiFilter = $true,
-  [bool]$H264InputGuard = $true,
-  [bool]$AudioTsGuard = $true,
-  [bool]$DtsGuard = $true
+  [int]$SeiFilter = $true,
+  [int]$H264InputGuard = $true,
+  [int]$AudioTsGuard = $true,
+  [int]$DtsGuard = $true
 )
 $ErrorActionPreference='Stop'
 $source=[IO.File]::ReadAllText((Join-Path (Split-Path -Parent $PSScriptRoot) 'Record.ps1'))
@@ -26,10 +26,10 @@ $node=$ast.Find({ param($n)
 },$true)
 if (-not $node) { throw 'Production Gst-Value missing' }
 . ([scriptblock]::Create($node.Extent.Text))
-$script:useDtsGuard=$DtsGuard
-$script:useH264InputGuard=$H264InputGuard
-$script:useSeiAuFilter=$SeiFilter
-$script:useAudioTimestampGuard=$AudioTsGuard
+$script:useDtsGuard=($DtsGuard -ne 0)
+$script:useH264InputGuard=($H264InputGuard -ne 0)
+$script:useSeiAuFilter=($SeiFilter -ne 0)
+$script:useAudioTimestampGuard=($AudioTsGuard -ne 0)
 $script:rtspDriftArgs=@('max-ts-offset-adjustment=1000000')
 $script:videoRateArgs=@('videorate','max-duplication-time=300000000','skip-to-first=true')
 $pattern='C:\synthetic\recording_%05d.mp4'
