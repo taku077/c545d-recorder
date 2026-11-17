@@ -7,9 +7,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# Intentionally uses the same broad prefix as the user's successful 182-row
-# probe. Do NOT require the word "allocs" (different header variations exist).
-$headerRx = [regex]'(?i)^\s*([+-])\s+(?:0x)?([0-9a-f]{1,16})\s+\('
+# UMDH emits TWO signed headers per trace: a byte delta followed by an
+# allocation-count delta. Only the first ('allocs BackTrace') starts a stack.
+# The broad pattern also matches count-delta headers and made zero-length blocks.
+$headerRx = [regex]'(?i)^\s*([+-])\s+(?:0x)?([0-9a-f]{1,16})\s+\([^)]*\).*?\ballocs\s+BackTrace[0-9a-f]+\b'
+$countRx = [regex]'(?i)^\s*[+-]\s+(?:0x)?[0-9a-f]{1,16}\s+\([^)]*\).*?BackTrace[0-9a-f]+\s+allocations\b'
+$allSignedRx = [regex]'(?i)^\s*[+-]\s+(?:0x)?[0-9a-f]{1,16}\s+\('
 $symbolRx = [regex]'(?i)(?<![a-z0-9_.-])([a-z][a-z0-9_.-]{1,63})!\S'
 
 function Read-DiffHeaders([string[]]$lines) {
@@ -115,16 +118,16 @@ function Get-TopDetails([string[]]$lines, [object[]]$headers) {
 }
 
 if ($SelfTest) {
-    # 182 mixed records, deliberately only 91 with an "allocs" token:
-    # previous overconstrained regular expression would have lost half.
+    # Simulates real UMDH: 91 logical stacks -> 182 signed header lines:
+    # byte delta + count delta followed by 1+ symbol frames.
     $sample = New-Object 'System.Collections.Generic.List[string]'
-    for ($i = 0; $i -lt 182; $i++) {
+    for ($i = 0; $i -lt 91; $i++) {
         $plus = (($i % 2) -eq 0)
         $sign = if ($plus) { '+' } else { '-' }
-        $unit = if ($plus) { 'allocs' } else { 'frees' }
         $size = if ($i -eq 0) { 380928L } elseif ($i -eq 2) { 178176L } elseif ($i -eq 4) { 94208L } else { 8L }
         $hex = $size.ToString('x')
-        [void]$sample.Add(('{0} {1} ({1} - 0) 1 {2} BackTrace{3:x5}' -f $sign, $hex, $unit, $i))
+        [void]$sample.Add(('{0} {1} ({1} - 0) 1 allocs BackTrace{2:x5}' -f $sign, $hex, $i))
+        [void]$sample.Add(('{0} 1 (1 - 0) BackTrace{1:x5} allocations' -f $sign, $i))
         if ($i -eq 0) {
             [void]$sample.Add('ntdll!HeapAlloc')
             [void]$sample.Add('gstvideoparsersbad!frame')
@@ -137,24 +140,30 @@ if ($SelfTest) {
             [void]$sample.Add('kernelbase!HeapFree')
         }
     }
-    $headers = @(Read-DiffHeaders ($sample.ToArray()))
+    $array = $sample.ToArray()
+    $headers = @(Read-DiffHeaders $array)
     $positiveCount = @($headers | Where-Object { $_.Sign -eq '+' }).Count
     $negativeCount = @($headers | Where-Object { $_.Sign -eq '-' }).Count
-    if ($headers.Count -ne 182 -or $positiveCount -ne 91 -or $negativeCount -ne 91) {
-        throw 'SELFTEST FAILED: positive/negative records not both detected.'
+    $countRows = @($array | Where-Object { $countRx.IsMatch($_) }).Count
+    $allSigned = @($array | Where-Object { $allSignedRx.IsMatch($_) }).Count
+    if ($headers.Count -ne 91 -or $positiveCount -ne 46 -or
+        $negativeCount -ne 45 -or $countRows -ne 91 -or $allSigned -ne 182) {
+        throw 'SELFTEST FAILED: two-line headers must be grouped as one logical trace.'
     }
-    $result = @(Get-TopDetails ($sample.ToArray()) $headers)
+    $result = @(Get-TopDetails $array $headers)
     if ($result.Count -ne 3 -or
         $result[0].DeltaBytes -ne 380928 -or
         $result[1].DeltaBytes -ne 178176 -or
         $result[2].DeltaBytes -ne 94208 -or
+        $result[0].EndLine -le $result[0].StartLine -or
+        $result[0].SymbolLines -lt 2 -or
         $result[0].MediaModules -notmatch 'gstvideoparsersbad' -or
         $result[0].MediaModules -match 'avcodec|PRIVATE|private-name' -or
         $result[1].MediaModules -notmatch 'libavcodec-61' -or
         $result[2].MediaModules -notmatch 'glib-2.0-0') {
-        throw 'SELFTEST FAILED: block boundaries / allowlist classification.'
+        throw 'SELFTEST FAILED: top-three paired boundaries / safe classification.'
     }
-    Write-Output 'PASS: 182 mixed headers, strict block boundaries, three ranks, safe module allowlist.'
+    Write-Output 'PASS: 91 byte records + 91 count rows, top 3 stack blocks nonempty, safe modules.'
     exit 0
 }
 
@@ -165,9 +174,12 @@ $lines = [IO.File]::ReadAllLines($DiffPath)
 $headers = @(Read-DiffHeaders $lines)
 $positiveCount = @($headers | Where-Object { $_.Sign -eq '+' }).Count
 $negativeCount = @($headers | Where-Object { $_.Sign -eq '-' }).Count
-Write-Output ('DiffRecords={0}  Positive={1}  Negative={2}' -f $headers.Count, $positiveCount, $negativeCount)
-if ($headers.Count -ne 182) {
-    Write-Warning ('Expected 182 rows from prior probe, got {0}; interpret cautiously.' -f $headers.Count)
+$countRows = @($lines | Where-Object { $countRx.IsMatch($_) }).Count
+$allSigned = @($lines | Where-Object { $allSignedRx.IsMatch($_) }).Count
+Write-Output ('ByteDeltaRecords={0}  Positive={1}  Negative={2}' -f $headers.Count, $positiveCount, $negativeCount)
+Write-Output ('CountDeltaRows={0}  AllSignedHeaderRows={1}' -f $countRows, $allSigned)
+if ($headers.Count -ne $countRows) {
+    Write-Warning 'Byte/count header counts differ. Treat top3 findings as provisional.'
 }
 $details = @(Get-TopDetails $lines $headers)
 $details | Format-List | Out-String -Width 220 | Write-Output
