@@ -1,3 +1,23 @@
+## v4：既存UMDH差分から割り当て元を追加抽出（2026-11-17）
+
+ユーザー提出の `C545D_HEAP_SAFE_REPORT_PID9424.zip` は、PID9424の実機Compareに成功し、25.54分のPrivate Memory 632.28→633.43MB、`parsed_backtraces=182`、UMDH差分 `parsed_net_delta_bytes=-43425` を報告。ただし上位30件が **すべて `first_dll=unknown`** で、原因DLLは未特定。
+
+旧版の抽出ロジックは **`.dll!` が付く表記だけ**を探していた。しかしMicrosoft UMDH解説では `ntdll!RtlAllocateHeap` や `MyApp!Function` と表示され、`.dll` とは限らない。今回の `unknown` は抽出仕様による可能性がある。実機RAW差分は未提出のため、実際にシンボルが含まれるか未確認。
+
+v4キットに `Reanalyze-HeapDiff.ps1` を追加。保存済みRAW差分だけをローカルで解析する独立スクリプトで、UMDH再起動・再Capture・録画停止・管理者権限・追加ソフトは不要。
+
+通常権限PowerShellでv4を展開したフォルダーから1回実行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Reanalyze-HeapDiff.ps1" -TargetPid 9424
+```
+
+結果：`%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_HEAP_SAFE_REPORT_PID9424_V2.zip`。**新しいZIPのみ**チャットに提出（V2はレポートスキーマ、診断キットはv4）。`UMDH_RAW*` / `.stderr.txt` / 生スタック・ローカルパスは共有しない。
+
+安全出力は既知のGStreamer/GLib/FFmpeg等のモジュール識別子に制限し、未知の名前は`other-module`/`unknown`と記載。モジュール識別だけでリーク原因の証明にはならない。シンボル未解決なら`unknown`が残る。`parsed_net_delta_bytes`は検出BackTraceの符号付き合計でPrivate Memoryそのものではない。
+
+公式：https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison
+
 ## v3: Compare時に「Warning: The -v switch is obsolete」で止まる場合（2026-11-17）
 
 旧v2では、実在するT1/T2の発見・復旧後、UMDHの実行まで進んでも、
