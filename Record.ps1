@@ -217,6 +217,44 @@ if ($null -eq $audioChoice) {
 $audioEncoderLabel = $audioChoice.Name
 $audioEncoder = @($audioChoice.Args)
 $audioCaps = $audioChoice.Caps
+
+# Correct MP4 timestamp anomalies without touching the live recording/files.
+# GStreamer h264timestamper derives DTS from the encoded H.264 SPS reordering
+# data. Only after x264, not on either incoming RTSP stream. A synthetic
+# B-frame + mp4mux EOS test chooses the guard safely at each normal startup.
+# If unavailable/fails, fall back to previous path. C545D_DTS_GUARD=off rolls back.
+function Test-C545DDtsPath {
+    if (-not (Has-GstElement 'h264timestamper')) { return $false }
+    $args = @('-e','-q','videotestsrc','num-buffers=45','pattern=ball',
+        '!','video/x-raw,format=I420,width=320,height=240,framerate=15/1',
+        '!','x264enc','speed-preset=ultrafast','bframes=3','key-int-max=15',
+        '!','h264parse','!','h264timestamper',
+        '!','mp4mux','!','fakesink','sync=false')
+    $p = $null
+    try {
+        $p = Start-Process -FilePath $gst -ArgumentList ($args -join ' ') -WorkingDirectory $bin -WindowStyle Hidden -PassThru -ErrorAction Stop
+        if (-not $p.WaitForExit(15000)) {
+            try { $p.Kill() } catch { }
+            try { [void]$p.WaitForExit(2000) } catch { }
+            return $false
+        }
+        return ($p.ExitCode -eq 0)
+    } catch {
+        return $false
+    } finally {
+        if ($p) { try { $p.Dispose() } catch { } }
+    }
+}
+$script:useDtsGuard = $false
+if ($env:C545D_DTS_GUARD -ne 'off') {
+    $script:useDtsGuard = Test-C545DDtsPath
+}
+Write-Host ('MP4 DTS guard: ' + $(if ($script:useDtsGuard) {
+    'h264timestamper (synthetic test PASS)'
+} else {
+    'legacy path (guard absent, failed or disabled)'
+})) -ForegroundColor Cyan
+
 Write-Host "Audio: stream1 only, AAC mono 48kHz 192kbps target via $audioEncoderLabel [synthetic MP4 check PASS]" -ForegroundColor Cyan
 Write-Host "Decoder: $decoderLabel" -ForegroundColor Cyan
 # Long-running CPU-growth guard.  A fall-back switch is provided for a clean
@@ -287,7 +325,12 @@ Add-Gst @(
         'max-size-time=0','leaky=downstream',
     '!','x264enc','pass=qual','quantizer=24','bitrate=15000',
          'speed-preset=medium','key-int-max=30','bframes=3','rc-lookahead=10',
-    '!','video/x-h264,profile=high','!','h264parse',
+    '!','video/x-h264,profile=high','!','h264parse'
+)
+# Correct DTS for the one H.264 stream after encoding; do not alter input RTSP
+# NTP/PTS mapping, x264's B-frame count, or the recorded stream's quality.
+if ($script:useDtsGuard) { Add-Gst @('!','h264timestamper') }
+Add-Gst @(
     # Targeted experiment 2026-11-15: synchronous MP4 finalize avoids creating a
     # detached muxer/sink pair on every hourly fragment. Does NOT prove or fix
     # the separate continuous Heap growth. Verify possible pause at each split.
@@ -311,6 +354,9 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
       '!','queue','max-size-buffers=300','max-size-bytes=8388608',
           'max-size-time=2000000000',
       '!','rtph264depay','request-keyframe=true','wait-for-keyframe=true',
+      # Force AU output from the depayloader, enabling its documented
+      # wait-for-keyframe recovery after RTP packet loss.
+      '!','video/x-h264,alignment=au',
       '!','h264parse','config-interval=-1','!')
     Add-Gst $decoder
     Add-Gst @('!','videoconvert','!','videoscale','!')
