@@ -58,6 +58,20 @@ $bin = Find-GstBin
 $gst = Join-Path $bin 'gst-launch-1.0.exe'
 $inspect = Join-Path $bin 'gst-inspect-1.0.exe'
 $env:PATH = "$bin;$env:PATH"
+# Opt-in ONLY: native GStreamer SEI-only AU filter candidate. It lives in the
+# recorder ZIP's private plugins folder and never modifies installed GStreamer.
+# Normal EXE / normal diagnostics leave this flag off. A controlled test uses
+# START_SEI_FILTER_DIAGNOSTIC.cmd; requires installed GStreamer 1.28.x ABI.
+$script:seiFilterRequested = ($env:C545D_SEI_AU_FILTER -eq 'on')
+$script:seiPluginDirectory = Join-Path $PSScriptRoot 'plugins'
+$script:seiPluginDll = Join-Path $script:seiPluginDirectory 'gstc545dsei.dll'
+if ($script:seiFilterRequested -and (Test-Path -LiteralPath $script:seiPluginDll -PathType Leaf)) {
+    if ($env:GST_PLUGIN_PATH_1_0) {
+        $env:GST_PLUGIN_PATH_1_0 = $script:seiPluginDirectory + ';' + $env:GST_PLUGIN_PATH_1_0
+    } else {
+        $env:GST_PLUGIN_PATH_1_0 = $script:seiPluginDirectory
+    }
+}
 # Capture the runtime version only at startup for correlating known GStreamer
 # memory fixes. No network connection, camera credentials, or pipeline edits.
 $originalPreference = $ErrorActionPreference
@@ -309,6 +323,41 @@ Write-Host ('H264 RTP input guard: ' + $(if ($script:useH264InputGuard) {
     'legacy parser (disabled, unavailable or synthetic RTP test failed)'
 })) -ForegroundColor Cyan
 
+# Preflight must pass in the installed GStreamer runtime. This is not a
+# camera test and does not certify picture/SEI metadata correctness.
+function Test-C545DSeiFilterPath {
+    if (-not (Test-Path -LiteralPath $script:seiPluginDll -PathType Leaf)) { return $false }
+    if (-not (Has-GstElement 'c545dseifilter')) { return $false }
+    $test = @('-e','-q','videotestsrc','num-buffers=30',
+        '!','video/x-raw,format=I420,width=320,height=240,framerate=15/1',
+        '!','x264enc','speed-preset=ultrafast',
+        '!','h264parse',
+        '!','video/x-h264,stream-format=byte-stream,alignment=au',
+        '!','c545dseifilter','!') + @($decoder) + @('!','fakesink','sync=false')
+    $p = $null
+    try {
+        $p = Start-Process -FilePath $gst -ArgumentList ($test -join ' ') -WorkingDirectory $bin -WindowStyle Hidden -PassThru -ErrorAction Stop
+        if (-not $p.WaitForExit(12000)) {
+            try { $p.Kill() } catch { }
+            try { [void]$p.WaitForExit(1000) } catch { }
+            return $false
+        }
+        return ($p.ExitCode -eq 0)
+    } catch { return $false }
+    finally { if ($p) { try { $p.Dispose() } catch { } } }
+}
+$script:useSeiAuFilter = $false
+if ($script:seiFilterRequested) {
+    $script:useSeiAuFilter = Test-C545DSeiFilterPath
+}
+Write-Host ('SEI-only AU filter: ' + $(if ($script:useSeiAuFilter) {
+    'ON (experimental; metadata-only buffers excluded before decode)'
+} elseif ($script:seiFilterRequested) {
+    'UNAVAILABLE (legacy path; DLL absent or synthetic preflight failed)'
+} else {
+    'OFF (default; unchanged decoding path)'
+})) -ForegroundColor Cyan
+
 # AAC timestamp jitter can generate non-monotonic decode timestamps at qtmux.
 # audiorate keeps an already-decoded audio stream continuous. The 40ms
 # tolerance is the documented default; skip-to-first avoids synthesizing
@@ -452,6 +501,13 @@ function Add-Input([string]$name,[string]$url,[int]$side) {
                   '!','video/x-h264,stream-format=byte-stream,alignment=au','!')
     } else {
         Add-Gst @('!','h264parse','config-interval=-1','!')
+    }
+    if ($script:useSeiAuFilter) {
+        # Opt-in: exactly one filter on each raw RTSP branch before decoder.
+        # Force Annex B AU caps as required by the conservative byte scanner.
+        # No change to the output encoder, NTP clock, AAC or splitmuxsink.
+        Add-Gst @('!','video/x-h264,stream-format=byte-stream,alignment=au',
+                  '!','c545dseifilter','!')
     }
     Add-Gst $decoder
     Add-Gst @('!','videoconvert','!','videoscale','!')
