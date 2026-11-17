@@ -130,6 +130,37 @@ if($Mode -eq 'SelfTest') {
        throw 'Safe diff self-test failed'
     }
     Out-Status 'PASS safe UMDH parser and synthetic credential exclusion.'
+    # Japanese user profile paths are written as BOM-less UTF-8. Windows
+    # PowerShell 5.1 must read the JSON with explicit UTF-8, not ANSI.
+    $unicodeName=[string][char]0x4fdd + [string][char]0x7ba1
+    $unicodeRoot=Join-Path $dir $unicodeName
+    New-Item -ItemType Directory -Path $unicodeRoot -Force|Out-Null
+    $t1=Join-Path $unicodeRoot 'UMDH_RAW_PID9424_T1_20261117_223501.txt'
+    $t2=Join-Path $unicodeRoot 'UMDH_RAW_PID9424_T2_20261117_230044.txt'
+    [IO.File]::WriteAllText($t1,('T1-H2048'+('x'*400)),(New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($t2,('T2-H2048'+('y'*400)),(New-Object Text.UTF8Encoding($false)))
+    # Ensure filesystem ordering and same-PID naming (no real UMDH invoked).
+    (Get-Item -LiteralPath $t1).LastWriteTime=(Get-Date).AddMinutes(-25)
+    (Get-Item -LiteralPath $t2).LastWriteTime=(Get-Date)
+    $j=Join-Path $unicodeRoot 'snapshots.json'
+    Save-Json $j ([ordered]@{pid=9424;first=$t1;second=$t2;first_private_mb=632.28;second_private_mb=633.43})
+    $reloaded=Read-Json $j
+    if($reloaded.first -cne $t1 -or $reloaded.second -cne $t2) {
+      throw 'UTF-8 Japanese snapshot path roundtrip failed.'
+    }
+    $reloaded.first='C:\MOJIBAKE_FIRST.txt'
+    $reloaded.second='C:\MOJIBAKE_SECOND.txt'
+    $recovered=Resolve-CapturePair $reloaded $unicodeRoot
+    if($recovered.first -cne $t1 -or $recovered.second -cne $t2) {
+      throw 'Unique same-PID existing snapshot recovery failed.'
+    }
+    $extra=Join-Path $unicodeRoot 'UMDH_RAW_PID9424_T2_20261117_230545.txt'
+    [IO.File]::WriteAllText($extra,('duplicate'+('z'*400)),(New-Object Text.UTF8Encoding($false)))
+    $reloaded.second='C:\MOJIBAKE_SECOND.txt'
+    $ambiguousFailed=$false
+    try {$null=Resolve-CapturePair $reloaded $unicodeRoot} catch {$ambiguousFailed=$true}
+    if(-not $ambiguousFailed) {throw 'Ambiguous snapshot recovery should fail closed.'}
+    Out-Status 'PASS explicit UTF-8 Japanese path roundtrip, existing T1/T2 recovery, ambiguity refusal.'
   } finally {Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
   exit 0
 }
