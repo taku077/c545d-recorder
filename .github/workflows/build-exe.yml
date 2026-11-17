@@ -9,6 +9,7 @@ on:
       - '*.ps1'
       - '*.vbs'
       - '*.cmd'
+      - 'native/sei_filter/**'
       - 'README.txt'
       - 'EXE_START_HERE.txt'
   push:
@@ -29,13 +30,52 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Find Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v3
         with:
           msbuild-architecture: x64
+      - name: Configure MSVC C compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install official GStreamer 1.28.8 SDK on build agent (not user PC)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180 -MaximumRedirection 5
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'Invalid SDK download' }
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$root")
+          $p=Start-Process -FilePath $installer -ArgumentList $args -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GStreamer installer failed $($p.ExitCode)" }
+          if (-not (Test-Path "$root\lib\gstbase-1.0.lib")) { throw 'SDK headers/libs not available' }
+      - name: Build and smoke-test private H264 SEI filter plugin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $inc=@("/I$root\include\gstreamer-1.0","/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
+          $out=Join-Path $env:RUNNER_TEMP 'c545d-plugins'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          cl.exe /nologo /W4 /MD /O2 /TC /Fe:"$env:RUNNER_TEMP\test_au_classifier.exe" native/sei_filter/test_au_classifier.c
+          if ($LASTEXITCODE -ne 0) { throw 'H264 AU classifier build failed' }
+          & "$env:RUNNER_TEMP\test_au_classifier.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'H264 AU classifier tests failed' }
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/LD','/TC')+$inc+@('native/sei_filter/gstc545dsei.c',"/Fe:$out\gstc545dsei.dll",'/link',"/LIBPATH:$root\lib",'gstreamer-1.0.lib','gstbase-1.0.lib','gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0) { throw 'GStreamer SEI filter build failed' }
+          $env:PATH="$root\bin;$env:PATH"
+          $env:GST_PLUGIN_PATH_1_0=$out
+          & "$root\bin\gst-inspect-1.0.exe" c545dseifilter | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'GStreamer filter registration failed' }
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('native/sei_filter/test_plugin_roundtrip.c',"/Fe:$env:RUNNER_TEMP\test_sei_plugin.exe",'/link',"/LIBPATH:$root\lib",'gstreamer-1.0.lib','gstapp-1.0.lib','gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0) { throw 'Filter end-to-end test compile failed' }
+          & "$env:RUNNER_TEMP\test_sei_plugin.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Filter SEI/picture end-to-end test failed' }
       - name: Build x64 .NET Framework 4.8 WinExe
         shell: powershell
         run: |
@@ -49,11 +89,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $bundle = 'dist/C545D_Recorder'
           New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','README.txt')
+          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','START_SEI_FILTER_DIAGNOSTIC.cmd','README.txt')
           foreach ($item in $required) {
             if (-not (Test-Path -LiteralPath $item -PathType Leaf)) { throw "Missing $item" }
             Copy-Item -LiteralPath $item -Destination $bundle -Force
           }
+          $privatePlugins=Join-Path $bundle 'plugins'
+          New-Item -ItemType Directory -Force -Path $privatePlugins | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'c545d-plugins\gstc545dsei.dll') -Destination $privatePlugins -Force
           Copy-Item 'src/C545D.Launcher/bin/Release/C545D_Recorder.exe' -Destination $bundle
           Copy-Item 'EXE_START_HERE.txt' -Destination $bundle
           Compress-Archive -Path "$bundle/*" -DestinationPath 'dist/C545D_Recorder_EXE_Win10_x64.zip' -Force
@@ -133,6 +176,17 @@ jobs:
           }
           if ($combined -match 'rtsp://|[A-Z]:\\') { throw 'Raw path/URI leaked in safe export' }
           Write-Host 'PASS: schema-only safe ZIP retains media error evidence and excludes credentials'
+      - name: Guard optional SEI filter path and rollback semantics
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if (-not (Test-Path 'dist/C545D_Recorder/plugins/gstc545dsei.dll')) { throw 'Candidate DLL missing' }
+          $rec=[IO.File]::ReadAllText('Record.ps1')
+          if ($rec -notmatch "C545D_SEI_AU_FILTER") { throw 'No explicit opt-in switch' }
+          if ($rec -notmatch 'if \(\$script:useSeiAuFilter\)') { throw 'AU guard not conditional' }
+          $test=[IO.File]::ReadAllText('dist/C545D_Recorder/START_SEI_FILTER_DIAGNOSTIC.cmd')
+          if ($test -notmatch 'C545D_SEI_AU_FILTER=on') { throw 'Trial launcher missing' }
+          Write-Host 'PASS: opt-in only; no modification to normal recorder launch'
       - name: Smoke-test native WinForms startup (no camera)
         shell: powershell
         run: |
