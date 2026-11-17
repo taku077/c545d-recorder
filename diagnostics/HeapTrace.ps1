@@ -94,6 +94,53 @@ function Resolve-ExistingSnapshots([object]$state,[string]$folder) {
   $state.second=$results[2].FullName
   return $state
 }
+# Windows PowerShell 5.1 turns redirected native stderr into NativeCommandError
+# when ErrorActionPreference=Stop. Capture the native process streams directly,
+# check its exit code, and keep raw output local. UMDH -v is obsolete.
+function Invoke-NativeStdoutToFile([string]$exe,[string[]]$arguments,[string]$stdoutPath) {
+  if(-not (Test-Path -LiteralPath $exe -PathType Leaf)) {throw 'Native tool executable is missing.'}
+  foreach($a in $arguments) {
+    if($null -eq $a -or $a.Contains('"')) {throw 'Unsafe native argument.'}
+  }
+  $psi=New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName=$exe
+  $psi.Arguments=(($arguments|ForEach-Object { '"' + $_ + '"' }) -join ' ')
+  $psi.UseShellExecute=$false
+  $psi.CreateNoWindow=$true
+  $psi.RedirectStandardOutput=$true
+  $psi.RedirectStandardError=$true
+  $proc=New-Object System.Diagnostics.Process
+  $proc.StartInfo=$psi
+  $outStream=$null
+  try {
+    if(-not $proc.Start()) {throw 'Could not start native tool.'}
+    $outStream=[System.IO.File]::Open($stdoutPath,[IO.FileMode]::Create,
+      [IO.FileAccess]::Write,[IO.FileShare]::None)
+    # Drain both pipes concurrently to avoid deadlocks on large UMDH output.
+    $stdoutTask=$proc.StandardOutput.BaseStream.CopyToAsync($outStream)
+    $stderrTask=$proc.StandardError.ReadToEndAsync()
+    $proc.WaitForExit()
+    $stdoutTask.GetAwaiter().GetResult()
+    $stderrText=$stderrTask.GetAwaiter().GetResult()
+    $exitCode=$proc.ExitCode
+    # The stderr file is private and only created when stderr is nonempty.
+    if(-not [string]::IsNullOrEmpty($stderrText)) {
+      $stderrPath=[IO.Path]::ChangeExtension($stdoutPath,'.stderr.txt')
+      [IO.File]::WriteAllText($stderrPath,$stderrText,(New-Object Text.UTF8Encoding($false)))
+    }
+    if($exitCode -ne 0) {
+      throw ('Native tool failed (exit code '+$exitCode+
+        '). Examine local stderr file if present; do not share raw diagnostics.')
+    }
+    if($outStream.Length -eq 0) {
+      throw 'Native tool produced no comparison output. Raw snapshots are unchanged.'
+    }
+    return
+  } finally {
+    if($outStream) {$outStream.Dispose()}
+    $proc.Dispose()
+  }
+}
 function Make-SafeSummary([string]$raw,[string]$safe) {
   $rows=New-Object System.Collections.Generic.List[object];$current=$null
   foreach($line in [IO.File]::ReadLines($raw)) {
@@ -173,6 +220,31 @@ if($Mode -eq 'SelfTest') {
     catch { $ambiguous=$true }
     if(-not $ambiguous) {throw 'Ambiguous T2 recovery must be refused.'}
     Out-Status 'PASS UTF-8 Japanese JSON roundtrip, same-PID recovery, ambiguous-file refusal.'
+    # Native stderr warnings must not terminate a successful comparison on PS5.1.
+    $nativeMock=Join-Path $unicodeFolder 'mock-umdh.ps1'
+    @(
+      "[Console]::Error.WriteLine('Warning: harmless obsolete switch notice')",
+      "[Console]::Out.WriteLine('+ 5320 ( f110 - 9df0) 3a allocs BackTrace00B53')",
+      "[Console]::Out.WriteLine('avcodec-61.dll!example+0x1')",
+      'exit 0'
+    ) | Set-Content -LiteralPath $nativeMock -Encoding ASCII
+    $nativeOut=Join-Path $unicodeFolder 'native-stdout.txt'
+    $powershellExe=(Get-Command powershell.exe).Source
+    Invoke-NativeStdoutToFile $powershellExe @('-NoProfile','-NonInteractive','-File',$nativeMock) $nativeOut
+    $captured=[IO.File]::ReadAllText($nativeOut)
+    if($captured -notmatch 'BackTrace00B53' -or $captured -match 'harmless obsolete') {
+      throw 'Native stderr warning must not corrupt stdout or stop comparison.'
+    }
+    $nativeMockFail=Join-Path $unicodeFolder 'mock-umdh-fail.ps1'
+    @("[Console]::Error.WriteLine('real failure')",'exit 19') |
+      Set-Content -LiteralPath $nativeMockFail -Encoding ASCII
+    $didFail=$false
+    try {
+      Invoke-NativeStdoutToFile $powershellExe @('-NoProfile','-NonInteractive','-File',$nativeMockFail) (Join-Path $unicodeFolder 'failed-out.txt')
+    } catch { $didFail=$true }
+    if(-not $didFail) {throw 'Nonzero native exit code must be rejected.'}
+    Out-Status 'PASS PowerShell 5.1 native stderr warning, stdout preservation, exit-code failure gate.'
+
   } finally {Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
   exit 0
 }
@@ -276,8 +348,7 @@ if($Mode -eq 'Compare') {
   $s=Read-Json $sessionFile
   $s=Resolve-ExistingSnapshots $s $DataRoot
   $raw=Join-Path $DataRoot ('UMDH_RAW_DIFF_PID'+$s.pid+'.txt')
-  & $tools.umdh '-v' $s.first $s.second 2>&1|Out-File -LiteralPath $raw -Encoding UTF8
-  if($LASTEXITCODE -ne 0) {throw 'UMDH comparison failed.'}
+  Invoke-NativeStdoutToFile $tools.umdh @($s.first,$s.second) $raw
   $safe=Join-Path $DataRoot ('C545D_HEAP_SAFE_SUMMARY_PID'+$s.pid+'.txt')
   $n=Make-SafeSummary $raw $safe
   if($n -eq 0) {throw 'UMDH diff format unknown: keeping raw local; do not infer no leak.'}
