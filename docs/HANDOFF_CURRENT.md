@@ -152,3 +152,11 @@ Interpretation:
 - GStreamer official documentation confirms debug categories and GST_DEBUG_FILE %p and %r substitution. Do not assume warning-count=damaged frame-count; first attribute to stream and actual decoder damage.
 - No extra tools now. If Heap cause demanded later, Microsoft Debugging Tools package GFlags+UMDH should be disclosed as one staged dependency (needs per-image UST prior to process launch). Wireshark already present optional for evidence of network packet anomaly.
 - Stage RC16 is *diagnostic capture only*, not a cure for existing decode/DTS or Heap warnings.
+
+
+## 2026-11-17 — Privacy-preserving diagnostic export
+- User wants to upload logs directly to ChatGPT but correctly notes manual credential searching through enormous `GST_DIAG_*.log` is too much work.
+- Added `EXPORT_SAFE_LOGS.cmd` + `Export-SafeDiagnostics.ps1`: schema-only allowlist export, no raw log lines, URLs, passwords, user names, local paths, raw debug text, or MP4 bytes in the ZIP. Scans latest 8 matching log files, up to 400k lines each, caps exported events at 18k; emits `summary.txt` and `media_events.tsv` to `C545D_SAFE_DIAGNOSTICS_<time>.zip` in Downloads. No admin/additional software. Source log and recordings are read-only.
+- Synthetic Windows CI test includes literal credential, RTSP URI, IP and base64 token and verifies ZIP excludes them while retaining `LIBAV_NO_FRAME` and `QTMUX_DTS_BACKWARD`.
+- Scope: lossy diagnostic extract; it may not suffice to distinguish audio/video pad or precise H264 AU issue. If insufficient, enhance safe allowlist (not ask user to browse raw logs manually). Never claim generic redaction guarantees all arbitrary log text.
+- User should upload safe ZIP to existing ChatGPT conversation only; no raw log into public GitHub issues. Personal ChatGPT data controls may affect training and retention; avoid categorical security guarantees.
