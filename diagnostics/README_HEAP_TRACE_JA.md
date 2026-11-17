@@ -1,3 +1,28 @@
+## v2: 日本語ユーザーフォルダーにおけるCompareエラーを修復
+
+Windows PowerShell 5.1では、BOMのないUTF-8 JSONを既定のANSIで読み込むため、
+日本語ユーザーフォルダーに保存されたT1/T2のフルパスが文字化けする場合があります。
+このため、旧v1で「Saved RAW snapshot 1/2」と表示された後でも、
+Compareで「Two captures of one process are required」となる不具合がありました。
+
+**2つのUMDH_RAW_PID..._T1/T2ファイルが残っている場合は、測定し直さないでください。**
+v2はJSONを明示的にUTF-8で読み込み、記録済みPIDとT1/T2番号に一致する
+保存済みUMDHログを直接発見します。候補が複数あれば勝手に選ばずエラーにします。
+
+既存測定データの復旧操作（例：PID9424の2ファイルが保存済みの場合）：
+1. 展開したv2のHeapTrace.ps1を使用する。旧v1は残しても構いません。
+2. 通常権限PowerShellで v2のHeapTrace.ps1 に対して「-Mode Compare」を再実行。
+   Capture／Launch／Enableは実行しないでください。
+3. 成功時のみ、C545D_HEAP_SAFE_REPORT_PID*.zip をこのチャットに提出。
+   UMDH_RAW*.txt／UMDH_RAW_DIFF*.txtを共有・公開しないでください。
+4. USTがまだ有効なら、管理者PowerShellで「-Mode Restore」を実行します。
+
+詳細な操作：
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\HeapTrace.ps1" -Mode Compare
+
+注意：v2のWindowsテストは合成JSONとダミーUMDHファイルを使ったものです。
+実際のUMDH差分計算の成功・メモリリークの原因までは、実機ログを確認する必要があります。
+
 # C545D RC35：Heap割り当て元調査キット
 
 既存の録画エンジン、MP4、通常ログは変更しません。最初の Check-HeapTools.cmd は読み取り専用で、録画中でも実行できます。

@@ -64,6 +64,36 @@ function Live-Gst {
 function Save-Json([string]$path,[object]$obj) {
   [IO.File]::WriteAllText($path,(ConvertTo-Json $obj -Depth 5),(New-Object Text.UTF8Encoding($false)))
 }
+# JSON was saved as BOM-less UTF-8. Windows PowerShell 5.1 Get-Content
+# defaults to ANSI for BOM-less data, corrupting Japanese user paths.
+function Read-Json([string]$p) {
+  return ([IO.File]::ReadAllText($p,[System.Text.Encoding]::UTF8) | ConvertFrom-Json)
+}
+# Recover only an unambiguous T1/T2 pair for the recorded PID. Never delete
+# or rewrite the original UMDH raw files.
+function Resolve-ExistingSnapshots([object]$state,[string]$folder) {
+  $pidNumber=[int]$state.pid
+  if($pidNumber -le 0) {throw 'Invalid stored PID.'}
+  $results=@{}
+  foreach($slot in @(1,2)) {
+    $mask='UMDH_RAW_PID'+$pidNumber+'_T'+$slot+'_*.txt'
+    $rx='^UMDH_RAW_PID'+$pidNumber+'_T'+$slot+'_[0-9]{8}_[0-9]{6}[.]txt$'
+    $items=@(Get-ChildItem -LiteralPath $folder -File -Filter $mask |
+      Where-Object { $_.Name -match $rx })
+    if($items.Count -ne 1) {
+      throw ('T'+$slot+': expected exactly one raw snapshot for PID '+$pidNumber+
+        '; found '+$items.Count+'. No files modified.')
+    }
+    if($items[0].Length -lt 256) {throw ('T'+$slot+': UMDH snapshot is too small.')}
+    $results[$slot]=$items[0]
+  }
+  if($results[1].LastWriteTimeUtc -gt $results[2].LastWriteTimeUtc) {
+    throw 'Snapshot T1 is newer than T2; refusing out-of-order comparison.'
+  }
+  $state.first=$results[1].FullName
+  $state.second=$results[2].FullName
+  return $state
+}
 function Make-SafeSummary([string]$raw,[string]$safe) {
   $rows=New-Object System.Collections.Generic.List[object];$current=$null
   foreach($line in [IO.File]::ReadLines($raw)) {
@@ -112,6 +142,37 @@ if($Mode -eq 'SelfTest') {
        throw 'Safe diff self-test failed'
     }
     Out-Status 'PASS safe UMDH parser and synthetic credential exclusion.'
+    $japanese=([string][char]0x4fdd)+([string][char]0x7ba1)
+    $unicodeFolder=Join-Path $dir $japanese
+    New-Item -ItemType Directory -Path $unicodeFolder -Force|Out-Null
+    $p1=Join-Path $unicodeFolder 'UMDH_RAW_PID9424_T1_20261117_223501.txt'
+    $p2=Join-Path $unicodeFolder 'UMDH_RAW_PID9424_T2_20261117_230044.txt'
+    [IO.File]::WriteAllText($p1,('1'*300))
+    [IO.File]::WriteAllText($p2,('2'*300))
+    (Get-Item -LiteralPath $p1).LastWriteTime=(Get-Date).AddMinutes(-25)
+    $stateTest=Join-Path $unicodeFolder 'snapshots.json'
+    Save-Json $stateTest ([ordered]@{pid=9424;first=$p1;second=$p2})
+    $test=Read-Json $stateTest
+    if($test.first -cne $p1 -or $test.second -cne $p2) {
+      throw 'Japanese UTF-8 path round-trip failed.'
+    }
+    $test.first='MOJIBAKE1';$test.second='MOJIBAKE2'
+    $fixed=Resolve-ExistingSnapshots $test $unicodeFolder
+    # Windows may normalize directory casing when enumerating FileInfo.
+    # Prove the resolved files are precisely the expected raw captures.
+    if(-not [IO.File]::Exists($fixed.first) -or
+       -not [IO.File]::Exists($fixed.second) -or
+       [IO.Path]::GetFileName($fixed.first) -ne [IO.Path]::GetFileName($p1) -or
+       [IO.Path]::GetFileName($fixed.second) -ne [IO.Path]::GetFileName($p2)) {
+      throw 'Existing unique same-PID snapshot recovery failed.'
+    }
+    $duplicate=Join-Path $unicodeFolder 'UMDH_RAW_PID9424_T2_20261117_230900.txt'
+    [IO.File]::WriteAllText($duplicate,('3'*300))
+    $ambiguous=$false
+    try { $null=Resolve-ExistingSnapshots $test $unicodeFolder }
+    catch { $ambiguous=$true }
+    if(-not $ambiguous) {throw 'Ambiguous T2 recovery must be refused.'}
+    Out-Status 'PASS UTF-8 Japanese JSON roundtrip, same-PID recovery, ambiguous-file refusal.'
   } finally {Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
   exit 0
 }
@@ -146,7 +207,7 @@ if($Mode -eq 'Restore') {
   if(-not (Test-Path -LiteralPath $stateFile -PathType Leaf)) {
     Out-Status 'No ownership marker. Not changing someone else’s GFlags setting.';exit 0
   }
-  $marker=Get-Content -LiteralPath $stateFile -Raw|ConvertFrom-Json
+  $marker=Read-Json $stateFile
   if($marker.marker -ne 'C545D-v1' -or $marker.image -ne $imageName) {
     throw 'Invalid ownership marker; refusing to change UST.'
   }
@@ -179,7 +240,7 @@ if($Mode -eq 'Capture') {
   New-Item -ItemType Directory -Path $DataRoot -Force|Out-Null
   $s=$null
   if(Test-Path -LiteralPath $sessionFile) {
-    $s=Get-Content -LiteralPath $sessionFile -Raw|ConvertFrom-Json
+    $s=Read-Json $sessionFile
   }
   $second=($s -and $s.first -and -not $s.second)
   if($second) {
@@ -212,17 +273,15 @@ if($Mode -eq 'Capture') {
 }
 if($Mode -eq 'Compare') {
   if(-not (Test-Path -LiteralPath $sessionFile -PathType Leaf)) {throw 'No capture state.'}
-  $s=Get-Content -LiteralPath $sessionFile -Raw|ConvertFrom-Json
-  if(-not $s.first -or -not $s.second -or
-    -not (Test-Path -LiteralPath $s.first) -or -not (Test-Path -LiteralPath $s.second)) {
-    throw 'Two captures of one process are required.'
-  }
+  $s=Read-Json $sessionFile
+  $s=Resolve-ExistingSnapshots $s $DataRoot
   $raw=Join-Path $DataRoot ('UMDH_RAW_DIFF_PID'+$s.pid+'.txt')
-  & $tools.umdh $s.first $s.second 2>&1|Out-File -LiteralPath $raw -Encoding UTF8
+  & $tools.umdh '-v' $s.first $s.second 2>&1|Out-File -LiteralPath $raw -Encoding UTF8
   if($LASTEXITCODE -ne 0) {throw 'UMDH comparison failed.'}
   $safe=Join-Path $DataRoot ('C545D_HEAP_SAFE_SUMMARY_PID'+$s.pid+'.txt')
   $n=Make-SafeSummary $raw $safe
   if($n -eq 0) {throw 'UMDH diff format unknown: keeping raw local; do not infer no leak.'}
+  Save-Json $sessionFile $s
   Add-Content -LiteralPath $safe -Value ('private_before_mb='+$s.first_private_mb)
   Add-Content -LiteralPath $safe -Value ('private_after_mb='+$s.second_private_mb)
   Add-Content -LiteralPath $safe -Value ('elapsed_minutes='+[math]::Round((([datetime]$s.second_at)-([datetime]$s.first_at)).TotalMinutes,2))
