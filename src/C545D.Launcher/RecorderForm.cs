@@ -249,14 +249,23 @@ namespace C545D.Recorder.Launcher
         private static string Quote(string value) { return "\"" + value + "\""; }
         private Process StartScript(string script, string arguments, bool withConsole)
         {
+            // .NET Framework 4.8 ignores WindowStyle.Hidden when
+            // UseShellExecute=false. The recorder needs a *real* private console
+            // so AttachConsole/GenerateConsoleCtrlEvent can finalize MP4 via EOS.
+            // ShellExecuteEx honors SW_HIDE while retaining that private console.
+            // Stage-1 Start-Process -WindowStyle Hidden used the same approach.
             var psi = new ProcessStartInfo {
                 FileName = powershell,
                 Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File " +
                     Quote(Path.Combine(appDir, script)) + " " + arguments,
-                WorkingDirectory = appDir, UseShellExecute = false,
-                CreateNoWindow = !withConsole, WindowStyle = ProcessWindowStyle.Hidden
+                WorkingDirectory = appDir,
+                UseShellExecute = withConsole,
+                CreateNoWindow = !withConsole,
+                WindowStyle = ProcessWindowStyle.Hidden
             };
-            psi.EnvironmentVariables["C545D_VIDEO_DECODER"] = "avdec";
+            if (!withConsole) psi.EnvironmentVariables["C545D_VIDEO_DECODER"] = "avdec";
+            // The console worker inherits C545D_VIDEO_DECODER=avdec from this
+            // WinExe process, which is set before launching the WinForms UI.
             return Process.Start(psi);
         }
         private bool Alive(Process p)
