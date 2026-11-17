@@ -2,6 +2,19 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### 現在の最優先再開地点：2026-11-17 23:55 JST — 実機UMDH Compare成功・v4オフライン再解析待ち
+
+- **ユーザーが `C545D_HEAP_SAFE_REPORT_PID9424.zip` を実際に提出**。ZIP CRC正常・安全要約テキスト1個を確認。実機 `-Mode Compare`（v3）は**成功**した。もう `-Mode Compare` をやり直す必要はない。
+- **実測値**：PID9424、Private Memory `632.28 → 633.43 MB`（25.54分、+1.15MB、約+2.70MB/h）。Windows HeapのUMDH差分`parsed_backtraces=182`、`parsed_net_delta_bytes=-43425`（約−42.4KiB、解析されたWindows Heap差分の符号付き合計であってプロセスのPrivate総量ではない）。
+- 安全レポートの上位**30件すべて `first_dll=unknown`**。原因モジュールやリークの所在は**未確定**。従来のレポート抽出器は `.dll!` を要求したが、UMDHは `ntdll!Function` のように拡張子なしシンボルを出力する場合があるため、unknownは元のRAWスタックに名前がない証明ではない。
+- **改善PR #26** [GitHub](https://github.com/taku077/c545d-recorder/pull/26) は mainにマージ済み：`diagnostics/Reanalyze-HeapDiff.ps1` を追加。ローカル既存 `UMDH_RAW_DIFF_PID9424.txt` **のみ**読み取り、モジュール識別子を安全に再抽出する。録画本体・GFlags/UST・UMDHキャプチャは変更なし。
+- Windows PowerShell 5.1構文・合成差分/PII除外のCIは成功：[Actions run 44108444584](https://github.com/taku077/c545d-recorder/actions/runs/44108444584)。**実際のRAW diffに解決済みシンボルが入っているかはまだ不明**。実機再解析結果を待つ。
+- **v4キット**：GitHub Actionsの実体を取得し、二重ZIPを解消した `C545D_HeapTrace_Diagnostics_v4.zip` をこのチャットに添付済み。新しいチャットで古い sandbox パスは再利用せず、存在検証または再取得する。以前の404になった個別Actionsリンクを再案内しない。
+- **次の唯一のユーザー操作**：v4キットを展開し、通常権限PowerShellで `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Reanalyze-HeapDiff.ps1" -TargetPid 9424` を実行。`%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_HEAP_SAFE_REPORT_PID9424_V2.zip` **だけ**チャットへ提出。`V2`は安全レポートスキーマで、キット版はv4。実行するps1は既存の `HeapTrace.ps1` **ではない**。
+- **禁止/不要**：二つのUMDH生ログの再Capture、再Compare、録画停止・再起動、新たなソフト導入、RAW差分やスタック/ユーザーパスの公開。UST管理のRestoreは前段説明の通り必要時のみ。現在UST状態は未確認。
+- **次回チャット開始時**、この最新セクション→非公開hand-off（フォルダ絶対パス）→直近ユーザーのv4実行結果→GitHub HEAD/PR/CIを読む。下に残るv3/v2の指示は履歴として扱い、差分解析以前に戻らない。
+
+
 ### 最新の再開地点：2026-11-17 — HeapTrace v3 UMDH標準エラー問題を修正（次の実機Compare待ち）
 
 - **新しい実機エラー**：ユーザーは修正v2を `-Mode Compare` 実行すると、`HeapTrace.ps1` **279行**で `umdh.exe : Warning: The -v switch is obsolete. Verbose is always on.` および `NativeCommandError` が発生したと報告。**文字化けパス復旧は少なくともUMDH起動まで進んだ**が、UMDHの差分比較はまだ成功していない。
