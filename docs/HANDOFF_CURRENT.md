@@ -2,6 +2,15 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18: UMDH差分の上位3件の位置関係を実測確認
+- 録画は再開済み、UST解除済み。再キャプチャ・再比較・録画停止は不要。
+- UMDH差分の正増加上位3件：+380928 Bは124行、+178176 Bは145行、+94208 Bは166行。差分レコード見出しは21行間隔。187行が次の見出しかは未確認。
+- ユーザー実測：Rank1の後方30行のmodule!symbol該当24件、次の差分ヘッダー1件。Rank2も後方30行の該当24件/次ヘッダー1件。Rank3も24件/次ヘッダー1件。つまり前後30行の単純集計では隣の差分ブロックのシンボルが混ざる。
+- 保存済みUMDH_RAW_DIFF_PID9424.txtは2853行、差分レコード182件、module!symbol該当2366行。元T1/T2に約7万行のBackTrace識別文字列がある。従来のno-recognized-framesはスタック全欠落の証明ではない。
+- 次の1操作は、既存差分ファイルを読み取り専用で走査し、正の上位3件それぞれの見出しから次の差分見出し直前までに限定して、許可されたmediaモジュールのbasenameとWindows等のカテゴリ・件数だけを出す。原文/関数名/個人パス/未知モジュール名を公開しない。
+- この時点で原因DLL・メモリリークは未確定。新しい長時間測定・UST再ON・診断キット再配布に戻らない。出典: https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/interpreting-a-log-comparison
+
+
 ## 最優先CURRENT — 2026-11-18：実機UMDH原本/差分の形式件数確認済み、差分内の対応関係を調べる
 
 - ユーザー本人が **UST解除・通常録画開始済み**と報告。録画停止、UST再ON、UMDH再Capture/Compare、再インストールは不要。
