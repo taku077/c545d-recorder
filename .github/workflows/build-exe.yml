@@ -8,6 +8,7 @@ on:
       - '.github/workflows/build-exe.yml'
       - '*.ps1'
       - '*.vbs'
+      - '*.cmd'
       - 'README.txt'
       - 'EXE_START_HERE.txt'
   push:
@@ -17,6 +18,7 @@ on:
       - '.github/workflows/build-exe.yml'
       - '*.ps1'
       - '*.vbs'
+      - '*.cmd'
       - 'README.txt'
       - 'EXE_START_HERE.txt'
   workflow_dispatch:
@@ -47,7 +49,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $bundle = 'dist/C545D_Recorder'
           New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','README.txt')
+          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','README.txt')
           foreach ($item in $required) {
             if (-not (Test-Path -LiteralPath $item -PathType Leaf)) { throw "Missing $item" }
             Copy-Item -LiteralPath $item -Destination $bundle -Force
@@ -68,6 +70,19 @@ jobs:
           if ($ui -notmatch 'GenerateConsoleCtrlEvent\(0, 0\)') { throw 'Ctrl+C EOS stop unavailable' }
           if ($ui -notmatch 'File.WriteAllText\(stopFile') { throw 'Durable stop marker unavailable' }
           Write-Host 'PASS: hidden worker console and EOS invariants'
+      - name: Check opt-in diagnostic launcher (no camera)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $diag = [IO.File]::ReadAllText('dist/C545D_Recorder/START_DIAGNOSTIC.cmd')
+          if ($diag -notmatch 'GST_DEBUG_FILE=') { throw 'Diagnostic log output path absent' }
+          if ($diag -notmatch 'GST_DIAG_%%p_%%r\.log') { throw 'Per-process GStreamer log isolation absent' }
+          if ($diag -notmatch 'GST_DEBUG_NO_COLOR=1') { throw 'Debug color disable absent' }
+          if ($diag -notmatch 'qtmux:5' -or $diag -notmatch 'h264parse:5') { throw 'Mux/parser focused debug categories absent' }
+          if ($diag -match '(?i)taskkill|gst-fatal-warnings|[^\w]del[ /]|[^\w]erase[ /]') {
+            throw 'Diagnostics launcher must not kill recording or delete files'
+          }
+          Write-Host 'PASS: opt-in diagnostics shipped with per-process log isolation'
       - name: Smoke-test native WinForms startup (no camera)
         shell: powershell
         run: |
