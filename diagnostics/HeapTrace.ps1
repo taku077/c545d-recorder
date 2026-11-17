@@ -166,7 +166,13 @@ if($Mode -eq 'SelfTest') {
        [IO.Path]::GetFileName($fixed.second) -ne [IO.Path]::GetFileName($p2)) {
       throw 'Existing unique same-PID snapshot recovery failed.'
     }
-    Out-Status 'PASS UTF-8 Japanese JSON roundtrip and same-PID T1/T2 recovery.'
+    $duplicate=Join-Path $unicodeFolder 'UMDH_RAW_PID9424_T2_20261117_230900.txt'
+    [IO.File]::WriteAllText($duplicate,('3'*300))
+    $ambiguous=$false
+    try { $null=Resolve-ExistingSnapshots $test $unicodeFolder }
+    catch { $ambiguous=$true }
+    if(-not $ambiguous) {throw 'Ambiguous T2 recovery must be refused.'}
+    Out-Status 'PASS UTF-8 Japanese JSON roundtrip, same-PID recovery, ambiguous-file refusal.'
   } finally {Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
   exit 0
 }
