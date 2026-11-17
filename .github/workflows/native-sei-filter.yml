@@ -69,6 +69,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Plugin registration failed' }
           & "$root\bin\gst-launch-1.0.exe" '-e' '-q' videotestsrc num-buffers=60 '!' 'video/x-raw,format=I420,width=320,height=240,framerate=15/1' '!' x264enc speed-preset=ultrafast '!' h264parse '!' 'video/x-h264,stream-format=byte-stream,alignment=au' '!' c545dseifilter '!' avdec_h264 '!' fakesink
           if ($LASTEXITCODE -ne 0) { throw 'Synthetic video picture decode failed with optional filter' }
+      - name: Verify actual plugin drops SEI-only and preserves picture buffer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $exe=Join-Path $env:RUNNER_TEMP 'test_sei_plugin.exe'
+          $inc=@("/I$root\include\gstreamer-1.0","/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('native/sei_filter/test_plugin_roundtrip.c',
+            "/Fe:$exe","/link","/LIBPATH:$root\lib",'gstreamer-1.0.lib','gstapp-1.0.lib','gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0) { throw 'GStreamer integration test build failed' }
+          $env:PATH="$root\bin;$env:PATH"
+          $env:GST_PLUGIN_PATH_1_0=Join-Path $env:RUNNER_TEMP 'native-plugins'
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw 'SEI-only AU drop / untouched picture integration test failed' }
       - name: Publish candidate plugin DLL for review (not live recorder)
         uses: actions/upload-artifact@v4
         with:
