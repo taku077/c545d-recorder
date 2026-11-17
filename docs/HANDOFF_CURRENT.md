@@ -2,6 +2,18 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### **CURRENT 2026-11-18 — v4 Safe Report受領、v5オフライン分類テストPASS、実機v5実行待ち（これが最優先）**
+
+- ユーザーが **`C545D_HEAP_SAFE_REPORT_PID9424_V2.zip`** をチャットに添付。実物ZIP/CRCと内部 `C545D_HEAP_SAFE_SUMMARY_PID9424_V2.txt` を直接読んだ。これは **v4キット**の出力（`V2`は安全レポートのスキーマ名）。**v3のUMDH Compareは既に成功した。再測定・再Compare不要。**
+- **正確なv4レポート数値**：`parsed_backtraces=182`、`parsed_positive_delta_bytes=693428`、`parsed_negative_delta_bytes=-736853`、`parsed_net_delta_bytes=-43425`。`recognized_non_system_traces=81`、`other_module_traces=0`。上位正差分：+380,928B（rank1）、+178,176B（rank3）、+94,208B（rank5）で、合計653,312B（正差分の約94.21%）。**3件とも `unknown`**。上位30件で `glib-2.0-0` は5B、4B、3Bなどの小さい正差分のみ。この情報だけでglib原因・リーク確定とは言えない。
+- **重要な解釈修正**：v4の `unknown` は「非システム系モジュールを認識できない」という意味にとどまる。`ntdll`/`kernelbase` 等Windows標準モジュールのみのスタックでも `unknown` になり、スタック不在・全シンボル欠落を意味しない。UMDHの純減はWindows Heap内で抽出した差分の合計で、Private Memoryの増加を否定しない。
+- **実装済み修正**：[PR #28](https://github.com/taku077/c545d-recorder/pull/28) をmainにマージ。診断キットv5の **`Reanalyze-HeapDiff.ps1`** は既存 `UMDH_RAW_DIFF_PID9424.txt` を**読み取るだけ**で上位30差分を `recognized-non-system`/`windows-runtime-only`/`other-module-symbol`/`address-like-no-symbol`/`no-recognized-frames` に分類。関数・アドレス・未許可モジュール名・パスは出力しない。旧安全レポートは上書きせず、**`C545D_HEAP_SAFE_REPORT_PID9424_V3.zip`**を新規作成。
+- **Windows CI成功**：GitHub Actions diagnostics run [44111276454](https://github.com/taku077/c545d-recorder/actions/runs/44111276454) はPS5.1構文、各種分類、秘密情報除外テストPASS。ソース検証run [44111276457](https://github.com/taku077/c545d-recorder/actions/runs/44111276457) PASS。**実機v5分類は未実施**。解析本体・録画への変更なし。
+- **チャット直接添付済みv5キット**：`C545D_HeapTrace_Diagnostics_v5.zip`。GitHub Actions artifact `14340467488` の中身を取得・CRC検証済み。別会話に移った際は古い`sandbox`リンクを流用せずファイルの再検証/再取得を行う。古いActions個別URLは404の既往あり。
+- **次の1操作**：v5キットを展開し、**通常権限PowerShell**から `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Reanalyze-HeapDiff.ps1" -TargetPid 9424` を1回だけ実行。生成された `%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\C545D_HEAP_SAFE_REPORT_PID9424_V3.zip` **だけ**をチャットに提出。RAW/RAW差分/録画・個人パスをアップロードさせない。**再Capture、再Compare、録画停止、新規ソフト導入は不要**。
+- Windows版GStreamer/録画RC35とPID9424の2枚RAW測定（22:35、23:00）は既知。次チャットは**この最新CURRENT最優先**→非公開handoffで正確なパス→直近ユーザー出力→GitHub HEAD/CIの順。古いv2/v3/v4の「次操作」は履歴であり再実行しない。
+
+
 ### 現在の最優先再開地点：2026-11-17 23:55 JST — 実機UMDH Compare成功・v4オフライン再解析待ち
 
 - **ユーザーが `C545D_HEAP_SAFE_REPORT_PID9424.zip` を実際に提出**。ZIP CRC正常・安全要約テキスト1個を確認。実機 `-Mode Compare`（v3）は**成功**した。もう `-Mode Compare` をやり直す必要はない。
