@@ -124,3 +124,12 @@ Interpretation:
 - Artifact accessibility: user reported **Actions > Artifacts did not expose a clickable download**, despite existing artifacts. GitHub docs require a signed-in account with read access for Actions artifacts and note expiry. Stage-2 workflow publishes a numbered **prerelease asset** to https://github.com/taku077/c545d-recorder/releases after successful push to main; direct ZIP links from Releases are the preferred download path. Also attach ZIP directly in ChatGPT when possible.
 - This migration is NOT evidence that the unexplained private Heap increase (+5.64 MiB in ~18min VMMap comparison, historical post-warmup +6.17 MiB/h) has been fixed. Do not add user-installed diagnostics or 24–48h waiting loops as a default.
 - Confirm GitHub main HEAD / PR #8 merge / release asset URL / live CI before continuing. The last known working stage-1 build is separate; never run both versions simultaneously.
+
+
+## 2026-11-17 — RC11 interrupted-recording recovery
+- Existing user logs: Native GUI worker PIDs 660, 11292, 11120 ended with `GStreamer returned; exitCode=0; stopMarker=False`, while gst-launch reported `handling interrupt`. Cause of unsolicited console events is **not proven**; native Stage 2 displayed a console and RC10 addressed it.
+- Previously Record.ps1 treated any C545DWorkerStopSignal.StopRequested as an authorized stop and also treated gst exit-code 0 as terminal for a managed session. This can silently end an evidence capture without the GUI stop marker.
+- RC11 only recognizes the per-session durable GUI `.stop` marker as authorized. Unexpected `CTRL_C_EVENT` or any unexpected GStreamer exit now follows existing bounded backoff/reconnect, even when gst exits code 0. Preserve standalone PS1 Ctrl+C behavior when no control session exists.
+- Worker counts console control events via atomic counter (no I/O in control handler); logs `consoleCtrlCEvents`, `UNEXPECTED_CTRL_C`, `UNEXPECTED_GSTREAMER_EXIT` and explicit exit-policy. Native WinForms shows a red status and logs `UNEXPECTED_WORKER_EXIT` if the worker itself dies without a stop request.
+- Unit tests for pure exit policy are executed in Windows CI without connecting cameras; original source invariant tests, native UI, DPAPI and EXE smoke tests remain. No recorder format/quality/synchronization change. Unknown real-camera success; do not claim a fixed memory leak or resolved libav/qtmux issue.
+- Never run two recorders simultaneously. Keep RC10 as rollback and switch only after normal stop/EOS finalization.
