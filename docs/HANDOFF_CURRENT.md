@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 — メモリ増加の自動計測を用意（4時間／60秒間隔）
+
+- **直近のユーザー要望**：「1時間ずっとこれを気にしないといけなくなるので、自動で記録をとるようにはできないか？」。手動の1時間ごとの測定を行わせず、自動ロガーを作成済み。
+- ユーザーへの提供物：`C545D_MemoryMonitor_4H.zip`（`Monitor-C545DMemory.ps1`, `START_C545D_MEMORY_4H.cmd`, 日本語README）。4時間・60秒間隔、CSVに時刻/PID/起動時刻/PrivateMB/WorkingSetMB/Handles/CPUSeconds/状態を記録。CSV保存先 `%LOCALAPPDATA%\C545D_GStreamer\MemoryMonitor\C545D_Memory_yyyymmdd_HHmmss.csv`。**起動したか・実際のCSV結果はまだ未確認**。
+- スクリプト本体をGitHub `diagnostics/Monitor-C545DMemory.ps1` に追加し、[PR #42](https://github.com/taku077/c545d-recorder/pull/42) をmainへマージ済み。Windows PowerShell 5.1構文とCSV往復自己テスト [Actions 44148976014](https://github.com/taku077/c545d-recorder/actions/runs/44148976014) SUCCESS。ソース検査とHeapTrace CIも成功。**4時間継続・実カメラ環境の動作は未検証**。
+- ユーザー側の次の最小操作：既に録画が継続している状態でZIPを展開し `START_C545D_MEMORY_4H.cmd` をダブルクリック。コンソールを閉じず最小化、4時間後にCSV 1ファイルを提出。録画停止/UST再ON/UMDH Capture不要。CSVを記録中Excelで開かない。
+- **直近UMDH実測の事実**：ByteDeltaRecords91（正27負64）、CountDeltaRows91、上位3差分 +380928/+178176/+94208 B、3件とも`glib-2.0-0, gstisomp4, gstbase-1.0-0, gstreamer-1.0-0`の17シンボル行（Windows6、Media11）。既存`Record.ps1`は`splitmuxsink ... max-size-time=3600000000000 async-finalize=false`。正常なMP4サンプルテーブル増加 vs 分割を越えるリークが未確定のため、4時間CSVで同一PID・同一セグメント相対時刻の推移を検討する。
+- Windowsユーザー名を含む絶対パス・認証情報・RAWスタックは公開しない。古い手動測定手順に戻らない。
+
+
+
 ## CURRENT 2026-11-18 JST — UMDH上位3スタックの実機解析成功：isomp4 MP4 mux経路、原因は未確定
 
 - ユーザーの **最新の実機PowerShell出力**：`ByteDeltaRecords=91 Positive=27 Negative=64`, `CountDeltaRows=91`, `AllSignedHeaderRows=182`。**182は91個のByte/Count差分ペア**であり、これまでの`parsed_backtraces=182`と、量と件数の混合集計`parsed_net_delta_bytes=-43425`はメモリ純増減として**無効**。過去の正差分693428BもCountDeltaが混じったため要訂正。
