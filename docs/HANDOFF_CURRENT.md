@@ -1,5 +1,45 @@
 # HANDOFF_CURRENT — C545D recorder
 
+<!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
+## 最優先：現在の作業状態（2026-11-17 JST）— 以下の古い記述より優先
+
+**再開地点はRC35 GStreamer録画のUMDHヒープ差分比較。VMMap・新規計測・GStreamerバージョン確認には戻らない。** 会話名「tapo録画2」「tapo録画3」「続きを再開」でこのプロジェクトを指す場合、まずこのブロックと非公開 companion の同名ファイルを読む。履歴セクションには旧日付の `IMMEDIATE NEXT STEP` が残るが、その指示は失効している。
+
+### ユーザーから得た確定事実（再質問しない）
+- Windows 10 Pro / Windows PowerShell 5.1、日本語を含むユーザープロファイル。GStreamer h264parse は 1.28.8.1（確認済み）。
+- Microsoft Debugging Tools x64 (gflags.exe / umdh.exe) は導入済み。GFlags UST を有効化してから実測した。今現在のUST有効状態は未確認。
+- **録画RC35 EXEの既存展開先**：`%USERPROFILE%\Downloads\C545D_EXE_SEI_Default_ON_Win10_x64\C545D_Recorder.exe`。ユーザーが申告した正確な絶対パスは**非公開** companion に記録。旧バージョンを勝手に消去/置換しない。
+- **旧HeapTraceキットの既存展開先**：`%USERPROFILE%\Downloads\C545D_HeapTrace_Diagnostics_Kit\`、そこに `HeapTrace.ps1`。この旧フォルダー内スクリプトがv2に置換済みとは**未確認**。絶対パスは非公開 companion に記録。
+- **スナップショットの保存先**：`%LOCALAPPDATA%\C545D_GStreamer\HeapTrace\`（`snapshots.json` と生UMDHログ）。これはキットの展開先とは**別**の場所。
+- 同一PID **9424** のRAWログが**2個とも実在**：`UMDH_RAW_PID9424_T1_20261117_223501.txt`（7525.9 KiB、2026-11-17 22:35:13 JST）、`UMDH_RAW_PID9424_T2_20261117_230044.txt`（7480.6 KiB、23:00:45 JST）。
+- `snapshots.json`: `FirstRecorded=True`, `SecondRecorded=True` だが `FirstFileOK=False`, `SecondFileOK=False`。`-Mode Compare` は旧版で「Two captures of one process are required」と失敗。生ログが欠落していると推測しない。
+
+### GitHub修正と実機未確認部分
+- 修正PR **#22** `fix/heaptrace-utf8-json-recover-existing-pid9424` は **2026-11-17 mainへマージ済み**。`diagnostics/HeapTrace.ps1` はUTF-8でJSON読込、既存PID/T1/T2の唯一候補を復旧、曖昧なら拒否、`umdh -v` 差分、正常時のみ安全な結果ZIPを生成。
+- Windows PowerShell 5.1構文テスト / 日本語フォルダーUTF-8読み書き / 旧パス復旧 / 曖昧候補拒否 / safe parser はCI **PASS**：`https://github.com/taku077/c545d-recorder/actions/runs/44102088473` およびPowerShellソース `https://github.com/taku077/c545d-recorder/actions/runs/44102088323`。**実機UMDH差分比較は未実施**。
+- 修正版診断v2 ZIPは直前のチャットでGitHub Actions実体から取り寄せ、**チャット内のsandbox添付**として提供済み。ただし sandbox のパスは新しい会話で有効とは限らない。古い **GitHub Actions artifact個別リンクはユーザー環境で404**。有効なReleases配布が検証できない場合はGitHubコネクタから現物を再取得し、**実ファイルの存在を確認したうえで**新しいチャットに直接添付すること。リンクを推測しない。
+
+### 次の1操作（ユーザー側）
+1. **v2の `HeapTrace.ps1`** を含む診断ZIPを展開。旧展開先がv1のままかもしれないので、v2版を実行していることを確認する（録画EXEを更新する必要はない）。
+2. 通常権限PowerShellでそのv2 `HeapTrace.ps1` のあるフォルダーを開き、`powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\HeapTrace.ps1" -Mode Compare` を**1回だけ**実行。スクリプトは既存 `%LOCALAPPDATA%` にあるPID9424の2ログを検索する。
+3. 成功したら `C545D_HEAP_SAFE_REPORT_PID9424.zip` のみこのチャットに提出。`UMDH_RAW*.txt` や `UMDH_RAW_DIFF*.txt`、カメラ設定/資格情報は提出・公開させない。失敗時はエラーメッセージのみを確認し、再Captureを安易に要求しない。
+4. 調査後、USTがまだONなら管理者PowerShellでv2の `-Mode Restore` を実行（以前この診断キットでEnableした場合）。録画を強制終了しない。
+
+### 目的・不変条件と進行ルール
+- 根本目標は継続録画時のPrivate/Heapメモリ増加の**割当元特定**。過去VMMapでは約18分でHeap committed +5.64 MiB、長時間Private増加は約6–8MB/h。ただし**リーク未断定**。
+- Tapo C545Dの広角stream1＋望遠stream6を1画面で同期録画。2560×720/15fps、x264 medium/Q24、`avdec_h264`、AAC 48kHz、1時間MP4、正常EOS/再開、SEIフィルタ既存動作を不用意に変更しない。日次強制再起動や24–48h再測定を安易に提案しない。
+- 次チャットでは**最初に**(1)この最新ブロック、(2)非公開hand-off（個人パス）、(3)最新のユーザー出力、(4)GitHub main/CI/PRを照合する。**確定/推定/未検証**を分け、すでに回答済みのフォルダーや設定を再質問しない。
+- 状態が変わったら**このブロックと非公開側の先頭ブロックを同じターンで更新**し、日時・実際の保存場所・今止まっているエラー・次の操作・提供リンクの有効性を更新する。末尾の追記だけで済ませない。
+- 公開repoにユーザー名を含む絶対パス・生ログ・IP/認証情報を記録しない。非公開側に記録したパスも公開PRへ転記しない。
+
+**参照**: [PR #22](https://github.com/taku077/c545d-recorder/pull/22) / [Issue #21](https://github.com/taku077/c545d-recorder/issues/21) / [診断README](https://github.com/taku077/c545d-recorder/blob/main/diagnostics/README_HEAP_TRACE_JA.md) / private `taku077/c545d-recorder-internal:docs/HANDOFF_CURRENT.md`。
+<!-- CURRENT_HANDOFF_END -->
+
+---
+
+## 以下は過去の調査記録（上記CURRENTに優先しない）
+
+
 **Last updated:** 2026-11-16 (JST)  
 **Purpose:** Canonical cross-chat handoff. When the user says **「続きから再開してください」** in the context of the C545D recorder, **read this document first**, inspect the current GitHub HEAD/CI/PRs and continue from the next action rather than restarting diagnosis.
 
