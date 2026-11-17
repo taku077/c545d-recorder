@@ -94,6 +94,8 @@ function Make-SafeSummary([string]$raw,[string]$safe) {
   return $rows.Count
 }
 if($Mode -eq 'SelfTest') {
+  $isElevated=Is-Admin
+  if($isElevated -isnot [bool]) {throw 'Privilege-check test failed'}
   $dir=Join-Path $env:TEMP ('c545d-heap-selftest-'+[guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $dir|Out-Null
   try {
