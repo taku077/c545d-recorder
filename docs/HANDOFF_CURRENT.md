@@ -133,3 +133,13 @@ Interpretation:
 - Worker counts console control events via atomic counter (no I/O in control handler); logs `consoleCtrlCEvents`, `UNEXPECTED_CTRL_C`, `UNEXPECTED_GSTREAMER_EXIT` and explicit exit-policy. Native WinForms shows a red status and logs `UNEXPECTED_WORKER_EXIT` if the worker itself dies without a stop request.
 - Unit tests for pure exit policy are executed in Windows CI without connecting cameras; original source invariant tests, native UI, DPAPI and EXE smoke tests remain. No recorder format/quality/synchronization change. Unknown real-camera success; do not claim a fixed memory leak or resolved libav/qtmux issue.
 - Never run two recorders simultaneously. Keep RC10 as rollback and switch only after normal stop/EOS finalization.
+
+
+## 2026-11-17 — RC13 H264 decoder / muxer timestamp errors
+- User clarified that CTRL+C on visible Stage 2 console was **manually pressed by the user** because of error output; it is NOT evidence of unsolicited interruptions. Do not present worker PIDs 660/11292/11120 as spontaneous CTRL+C. Previous attribution in RC12 plan was incorrect. RC12 reconnect code remains in main for now, but the requested RC13 work **specifically targets repeated libav 'no frame!' and qtmux 'decreasing DTS'**, not UI/stop controls.
+- FFmpeg H264 decoder's 'no frame!' is produced when no decodable slice/frame is present in packet; the RTSP logs show repeated examples near camera GOP cadence for both inputs (see GStreamer official docs and libavcodec h264dec.c source).
+- Before RC13 parser used config-interval=-1 (reinsert SPS/PPS at each IDR). RC13 conditionally switches to config-interval=0 + byte-stream,alignment=au after rtph264depay; tests with synthetic RTP stream before camera startup, logs strategy; C545D_H264_INPUT=legacy rollback.
+- qtmux decreasing DTS may be video or AAC; RC10's optional h264timestamper protects encoded video DTS but does not ensure AAC timestamp monotonicity. RC13 conditionally inserts audiorate skip-to-first=true tolerance=40000000 in stream1 decoded audio before AAC, with an AAC/MP4 synthetic preflight; C545D_AUDIO_TS=legacy rollback. This may insert/drop samples at discontinuities.
+- No changes to video x264 medium/Q24, 2560×720 15fps, two NTP-linked sources, AAC target, 1h MP4 split, or stop/EOS. No filtering or suppression of GStreamer error messages.
+- Synthetic pipeline success demonstrates negotiation only. It is **not proof** that camera-specific libav errors, MP4 DTS, or increasing Heap usage are fixed. Do not claim production validation.
+- No extra user software installations or destructive MP4 testing. Existing worker transcript will show H264 RTP input guard, AAC timestamp guard and MP4 DTS guard states.
