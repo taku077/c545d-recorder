@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18 JST: Key 17078個・固有名382種類、上位10種類は各79個（頻度分布待ち）
+
+- **最新のユーザー実機PowerShell結果**：PID6168、`KeyHandles=17078`, `UniqueKeyNames=382`, `MostRepeatedCount=79`, `Top10RepeatedCounts=79,79,79,79,79,79,79,79,79,79`。これはHandle64 `-a -p`を読んだユーザーのメモリ上での集計結果。**元レジストリキー名の本文は提供されず、こちらにも保有しない**。
+- **数学的に注目**：428 = 214×2、17078 = 214×79 + 172。ただし**214種類が79回ずつ開かれていることは未確定**。分布が一致すれば214キー×79本で16906ハンドル、残り168種類が172ハンドルとなる。周期的に一定キー集合を複数回開く強い手がかり。
+- 次の1操作は同じPowerShellセッション内の`$groups` (Handle名を `Group-Object` した結果)を`Group-Object Count`で重複回数別に再集計し、`Repetitions`, `KeyNames`, `Handles`の**数字だけ**表示。キー名/パス/ハンドル値は表示・保存・共有しない。前回セッションの変数が消えていれば同じHandle snapshotだけ安全に再取得することを検討し、録画は停止させない。
+- 4時間HandleTypes実測はKeyだけ+3424、毎時01分/24分に+428×8回。キー名の重複数だけでは生成者の関数はまだ分からない。頻度分布を確定してから、必要ならMicrosoft Process MonitorでPID・RegOpenKey等を短い時間だけフィルタし、PC内でstackを調べる。ProcMonの高負荷/個人パス公開リスクに留意し、現時点で導入・常時監視は要求しない。
+- **公式根拠**：https://learn.microsoft.com/en-us/sysinternals/downloads/handle / https://learn.microsoft.com/en-us/windows/win32/sysinfo/opening-creating-and-closing-keys / https://learn.microsoft.com/en-us/sysinternals/downloads/procmon
+- 録画は通常運転中、UST解除済み。再Capture/録画停止/GFlags操作/Handle `-c`は不要。Keyカーネルオブジェクトの増加とPrivateBytesの増加は因果関係未確定。
+
+
 ## CURRENT — 2026-11-18 JST：Handle種類別4h実測で**Keyハンドルだけ+3424個**と確定（最優先）
 
 - ユーザーから実物 `C545D_HandleEvidence_20261118_145921.zip` を受領。ZIP CRC正常。中身2CSV：HandleSummary 239レコード、HandleTypes 3840行。全239レコードStatus=OK、PID=6168固定、ProcessStart=2026-11-18 00:25:43、種類別合計とHandleToolTotalは毎回一致。観測時刻 2026-11-18 14:59:21→18:59:22（4h）。1分間隔は微妙にずれ239件となったが収集は正常。
