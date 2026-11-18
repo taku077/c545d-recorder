@@ -256,7 +256,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
     allowed = s.count("&shverb->app") + s.count("&handler_verb->app") + s.count("&verb->app")
     if len(raw) != allowed:
         raise ValueError(f"unconverted ShellVerb app use: {len(raw)} occurrences / {allowed} address-of")
-    path.write_text(s, encoding="utf-8")
+    # MSYS2 Python on Windows otherwise converts LF to CRLF and makes Git\n    # consider every upstream line modified; write exact UTF-8 bytes.\n    path.write_bytes(s.encode("utf-8"))
     print("C545D_WEAK_BACKREF_PATCH_APPLIED", len(raw), "weak-ref accesses")
 
 
