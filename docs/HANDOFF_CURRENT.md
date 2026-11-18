@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 JST — ETL自動オフライン解析ツール完成、実機レポート待ち
+
+- ユーザーはWPAでの多数の画面操作の自動化を要望し、**保存済みETLの自動解析ツール実装**を依頼。Microsoft WPAExporterは.wpaProfile必要で画面操作を減らしにくいため、公式.NET TraceProcessing API `UseHandles`/`CreatingStack`を直接利用するヘッドレス解析方式を採用。公式 https://learn.microsoft.com/en-us/windows/apps/trace-processing/tutorial と https://learn.microsoft.com/en-us/dotnet/api/microsoft.windows.eventtracing.memory.ihandle.creatingstack
+- **公開repo PR #52 mainマージ済み**。`diagnostics/EtwHandleOffline/`にC#プロジェクト、起動CMD、日本語README。GitHub Actions Windows2022の.NET8 x64 self-contained publish / --selftest成功（run 44304482529）。出力ZIP `C545D_ETL_Offline_Analyzer_Win10_x64.zip`（約36.36MB、ZIP CRC PASS）をこのチャットに直接添付済み。次チャットで古いsandboxリンクを引き回さず必要ならGitHub artifactを再取得し実体検証。
+- **実行するユーザー操作は1つ**：展開したZIPの`START_OFFLINE_ETL_ANALYSIS.cmd`をダブルクリック。既存 `C545D_Handle_20261118_210100.etl`（202MB）だけ読み取る。対象PID6168。出力は `%LOCALAPPDATA%\C545D_GStreamer\WPR_Handle\C545D_Handle_20261118_210100_SAFE_SUMMARY.txt`。**安全なTXTだけ**提示し、ETL本体・レジストリ名・生のアドレス・生スタックをアップロードしない。
+- **重要なAPI限界**： `IHandleDataSource.OtherHandles`は汎用型で個別Key型を直接判定しない。さらに `CloseTime=null` はETL内にCloseイベント記録がないことのみを意味しリーク確証ではない。処理系統モジュールから手がかりを得るだけ。生成スタックが未記録なら`STATUS=NO_CREATE_STACKS_AVAILABLE`。標準はsymbol serverアクセスなし（オプトイン`--symbols`のみ）で負荷を抑える。**実ユーザーETLでは未検証**。
+- 先行根拠：PID6168、214種類のレジストリキー×79=16906/17078個、毎時01分・24分にKey+428。2026-11-18 20:59–21:04 WPR Handle保存済み、Handles17799→18227（+428）、ETL202MB、`WPA: NOT FOUND`。録画継続、UST解除済みで、再キャプチャ・再起動不要。
+- **次にすること**：ユーザーの安全TXTの`STATUS`と`TOP_MODULE_CHAINS`を分析。何も生成スタックがなければ再捕捉を推奨せず、WPAExporter profile方式/ETL対応データソースを見直す。CLIが.NET依存/Win10互換でエラーなら表示された安全な失敗コードだけ確認、録画に影響を与えない。
+- 公開repoでは個人の絶対Windowsユーザーパスを掲載しない。
+
+
 ## CURRENT — 2026-11-18 21:04 JST: WPR Handle profile ETL completed exactly across +428 handles
 
 - **User's newest real output**: Target PID=6168; expected burst 2026-11-18 21:01; WPR Handle capture **20:59–21:04**; `Starting WPR Handle capture...`, `Stopping WPR and saving ETL...`, before handles=17799, after=18227, **net +428**; output shows `Saved ETL:` and `COMPLETE`. Exact local saved path is known in the current conversation; keep absolute Windows username path out of public repo.
