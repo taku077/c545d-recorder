@@ -2,6 +2,21 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT 2026-11-18 JST — Keyハンドル分布実測確定：214種類×79個=16906（全Keyの約99%）
+
+ユーザーの最新ヒストグラムは Repetitions79,KeyNames214,Handles16906 / 4,1,4 / 2,1,2 / 1,166,166。382種類、17078 Keyで先行PID6168集計と完全一致。16906/17078=98.993%。
+
+過去のHandle type CSVでは毎時01分・24分にKeyが+428ずつ、4hで+3424。428=214×2、79=1+2×39に整合。周期ごと同じ214のキー各2追加という強い仮説だが直接時系列で214個すべての+2は未検証。RegOpenKey等の作成者とclose漏れ関数は未特定。
+
+次の目標は原因DLL/関数のコールスタック特定。4h集計やUMDH Captureはやり直さない。もし追加確認するならHandle64を2時点だけローカル取得してキー名ごとの増加数を非個人情報の数値のみで照合。RAWレジストリキー名/パスは共有しない。
+
+公式ProcMon v4.13（2026-11-05公開）のサポートOSはWindows11+と記載 https://learn.microsoft.com/en-us/sysinternals/downloads/procmon 。ユーザーWindows10での利用は未検証。Windows10対応の具体的入手方法が確認できるまで最新版を案内しない。WPR/WPAのHandle Usage/Create Stackは公式 https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/support-tools-xperf-wpa-wpr で案内されるがプロセス再起動を要する設定もあるため、現在の録画は維持する。
+
+ユーザーはUST解除・通常録画継続中。録画停止、UST再ON、GFlags設定変更、Handle -cによる強制close、レジストリ編集は禁止。Microsoft RegCloseKey https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regclosekey 。
+
+
+
+
 ## CURRENT — 2026-11-18 JST: Key 17078個・固有名382種類、上位10種類は各79個（頻度分布待ち）
 
 - **最新のユーザー実機PowerShell結果**：PID6168、`KeyHandles=17078`, `UniqueKeyNames=382`, `MostRepeatedCount=79`, `Top10RepeatedCounts=79,79,79,79,79,79,79,79,79,79`。これはHandle64 `-a -p`を読んだユーザーのメモリ上での集計結果。**元レジストリキー名の本文は提供されず、こちらにも保有しない**。
