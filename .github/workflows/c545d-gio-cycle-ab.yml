@@ -1,0 +1,89 @@
+name: C545D GIO 2.82.4 weak-ref cycle fix isolated A/B test
+
+on:
+  pull_request:
+    paths:
+      - 'native/gio_patch/**'
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - '.github/workflows/c545d-gio-cycle-ab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-vs-patched:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-libffi
+            mingw-w64-ucrt-x86_64-pcre2
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-gettext
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Build upstream GLib 2.82.4 in isolated runner
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib82
+          meson setup build82 glib82 \
+            -Dtests=false -Dinstalled_tests=false \
+            -Dintrospection=disabled -Ddocumentation=false \
+            -Dman-pages=disabled -Dsysprof=disabled \
+            -Dlibmount=disabled -Dlibelf=disabled -Dselinux=disabled \
+            -Dnls=disabled -Ddefault_library=shared
+          meson compile -C build82
+          mkdir -p artifacts
+          gcc -std=c11 -O2 -Wall -Wextra \
+              tests/gio_appinfo_key_handle_probe.c -o gio_appinfo_probe.exe \
+              $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32
+
+      - name: Baseline 16 cycles on unmodified GLib 2.82.4
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          ./gio_appinfo_probe.exe > artifacts/baseline.csv 2> artifacts/baseline.stderr
+          grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/baseline.csv
+
+      - name: Apply cycle patch and rebuild
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python3 native/gio_patch/apply_gio_weakref_patch.py glib82/gio/gwin32appinfo.c
+          meson compile -C build82
+
+      - name: Patched 16 cycles on same GLib 2.82.4 toolchain
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          ./gio_appinfo_probe.exe > artifacts/patched.csv 2> artifacts/patched.stderr
+          grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched.csv
+
+      - name: Compare handle delta and private bytes
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python3 native/gio_patch/evaluate_ab.py artifacts/baseline.csv artifacts/patched.csv | tee artifacts/result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gio-2824-cycle-ab-aggregated
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
