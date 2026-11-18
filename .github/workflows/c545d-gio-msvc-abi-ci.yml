@@ -5,6 +5,7 @@ on:
     paths:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
       - 'tests/patch_glib_registry_owned_path.py'
+      - 'tests/patch_glib_msvc_gio_sdk_export.py'
       - '.github/workflows/c545d-gio-msvc-abi-ci.yml'
   workflow_dispatch:
 
@@ -36,11 +37,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AppInfo weakref source patch failed' }
           py tests/patch_glib_registry_owned_path.py "$glib/gio/gwin32registrykey.c"
           if ($LASTEXITCODE -ne 0) { throw 'Win32 UTF16 source patch failed' }
+          # Keep the official SDK's existing, internal GIO export visible only
+          # in this MSVC compatibility build; do not add a stub implementation.
+          py tests/patch_glib_msvc_gio_sdk_export.py "$glib/gio/meson.build"
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC SDK GIO export parity patch failed' }
           git -C $glib diff --check
           if ($LASTEXITCODE -ne 0) { throw 'Combined source patch whitespace verification failed' }
           $changed=@(git -C $glib diff --name-only)
-          $expected=@('gio/gwin32appinfo.c','gio/gwin32registrykey.c')
-          if ($changed.Count -ne 2 -or @($changed | Where-Object {$_ -notin $expected}).Count) {
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32registrykey.c','gio/meson.build')
+          if ($changed.Count -ne 3 -or @($changed | Where-Object {$_ -notin $expected}).Count) {
             throw "Unexpected modified GLib sources: $($changed -join ',')"
           }
       - name: Build combined fix in MSVC x64 environment
