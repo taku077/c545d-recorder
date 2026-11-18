@@ -1,0 +1,49 @@
+name: Offline ETL handle stack analyzer Windows build
+on:
+  pull_request:
+    paths:
+      - diagnostics/EtwHandleOffline/**
+      - .github/workflows/c545d-etl-offline-analyzer.yml
+  push:
+    paths:
+      - diagnostics/EtwHandleOffline/**
+      - .github/workflows/c545d-etl-offline-analyzer.yml
+jobs:
+  build-win-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore and build self-contained win-x64 analyzer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish diagnostics/EtwHandleOffline/EtwHandleOffline.csproj --configuration Release --runtime win-x64 --self-contained true --output "$env:RUNNER_TEMP\etl-analyzer"
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+      - name: Run sanitizer selftest from published EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$env:RUNNER_TEMP\etl-analyzer\EtwHandleOffline.exe" --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Selftest failed' }
+      - name: Package exact runtime plus launcher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pack = Join-Path $env:RUNNER_TEMP 'C545D_ETL_Offline_Analyzer'
+          New-Item -ItemType Directory -Path $pack -Force | Out-Null
+          Get-ChildItem "$env:RUNNER_TEMP\etl-analyzer" -File | Copy-Item -Destination $pack -Force
+          Copy-Item diagnostics/EtwHandleOffline/START_OFFLINE_ETL_ANALYSIS.cmd $pack
+          Copy-Item diagnostics/EtwHandleOffline/README_JA.txt $pack
+          $zip = Join-Path $env:RUNNER_TEMP 'C545D_ETL_Offline_Analyzer_Win10_x64.zip'
+          Compress-Archive -Path (Join-Path $pack '*') -DestinationPath $zip -CompressionLevel Optimal
+          if(-not (Test-Path -LiteralPath $zip)) {throw 'ZIP missing'}
+          Write-Host ('PACKAGE_READY=' + $zip)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: C545D_ETL_Offline_Analyzer_Win10_x64
+          path: ${{ runner.temp }}/C545D_ETL_Offline_Analyzer_Win10_x64.zip
+          if-no-files-found: error
+          retention-days: 30
