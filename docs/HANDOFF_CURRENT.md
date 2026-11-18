@@ -2,6 +2,18 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-19 JST — Combined weak-reference + UTF-16 path ownership fix passes 16/64-cycle A/B
+
+- GitHub Actions run **44363594321** SUCCESS (isolated Windows-2022/MSYS2, GLib 2.82.4 source build), PR #54: https://github.com/taku077/c545d-recorder/actions/runs/44363594321
+- Three conditions tested in one CI run: **unmodified** (16 registry changes: +5,152 total handles / +23,187,456 bytes PrivateUsage), **weakref-only** (16 changes: 0 total handle growth, +10,084,352 private bytes; 64 changes: +2 handles, +39,497,728 bytes), and **weakref + UTF-16 constructor ownership** (16 changes: 0 handles, +532,480 bytes; 64 changes: +2 handles, +1,466,368 bytes). The combined patch reduces residual 64-cycle PrivateUsage increase by **96.29%**, without increasing handles.
+- Additional source-specific patch script: `tests/patch_glib_registry_owned_path.py` targets `gio/gwin32registrykey.c::g_win32_registry_key_new_w()`; pointer-prop setter already calls `g_wcsdup()` (owned copy), but caller unnecessarily also passed `g_wcsdup(path,-1)` into `g_initable_new()` and leaked that intermediate allocation. Combined candidate now fixes two distinct bugs: strong-reference cycles (Key handles) and this duplicated UTF-16 allocation (PrivateUsage).
+- Retained `GAppInfo` name/exe + public filetype/URL association API regression PASS for combined patch, no-GIO-registry-change control stable. GLib GObject live instance counts under combined candidate stable between initial and 64 cycles: Application 123→123, Handler 390→390, ShellVerb 680→680, RegistryKey 384→385 (a small bounded process-global change), FileExtension 383→383, URLSchema 49→49. The 64-cycle net handles +2 is not the original repeating +322 Key-per-cycle.
+- Source audit shows redundant UTF-16 copy remains in GLib 2.82.4, 2.86.4 and 2.88.3 at the time checked; blind upgrade is not sufficient.
+- **Remaining**: combined patch still has ~1.40 MiB PrivateUsage increase over 64 cycles (not proven plateau). Distinguish live heap allocation vs allocator holding memory. Verify MSVC-built GLib from the exact GStreamer 1.28.8 SDK and further lifetime/thread/API tests **before any recorder DLL deployment**. No live recorder/PC changes and no user manual or multihour test requested.
+- Latest run artifact: `c545d-glib-2824-weak-backref-ab` with `utf16_memory_comparison.csv`, `gobject_live_types.csv`, `ownedpath_registry_64.log` and `registry_utf16_ownership.diff`.
+
+
+
 ### UPDATE 2026-11-19 JST — Weak-reference AppInfo ownership patch BUILT and A/B tested
 
 - New source-specific patch script: `tests/patch_glib_appinfo_weak_backrefs.py`. Changes `GWin32AppInfoShellVerb->app` from owning pointer to `GWeakRef`, initializes/clears it, uses `g_weak_ref_get()` to acquire strong lifetime protection in public lookups, and avoids disposing retained app objects. Checks exact GLib 2.82.4 source signatures, preserves source newline convention. **This is a candidate, not a released replacement DLL.**
