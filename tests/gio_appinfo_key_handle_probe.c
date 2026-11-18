@@ -13,6 +13,60 @@
 
 static int report_type_instances = 0;
 
+static int report_heap_summary = 0;
+
+/*
+ * Expensive debug-only heap census. Run on disposable CI exclusively, and
+ * at sparse milestones only. Busy bytes are not equivalent to PrivateUsage:
+ * separately committed VirtualAlloc/WinRT memory is not represented here.
+ */
+static void report_heaps(const char *label, int cycle)
+{
+    DWORD n, found, i, bad = 0;
+    HANDLE *heaps = NULL;
+    unsigned long long busy_bytes = 0, busy_blocks = 0;
+    if (!report_heap_summary) return;
+    n = GetProcessHeaps(0, NULL);
+    if (n == 0 || n > 4096) {
+        printf("GIO_HEAP,%s,%d,0,0,0,1\n", label, cycle);
+        return;
+    }
+    heaps = (HANDLE *)calloc(n, sizeof(HANDLE));
+    if (!heaps) {
+        printf("GIO_HEAP,%s,%d,0,0,%lu,1\n", label, cycle, (unsigned long)n);
+        return;
+    }
+    found = GetProcessHeaps(n, heaps);
+    if (found == 0 || found > n) {
+        free(heaps);
+        printf("GIO_HEAP,%s,%d,0,0,%lu,1\n", label, cycle, (unsigned long)n);
+        return;
+    }
+    for (i = 0; i < found; ++i) {
+        PROCESS_HEAP_ENTRY entry;
+        DWORD last_error;
+        memset(&entry, 0, sizeof(entry));
+        if (!HeapLock(heaps[i])) {
+            bad++;
+            continue;
+        }
+        while (HeapWalk(heaps[i], &entry)) {
+            if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
+                busy_bytes += entry.cbData;
+                busy_blocks++;
+            }
+        }
+        last_error = GetLastError();
+        if (last_error != ERROR_NO_MORE_ITEMS) bad++;
+        if (!HeapUnlock(heaps[i])) bad++;
+    }
+    free(heaps);
+    printf("GIO_HEAP,%s,%d,%llu,%llu,%lu,%lu\n", label, cycle,
+           busy_blocks, busy_bytes, (unsigned long)found, (unsigned long)bad);
+    fflush(stdout);
+}
+
+
 /* Only meaningful with -Dglib_debug=enabled and GOBJECT_DEBUG=instance-count.
  * This is a snapshot of *live* GObject instance counts, not allocations.
  */
@@ -85,6 +139,7 @@ int main(int argc, char **argv)
         if (strcmp(argv[arg], "--no-registry-change") == 0) mutate_registry = 0;
         else if (strcmp(argv[arg], "--cycles=64") == 0) cycle_count = 64;
         else if (strcmp(argv[arg], "--report-types") == 0) report_type_instances = 1;
+        else if (strcmp(argv[arg], "--heap-summary") == 0) report_heap_summary = 1;
     }
     LONG rc;
     wchar_t value_name[96];
@@ -106,6 +161,7 @@ int main(int argc, char **argv)
     Sleep(1000);
     report("baseline", 0);
     report_types("baseline", 0);
+    report_heaps("baseline", 0);
 
     for (i = 1; i <= cycle_count; i++) {
         /* Different data each iteration guarantees a LAST_SET notification. */
@@ -124,12 +180,14 @@ int main(int argc, char **argv)
         enumerate_apps();
         report("cycle", i);
         report_types("cycle", i);
+        if (i % 16 == 0 || i == cycle_count) report_heaps("cycle", i);
     }
     if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
     Sleep(1200);
     enumerate_apps();
     report("after_cleanup", cycle_count + 1);
     report_types("after_cleanup", cycle_count + 1);
+    report_heaps("after_cleanup", cycle_count + 1);
     printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
