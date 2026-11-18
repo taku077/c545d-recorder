@@ -2,6 +2,19 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18 JST：Handle種類別4h実測で**Keyハンドルだけ+3424個**と確定（最優先）
+
+- ユーザーから実物 `C545D_HandleEvidence_20261118_145921.zip` を受領。ZIP CRC正常。中身2CSV：HandleSummary 239レコード、HandleTypes 3840行。全239レコードStatus=OK、PID=6168固定、ProcessStart=2026-11-18 00:25:43、種類別合計とHandleToolTotalは毎回一致。観測時刻 2026-11-18 14:59:21→18:59:22（4h）。1分間隔は微妙にずれ239件となったが収集は正常。
+- **最重要事実**：Keyは `12370→15794` **+3424**。総ハンドルも `12663→16087` **+3424**。他の16種類は開始から終了まで**全て純増0**（例：Event40→40、File17→17、Thread74→74、Section14→14、EtwRegistration99→99）。その他の非Key種別は合計293（Key以外が293）、上述の主要6種以外の残りは35。**KeyはWindowsレジストリのハンドル型**であり、GStreamer自身のバイナリplugin registryとは異なる。
+- 同一PIDのPrivateMemory `695.32→717.94MB` **+22.62MB**、WorkingSet `634.28→656.62MB` **+22.34MB**。これはKey増加と同じ期間に起きたが、Keyカーネルオブジェクトの占有領域≠プロセスPrivate Memoryのため**同じリーク原因とはまだ断定不可**。
+- 1時間あたり**Key純増856**、毎時01分頃と24分頃に**+428ずつ8回**。Keyは瞬間+431/すぐ−3の周期が4回、直接+428が4回で**安定後の純増は毎回428**。一時的にEvent、EtwRegistrationなど他種が増えても戻る。PID変化なし。
+- **新たに絞られた仮説**：周期処理がWindowsレジストリKeyを大量に開き、ハンドルを解放せず保持している疑いが強い。具体的関数、モジュールは未確定。Microsoft公式：https://learn.microsoft.com/en-us/sysinternals/downloads/handle と https://learn.microsoft.com/en-us/windows/win32/sysinfo/opening-creating-and-closing-keys
+- **次の最小操作**：録画継続・UST OFFのまま、既に所持するMicrosoft Handle64を**一度だけ** `-a -p <録画PID>` で読み取り専用実行し、Keyオブジェクト名の**重複度（最も多い同一キーの件数、異なるキー名の種類数、上位頻度の数字のみ）**をローカルで集計する。元パス・シンボル・ユーザー名・RAW handle一覧を提出/公開しない。Key名の集中度次第で次の関数トレースを決める。レジストリそのものを編集しない。Handleの`-c`による強制closeは絶対にしない。
+- これまでのUMDHはByteDelta91（正27負64）、Top3正+380928/+178176/+94208Bに共通gstisomp4等を認識したが、今回**レジストリKey**へ分類したハンドルは別の資源。GStreamer MP4 muxだけが原因と決めつけない。
+- 次チャットはユーザーの新しい Key-handle 重複度の安全な数字と本CURRENTから続行。既存4h監視、UST再Enable、UMDH再キャプチャ、録画再起動を繰り返さない。公開には個人Windows絶対パス/生レジストリキー名を含めない。
+
+
+
 ## CURRENT — 2026-11-18 JST: Handleの種類別4時間自動記録ツールを用意、実機CSV待ち（最優先）
 
 - ユーザーは4時間メモリCSVのハンドル増加（PID6168、3247→6671、+3424個／4h、約+856個/h、毎時01分・24分に約+428個）を受け、**ハンドル種類別の自動記録を開始することに同意**。これまでのUMDH再測定や手動測定には戻らない。
