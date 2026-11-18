@@ -1,0 +1,109 @@
+name: C545D GLib 2.82.4 weak-backref ownership A/B
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_appinfo_weak_backrefs.py'
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/gio_appinfo_retained_lifetime.c'
+      - '.github/workflows/c545d-gio-weak-backref-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-versus-weakrefs:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Compile GLib 2.82.4 unmodified and collect baseline
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          meson setup glib-build glib-src -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+          git -C glib-src rev-parse HEAD > artifacts/glib_source_sha.txt
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/baseline_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/baseline_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/baseline_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/baseline_registry.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/baseline_lifetime.log
+
+      - name: Apply weak-backref source change and rebuild
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          git -C glib-src diff --check
+          meson compile -C glib-build
+          git -C glib-src diff -- gio/gwin32appinfo.c > artifacts/weak_backref_source.diff
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/patched_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/patched_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/patched_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
+
+      - name: Compare counts with independent pass-fail gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=@()
+          foreach($mode in @('baseline_nochange','baseline_registry','patched_nochange','patched_registry')) {
+            $lines=@(Get-Content "artifacts/$mode.log")
+            $before=@($lines | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+            $after=@($lines | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+            $cycles=@($lines | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+            if ($before.Count -ne 1 -or $after.Count -ne 1 -or $cycles.Count -ne 16) {
+              throw "Incomplete cycle data: $mode"
+            }
+            $b=$before[0].Split(',');$e=$after[0].Split(',')
+            $out += [pscustomobject]@{
+              mode=$mode
+              handles_before=[long]$b[4];handles_after=[long]$e[4]
+              handles_delta=[long]$e[4]-[long]$b[4]
+              private_before=[long]$b[5];private_after=[long]$e[5]
+              private_delta=[long]$e[5]-[long]$b[5]
+            }
+          }
+          $out | Export-Csv -Path artifacts/weak_backref_summary.csv -NoTypeInformation
+          $out | Format-Table -AutoSize
+          $bc=$out | Where-Object mode -eq baseline_nochange
+          $br=$out | Where-Object mode -eq baseline_registry
+          $pc=$out | Where-Object mode -eq patched_nochange
+          $pr=$out | Where-Object mode -eq patched_registry
+          if ($br.handles_delta -lt 300) { throw 'Baseline failure: GLib 2.82.4 registry leak not reproduced' }
+          if ([math]::Abs($bc.handles_delta) -gt 4 -or [math]::Abs($pc.handles_delta) -gt 4) { throw 'Control conditions unexpectedly grew' }
+          if ($pr.handles_delta -gt 4) { throw "Weak backref candidate failed handle plateau: $($pr.handles_delta)" }
+          if ($pr.private_delta -ge $br.private_delta) { throw 'Weak backref did not improve private memory delta' }
+          'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
+          Get-Content artifacts/status.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-2824-weak-backref-ab
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
