@@ -104,8 +104,9 @@ static void report_key_handles(const char *label, int cycle)
     const char *tool = getenv("C545D_HANDLE_EXE");
     char command[2048], line[512];
     FILE *pipe;
-    unsigned long long keys = 0;
-    int found = 0, rc;
+    unsigned long long keys = 0, reported_total = 0, type_sum = 0;
+    int found_key = 0, found_heading = 0, found_total = 0, in_summary = 0;
+    int row_count = 0, parse_error = 0, rc;
     if (!tool || !*tool) return;
     if (strlen(tool) > 1700) {
         fprintf(stderr, "GIO_KEY_ERROR: tool path unexpectedly long\n");
@@ -121,25 +122,73 @@ static void report_key_handles(const char *label, int cycle)
     }
     while (fgets(line, sizeof(line), pipe)) {
         char *entry = line;
-        char *colon;
-        char *name_end;
+        char *colon, *last;
+        char type_name[96];
+        size_t length, i;
+        unsigned long long count;
+        int safe = 1;
         while (*entry == ' ' || *entry == '\t') ++entry;
+        if (strncmp(entry, "Handle type summary:", 20) == 0) {
+            if (found_heading) parse_error = 1; /* never merge processes */
+            found_heading = 1;
+            in_summary = 1;
+            continue;
+        }
+        if (!in_summary) continue;
+        if (strncmp(entry, "Total handles:", 14) == 0) {
+            if (sscanf(entry + 14, " %llu", &reported_total) != 1)
+                parse_error = 1;
+            found_total = 1;
+            in_summary = 0;
+            continue;
+        }
         colon = strchr(entry, ':');
-        if (!colon) continue;
-        name_end = colon;
-        while (name_end > entry &&
-               (name_end[-1] == ' ' || name_end[-1] == '\t'))
-            --name_end;
-        if (name_end - entry == 3 &&
-            strncmp(entry, "Key", 3) == 0 &&
-            sscanf(colon + 1, " %llu", &keys) == 1)
-            found = 1;
+        if (!colon || sscanf(colon + 1, " %llu", &count) != 1)
+            continue;
+        last = colon;
+        while (last > entry && (last[-1] == ' ' || last[-1] == '\t')) --last;
+        length = (size_t)(last - entry);
+        if (length == 0 || length >= sizeof(type_name)) {
+            parse_error = 1;
+            continue;
+        }
+        memcpy(type_name, entry, length);
+        type_name[length] = '\0';
+        if (strcmp(type_name, "<Unknown type>") == 0)
+            strcpy(type_name, "UnknownType");
+        else {
+            for (i = 0; i < length; ++i) {
+                char ch = type_name[i];
+                if (!((ch >= 'A' && ch <= 'Z') ||
+                      (ch >= 'a' && ch <= 'z') ||
+                      (ch >= '0' && ch <= '9') || ch == ' ')) {
+                    safe = 0;
+                    break;
+                }
+            }
+            if (!safe) strcpy(type_name, "OtherType");
+        }
+        if (strcmp(type_name, "Key") == 0) {
+            if (found_key) parse_error = 1;
+            keys = count;
+            found_key = 1;
+        }
+        type_sum += count;
+        row_count++;
+        /* Only kernel object *type names* and counts are recorded. No paths. */
+        printf("GIO_H64TYPE,%s,%d,%s,%llu\n", label, cycle,
+               type_name, count);
     }
     rc = _pclose(pipe);
-    if (rc != 0 || !found) {
-        fprintf(stderr, "GIO_KEY_ERROR: Key type census failed\n");
+    if (rc != 0 || parse_error || !found_heading || !found_total ||
+        !found_key || row_count == 0 || type_sum != reported_total) {
+        fprintf(stderr, "GIO_KEY_ERROR: invalid type census (exit=%d, rows=%d, "
+                        "sum=%llu, total=%llu)\n", rc, row_count,
+                type_sum, reported_total);
         exit(5);
     }
+    printf("GIO_H64TOTAL,%s,%d,%llu,%llu\n", label, cycle,
+           reported_total, type_sum);
     printf("GIO_KEY,%s,%d,%llu\n", label, cycle, keys);
     fflush(stdout);
 }
@@ -235,6 +284,9 @@ int main(int argc, char **argv)
         report_types("cycle", i);
         if (i % 16 == 0 || i == cycle_count) report_heaps("cycle", i);
     }
+    /* The last steady-state sample, before the probe deletes its disposable
+     * registration. Cleanup can legitimately release a large AppInfo graph. */
+    report_key_handles("before_cleanup", cycle_count);
     if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
     Sleep(1200);
     enumerate_apps();
