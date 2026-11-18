@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
+      - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - 'tests/gio_appinfo_retained_lifetime.c'
       - 'tests/gio_appinfo_public_api_regression.c'
@@ -75,12 +76,30 @@ jobs:
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types > artifacts/patched_registry_64.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
 
+      - name: Remove redundant registry UTF16 path copy and retest
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          git -C glib-src diff --check
+          meson compile -C glib-build
+          git -C glib-src diff -- gio/gwin32registrykey.c > artifacts/registry_utf16_ownership.diff
+          export GOBJECT_DEBUG=instance-count
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/ownedpath_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/ownedpath_api.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/ownedpath_lifetime.log
+          grep -q 'GIO_API_PASS' artifacts/ownedpath_api.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/ownedpath_registry.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types --cycles=64 > artifacts/ownedpath_registry_64.log
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/ownedpath_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/ownedpath_registry_64.log
+
       - name: Compare counts with independent pass-fail gates
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $out=@()
-          foreach($mode in @('baseline_nochange','baseline_registry','patched_nochange','patched_registry')) {
+          foreach($mode in @('baseline_nochange','baseline_registry','patched_nochange','patched_registry','ownedpath_registry')) {
             $lines=@(Get-Content "artifacts/$mode.log")
             $before=@($lines | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
             $after=@($lines | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
@@ -103,10 +122,12 @@ jobs:
           $br=$out | Where-Object mode -eq baseline_registry
           $pc=$out | Where-Object mode -eq patched_nochange
           $pr=$out | Where-Object mode -eq patched_registry
+          $ur=$out | Where-Object mode -eq ownedpath_registry
           if ($br.handles_delta -lt 300) { throw 'Baseline failure: GLib 2.82.4 registry leak not reproduced' }
           if ([math]::Abs($bc.handles_delta) -gt 4 -or [math]::Abs($pc.handles_delta) -gt 4) { throw 'Control conditions unexpectedly grew' }
           if ($pr.handles_delta -gt 4) { throw "Weak backref candidate failed handle plateau: $($pr.handles_delta)" }
           if ($pr.private_delta -ge $br.private_delta) { throw 'Weak backref did not improve private memory delta' }
+          if ([math]::Abs($ur.handles_delta) -gt 4) { throw 'UTF16 ownership patch reintroduced handle growth' }
           $lines64=@(Get-Content artifacts/patched_registry_64.log)
           $base64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
           $after64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
@@ -122,8 +143,31 @@ jobs:
           "PATCHED_64_PRIVATE_DELTA=$mem64" | Add-Content artifacts/longer_summary.txt
           if ([math]::Abs($delta64) -gt 4) { throw "64-cycle handle leak remains: $delta64" }
           Write-Host (Get-Content artifacts/longer_summary.txt)
+
+          $owned64=@(Get-Content artifacts/ownedpath_registry_64.log)
+          $uBefore=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+          $uAfter=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+          $uRounds=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+          if ($uBefore.Count -ne 1 -or $uAfter.Count -ne 1 -or $uRounds.Count -ne 64) {
+            throw 'UTF16 owner patch 64-cycle test incomplete'
+          }
+          $u0=$uBefore[0].Split(',')
+          $u1=$uAfter[0].Split(',')
+          $uHandle=[long]$u1[4]-[long]$u0[4]
+          $uPrivate=[long]$u1[5]-[long]$u0[5]
+          $comparison=@(
+            [pscustomobject]@{mode='weakref_only';delta_16=$pr.private_delta;delta_64=$mem64;handles_64=$delta64},
+            [pscustomobject]@{mode='weakref_plus_utf16';delta_16=$ur.private_delta;delta_64=$uPrivate;handles_64=$uHandle}
+          )
+          $comparison | Export-Csv -Path artifacts/utf16_memory_comparison.csv -NoTypeInformation
+          $comparison | Format-Table -AutoSize
+          if ([math]::Abs($uHandle) -gt 4) { throw "UTF16 ownership experiment failed 64-cycle plateau: $uHandle" }
+          if ($uPrivate -ge $mem64) {
+            throw 'UTF16 fix did not reduce 64-cycle Private Bytes under this workload; investigate'
+          }
+
           $objectSummaries = @()
-          foreach ($mode in @('baseline_registry','patched_registry','patched_registry_64')) {
+          foreach ($mode in @('baseline_registry','patched_registry','patched_registry_64','ownedpath_registry','ownedpath_registry_64')) {
             $rows = @(Get-Content "artifacts/$mode.log" | Where-Object { $_ -match '^GIO_TYPE,' })
             if ($rows.Count -lt 14) { throw "GObject instrumentation missing: $mode" }
             $first = @{}
