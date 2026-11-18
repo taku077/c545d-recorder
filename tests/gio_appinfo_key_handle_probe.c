@@ -9,6 +9,7 @@
 #include <gio/gio.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <string.h>
 
 static volatile gint changed_count = 0;
 static void on_changed(GAppInfoMonitor *monitor, gpointer unused)
@@ -48,9 +49,10 @@ static void report(const char *label, int cycle)
            (unsigned long long)memory.PrivateUsage);
     fflush(stdout);
 }
-int main(void)
+int main(int argc, char **argv)
 {
     HKEY hkey = NULL;
+    const int mutate_registry = !(argc > 1 && strcmp(argv[1], "--no-registry-change") == 0);
     LONG rc;
     wchar_t value_name[96];
     DWORD pid = GetCurrentProcessId();
@@ -59,7 +61,7 @@ int main(void)
     /* The runner has a disposable HKCU profile. */
     _snwprintf(value_name, 95, L"C545D_CI_Probe_%lu", (unsigned long)pid);
     value_name[95] = L'\0';
-    rc = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &hkey);
+    rc = mutate_registry ? RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &hkey) : ERROR_SUCCESS;
     if (rc != ERROR_SUCCESS) {
         fprintf(stderr, "PROBE_FAIL: open disposable HKCU value target status=%ld\n", (long)rc);
         return 2;
@@ -76,12 +78,11 @@ int main(void)
         wchar_t value[128];
         _snwprintf(value, 127, L"Software\\C545D_NoSuchCapabilities\\%d", i);
         value[127] = L'\0';
-        rc = RegSetValueExW(hkey, value_name, 0, REG_SZ,
-                            (const BYTE *)value, (DWORD)((wcslen(value) + 1) * sizeof(wchar_t)));
+        rc = mutate_registry ? RegSetValueExW(hkey, value_name, 0, REG_SZ,
+                            (const BYTE *)value, (DWORD)((wcslen(value) + 1) * sizeof(wchar_t))) : ERROR_SUCCESS;
         if (rc != ERROR_SUCCESS) {
             fprintf(stderr, "PROBE_FAIL: synthetic HKCU change status=%ld\n", (long)rc);
-            RegDeleteValueW(hkey, value_name);
-            RegCloseKey(hkey);
+            if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
             return 3;
         }
         Sleep(900);
@@ -89,11 +90,10 @@ int main(void)
         enumerate_apps();
         report("cycle", i);
     }
-    RegDeleteValueW(hkey, value_name);
-    RegCloseKey(hkey);
+    if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
     Sleep(1200);
     enumerate_apps();
     report("after_cleanup", 17);
-    printf("GIO_PROBE_DONE,cycles=16,notifications=%ld\n", (long)g_atomic_int_get(&changed_count));
+    printf("GIO_PROBE_DONE,cycles=16,notifications=%ld,reg_changes=%d\n", (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
