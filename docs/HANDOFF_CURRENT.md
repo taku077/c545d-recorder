@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-19 JST — Weak-reference AppInfo ownership patch BUILT and A/B tested
+
+- New source-specific patch script: `tests/patch_glib_appinfo_weak_backrefs.py`. Changes `GWin32AppInfoShellVerb->app` from owning pointer to `GWeakRef`, initializes/clears it, uses `g_weak_ref_get()` to acquire strong lifetime protection in public lookups, and avoids disposing retained app objects. Checks exact GLib 2.82.4 source signatures, preserves source newline convention. **This is a candidate, not a released replacement DLL.**
+- CI `C545D GLib 2.82.4 weak-backref ownership A/B`, run **44353261870** SUCCESS: untouched GLib 2.82.4 16 reg changes **+5,152 handles**, **+23,433,216 Private Bytes**; patched same source **0 handles**, **+10,125,312 Private Bytes**; no-registry-change controls 0 handles in both; retained GAppInfo basic check PASS. Artifact `c545d-glib-2824-weak-backref-ab` includes before/after numerical CSV and source diff.
+- **Key fix candidate supported on CI; remaining Private Memory growth is not fixed.** Older additional CI had `HeapSummary` allocated bytes ~+8.1MB per 16 cycles even when Key counts plateaued. UWP-skip explained only ~8% of Private Memory growth, so cannot dismiss remaining memory as allocator cache or solve by disabling UWP.
+- New tests `tests/gio_appinfo_public_api_regression.c` and workflow `.github/workflows/c545d-gio-weak-backref-ci.yml` include 8-cycle public API checks and patched 64-cycle handle/memory measurement, GitHub Actions execution launched. Consult its finalized result before claiming strong functional correctness or 64-cycle stability.
+- **Next engineering action**: isolate remaining live allocations automatically on Windows runner, using existing short scans and heap accounting, then address them without disabling legitimate AppInfo notifications. After that, compile with the MSVC-compatible SDK matching the user's GStreamer 1.28.8. No user action, new 4h recording, forced `RegCloseKey`, or registry change on user's PC.
+- No production change or release made; investigate branch stays separate in draft PR #54.
+
+
+
 ### UPDATE: Two successful camera-free CI runs (2026-11-19 JST)
 
 - Run #44331665421: 16 synthetic-registry-change cycles on exact GIO **2.82.4.0**, process total handles **700→5853**, Private Bytes **5,533,696→28,913,664**; Handle64 reports overwhelmingly Key increase.
