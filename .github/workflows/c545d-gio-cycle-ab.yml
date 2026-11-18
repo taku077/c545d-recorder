@@ -100,6 +100,14 @@ jobs:
             artifacts/patched.csv artifacts/patched_skip_uwp.csv \
             > artifacts/uwp_isolation.txt
           cat artifacts/uwp_isolation.txt
+      - name: Compare Win32 heap live-allocation and committed-memory deltas
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python3 native/gio_patch/analyze_heaps.py \
+            artifacts/patched.csv artifacts/patched_skip_uwp.csv \
+            > artifacts/heap_attribution.txt
+          cat artifacts/heap_attribution.txt
       - name: Compare handle delta and private bytes
         shell: msys2 {0}
         run: |

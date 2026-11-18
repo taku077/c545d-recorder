@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <wchar.h>
 #include <string.h>
+#include <stdlib.h>
+#include <heapapi.h>
 
 static volatile gint changed_count = 0;
 static void on_changed(GAppInfoMonitor *monitor, gpointer unused)
@@ -47,6 +49,31 @@ static void report(const char *label, int cycle)
     printf("GIO_PROBE,%s,%d,%ld,%lu,%llu\n", label, cycle,
            (long)g_atomic_int_get(&changed_count), (unsigned long)count,
            (unsigned long long)memory.PrivateUsage);
+    if (strcmp(label, "baseline") == 0 || strcmp(label, "after_cleanup") == 0) {
+        DWORD capacity = GetProcessHeaps(0, NULL);
+        DWORD count_heaps = 0, succeeded = 0, failed = 0;
+        unsigned long long allocated = 0, committed = 0;
+        HANDLE *heaps = capacity ? (HANDLE *)calloc(capacity, sizeof(HANDLE)) : NULL;
+        if (heaps != NULL) {
+            count_heaps = GetProcessHeaps(capacity, heaps);
+            if (count_heaps > capacity) { failed = count_heaps; count_heaps = capacity; }
+            for (DWORD i = 0; i < count_heaps; i++) {
+                HEAP_SUMMARY summ;
+                ZeroMemory(&summ, sizeof(summ));
+                summ.cb = sizeof(summ);
+                if (HeapSummary(heaps[i], 0, &summ)) {
+                    allocated += (unsigned long long)summ.cbAllocated;
+                    committed += (unsigned long long)summ.cbCommitted;
+                    succeeded++;
+                } else {
+                    failed++;
+                }
+            }
+            free(heaps);
+        }
+        printf("GIO_HEAPS,%s,%d,%llu,%llu,%lu,%lu\n",label,cycle,
+               allocated,committed,(unsigned long)succeeded,(unsigned long)failed);
+    }
     fflush(stdout);
     {
         const char *types[] = {
