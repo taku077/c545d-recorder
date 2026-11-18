@@ -8,7 +8,7 @@ With the env set, Windows program association changes will NOT refresh AppInfo.
 
 --- a/gio/gwin32appinfo.c
 +++ b/gio/gwin32appinfo.c
-@@ -3860,6 +3860,14 @@ keys_updated (GWin32RegistryKey  *key,
+@@ -3861,5 +3861,13 @@ keys_updated (GWin32RegistryKey  *key,
                gpointer            user_data)
  {
 +  /*
