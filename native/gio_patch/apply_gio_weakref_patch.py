@@ -63,8 +63,8 @@ shell_verb_has_app (GWin32AppInfoShellVerb *verb)
 
     s, n = re.subn(r"\b(shverb|handler_verb)->app = g_object_ref \((app|app_rec)\);",
                    r"shell_verb_set_app (\1, \2);", s)
-    if n != 9:
-        raise RuntimeError(f"Expected 9 strong back-reference assignments; got {n}")
+    if n != 10:
+        raise RuntimeError(f"Expected 10 strong back-reference assignments; got {n}")
     s = s.replace("handler_verb->app != NULL", "shell_verb_has_app (handler_verb)")
     s = s.replace("handler_verb->app == NULL", "!shell_verb_has_app (handler_verb)")
 
@@ -189,7 +189,7 @@ shell_verb_has_app (GWin32AppInfoShellVerb *verb)
     # A dangling raw ShellVerb->app access is never acceptable after the change.
     leaked = re.findall(r"\b(?:shverb|handler_verb)->app\b", s)
     # references inside shell_verb helpers are expected; direct dereference must be absent
-    if len(leaked) != 3:
+    if len(leaked) != 1:
         raise RuntimeError(f"Unexpected direct weak app references: {len(leaked)}")
     if "shverb->app = g_object_ref" in s or "handler_verb->app = g_object_ref" in s:
         raise RuntimeError("Strong cycle still present")
