@@ -43,9 +43,9 @@ jobs:
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           mkdir -p artifacts
-          meson devenv -C glib-build ./gio_appinfo_retained_lifetime.exe > artifacts/baseline_retained_lifetime.log
-          meson devenv -C glib-build ./gio_appinfo_probe.exe --no-registry-change > artifacts/baseline_nochange.log
-          meson devenv -C glib-build ./gio_appinfo_probe.exe > artifacts/baseline_regchange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/baseline_retained_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/baseline_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/baseline_regchange.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/baseline_regchange.log
           grep '^GIO_PROBE,baseline\|^GIO_PROBE,after_cleanup' artifacts/baseline_regchange.log
       - name: Apply nonproduction ownership experiment and rebuild same source
@@ -55,12 +55,12 @@ jobs:
           python tests/patch_glib_appinfo_experiment.py glib-src/gio/gwin32appinfo.c
           meson compile -C glib-build
           set +e
-          meson devenv -C glib-build ./gio_appinfo_retained_lifetime.exe > artifacts/patched_retained_lifetime.log 2>&1
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/patched_retained_lifetime.log 2>&1
           lifetime_exit=$?
           set -e
           echo "PATCHED_RETAINED_LIFETIME_EXIT=$lifetime_exit" > artifacts/lifetime_status.txt
-          meson devenv -C glib-build ./gio_appinfo_probe.exe --no-registry-change > artifacts/patched_nochange.log
-          meson devenv -C glib-build ./gio_appinfo_probe.exe > artifacts/patched_regchange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/patched_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/patched_regchange.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_regchange.log
           grep '^GIO_PROBE,baseline\|^GIO_PROBE,after_cleanup' artifacts/patched_regchange.log
       - name: Compare before and after without hiding failure
