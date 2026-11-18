@@ -93,6 +93,46 @@ static void report_types(const char *label, int cycle)
     fflush(stdout);
 }
 
+/*
+ * CI-only Key-handle census through Microsoft's official Sysinternals Handle.
+ * The tool is downloaded on the disposable runner; no registry names or handle
+ * values are recorded, only the numeric type summary for the current PID.
+ * This differentiates a small total-handle fluctuation from a Key leak.
+ */
+static void report_key_handles(const char *label, int cycle)
+{
+    const char *tool = getenv("C545D_HANDLE_EXE");
+    char command[2048], line[512];
+    FILE *pipe;
+    unsigned long long keys = 0;
+    int found = 0, rc;
+    if (!tool || !*tool) return;
+    if (strlen(tool) > 1700) {
+        fprintf(stderr, "GIO_KEY_ERROR: tool path unexpectedly long\n");
+        exit(5);
+    }
+    snprintf(command, sizeof(command),
+             "\"%s\" -accepteula -s -p %lu 2>NUL", tool,
+             (unsigned long)GetCurrentProcessId());
+    pipe = _popen(command, "r");
+    if (!pipe) {
+        fprintf(stderr, "GIO_KEY_ERROR: cannot start handle type census\n");
+        exit(5);
+    }
+    while (fgets(line, sizeof(line), pipe)) {
+        char *entry = line;
+        while (*entry == ' ' || *entry == '\t') ++entry;
+        if (sscanf(entry, "Key: %llu", &keys) == 1) found = 1;
+    }
+    rc = _pclose(pipe);
+    if (rc != 0 || !found) {
+        fprintf(stderr, "GIO_KEY_ERROR: Key type census failed\n");
+        exit(5);
+    }
+    printf("GIO_KEY,%s,%d,%llu\n", label, cycle, keys);
+    fflush(stdout);
+}
+
 static volatile gint changed_count = 0;
 static void on_changed(GAppInfoMonitor *monitor, gpointer unused)
 {
@@ -161,6 +201,7 @@ int main(int argc, char **argv)
     enumerate_apps();    /* Ensure registry watchers and AppInfo cache initialize. */
     Sleep(1000);
     report("baseline", 0);
+    report_key_handles("baseline", 0);
     report_types("baseline", 0);
     report_heaps("baseline", 0);
 
@@ -187,6 +228,7 @@ int main(int argc, char **argv)
     Sleep(1200);
     enumerate_apps();
     report("after_cleanup", cycle_count + 1);
+    report_key_handles("after_cleanup", cycle_count + 1);
     report_types("after_cleanup", cycle_count + 1);
     report_heaps("after_cleanup", cycle_count + 1);
     printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
