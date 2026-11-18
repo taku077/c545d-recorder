@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18 JST 20:29: WPR Handle利用可能、記録停止中（次は短時間ETWで生成スタックを捕捉）
+
+- ユーザー実機報告: `wpr -profiles | Select-String -Pattern 'Handle'` → `Handle Handle usage`、`wpr -status` → Windows Performance Recorder `10.0.19041 (CoreSystem)`, `WPR is not recording`。**Handle profile使用可能で、現在のWPR記録は動いていない**。まだHandle ETLは取得していない。
+- 先行実機Key分布: PID6168で17,078個、382種類、うち214種類の各79個=16,906個(約98.99%)。周期Key増加は毎時01分・24分頃に428個=214×2。これは同一集合への重複Open仮説を支持するが生成DLL/関数は未特定。
+- Microsoft公式: https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/support-tools-xperf-wpa-wpr はWPR `Handle usage`→WPA `Memory > Handles` の Creating Process / Handle Type / Create Stack を案内。https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options は `wpr -start Handle` (既定memory mode), `wpr -stop <file.etl>`, `wpr -status`, `wpr -cancel` を規定。**Heap tracingのTracingFlags設定はHandle captureと別で、録画再起動前提にしない**。
+- 予定操作: 管理者PowerShellで事前に現在のWPR不使用を再確認、同一PIDの録画が動いていることを確認し、次の毎時01分または24分の**約1〜2分前**にWPR Handleを開始し、**2〜3分後に自動停止**してローカルETL保存。時刻合わせはWindowsローカルPowerShellが待機するだけでGPTがバックグラウンド作業するわけではない。
+- ETLにはKey名、プロセス情報やパス等個人情報が含まれ得るため、**ETL原本はチャットに提出しない**。WPAでPID6168 / Key / Create Stackを限定して関数・DLLの安全な概要を抽出する。まずはWPR終了ステータスとETLのファイルサイズだけ受領する。
+- UST解除済み、RC35通常録画を継続。WPRが起動失敗したら別セッションを強制停止しない。録画停止、GFlags変更、再UMDH測定、Handle -c、レジストリ編集不要。短時間Handle ETWでも追加負荷はあり得るため録画の正常性が優先。
+
+
 ## CURRENT 2026-11-18 JST — Keyハンドル分布実測確定：214種類×79個=16906（全Keyの約99%）
 
 ユーザーの最新ヒストグラムは Repetitions79,KeyNames214,Handles16906 / 4,1,4 / 2,1,2 / 1,166,166。382種類、17078 Keyで先行PID6168集計と完全一致。16906/17078=98.993%。
