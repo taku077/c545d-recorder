@@ -45,6 +45,19 @@ A more specific mechanism than a generic missing `RegCloseKey` is visible in the
 
 A safe production patch must break the strong reference cycle while preserving the lifetime of externally returned GAppInfo/handler objects. Merely removing the `g_object_ref` from `shverb->app` could leave a dangling pointer; force-closing a live HKEY could corrupt state. First add a test that triggers two AppInfo rebuilds and checks that the old handler's GObject dispose and HKEY closure run after references are released. Then change one ownership edge to a controlled weak reference or another verified lifetime design, and run the same test plus existing recorder invariants. This is a targeted implementation gate, not a request for long host-side recording.
 
+
+## Camera-free Windows CI reproduction — FIRST RUN observed (2026-11-19 JST)
+
+- The real GLib/GIO DLL loaded by the official GStreamer 1.28.8 SDK on a clean GitHub Actions windows-2022 runner is `gio-2.0-0.dll 2.82.4.0` (exact target version).
+- 16 iterations of `g_app_info_get_all()` while updating only a disposable CI HKCU RegisteredApplications value, using `tests/gio_appinfo_key_handle_probe.c`.
+- Process total handle count reported by its own `GetProcessHandleCount`: **700 baseline → 5,853** after 16 iterations, with nearly constant **+322 handles per iteration**.
+- PrivateUsage reported by `GetProcessMemoryInfo`: **5,533,696 → 28,913,664 bytes**. This is +23,379,968 bytes, **~22.30 MiB**.
+- Independent Microsoft Sysinternals Handle64 `-s -p`: first Key sample **25**, last **5,585**; +5,560 Key during sampled window (first sample was before the GIO baseline initialization). 25 samples of Key/Total counts all report OK.
+- `GAppInfoMonitor::changed` callback count was **0** throughout this first test; do **not** claim that the registry changes triggered all cache rebuilds. The only demonstrated fact is unbounded-looking Key and Private Bytes growth over 16 successive enumerate/change iterations.
+- CI build and run succeeded. Artifact: `gio-appinfo-short-probe-sanitized`, GitHub Actions run **44331665421**. The artifact contains only numerical process measurements and status codes (no camera or personal registry key names).
+- A second short control test **without any registry modification** was added to distinguish plain repeated `g_app_info_get_all()` from notification-triggered rebuild. Compare both before selecting a patch.
+- This is a reproducible short-run candidate mechanism under the same GIO DLL version; it is **not yet a validated production fix** and not proof that the user's host has the identical path.
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
