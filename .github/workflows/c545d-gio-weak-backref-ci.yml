@@ -6,6 +6,7 @@ on:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
       - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/analyze_gio_handle_types.py'
       - 'tests/gio_appinfo_retained_lifetime.c'
       - 'tests/gio_appinfo_public_api_regression.c'
       - '.github/workflows/c545d-gio-weak-backref-ci.yml'
@@ -157,7 +158,7 @@ jobs:
           if ($keyBase.Count -ne 1 -or $keyEnd.Count -ne 1) { throw 'Weakref Key handle counts missing' }
           $weakKeyDelta=[long]$keyEnd[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
           "PATCHED_64_KEY_DELTA=$weakKeyDelta" | Add-Content artifacts/longer_summary.txt
-          if ([math]::Abs($weakKeyDelta) -gt 2) { throw "64-cycle Key handle leak remains: $weakKeyDelta" }
+          if ($weakKeyDelta -gt 2) { throw "64-cycle Key handles grew: $weakKeyDelta" }
           # Retain the existing strict total-handle gate until classified with new evidence.
           if ([math]::Abs($delta64) -gt 4) { throw "64-cycle total handle delta exceeds gate: $delta64 (Key delta $weakKeyDelta)" }
           Write-Host (Get-Content artifacts/longer_summary.txt)
@@ -178,7 +179,7 @@ jobs:
           if ($uKeyB.Count -ne 1 -or $uKeyA.Count -ne 1) { throw 'Combined fix Key census missing' }
           $uKeyDelta=[long]$uKeyA[0].Split(',')[3]-[long]$uKeyB[0].Split(',')[3]
           "COMBINED_64_KEY_DELTA=$uKeyDelta" | Add-Content artifacts/longer_summary.txt
-          if ([math]::Abs($uKeyDelta) -gt 2) { throw "Combined fix still leaks Key handles: $uKeyDelta" }
+          if ($uKeyDelta -gt 2) { throw "Combined fix Key handles grew: $uKeyDelta" }
           $comparison=@(
             [pscustomobject]@{mode='weakref_only';delta_16=$pr.private_delta;delta_64=$mem64;handles_64=$delta64},
             [pscustomobject]@{mode='weakref_plus_utf16';delta_16=$ur.private_delta;delta_64=$uPrivate;handles_64=$uHandle}
@@ -245,6 +246,23 @@ jobs:
           Write-Host 'GIO_HEAP = live PROCESS_HEAP_ENTRY_BUSY bytes, not the same quantity as PrivateUsage.'
           'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
           Get-Content artifacts/status.txt
+
+      - name: Cross-check full Handle64 type totals and detect masked growth
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_handle_types.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Type analyzer selftest failed' }
+          if (-not (Test-Path artifacts/patched_registry_64.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_64.log)) {
+            Write-Warning '64-cycle logs missing; no type-level claim possible'
+            exit 0
+          }
+          py tests/analyze_gio_handle_types.py --output artifacts/handle_type_deltas.csv artifacts/patched_registry_64.log artifacts/ownedpath_registry_64.log
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unexplained type-specific handle growth or inconsistent Handle64 totals; see handle_type_deltas.csv"
+          }
 
       - uses: actions/upload-artifact@v4
         if: always()
