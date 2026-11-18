@@ -100,7 +100,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
     s = all_count(s, "handler_verb->app = g_object_ref (app);",
                   "g_weak_ref_set (&handler_verb->app, app);", 6, "handler_verb assignments")
     s = all_count(s, "if (handler_verb->app != NULL)",
-                  "if (c545d_shell_verb_has_app (handler_verb))", 3, "has app checks")
+                  "if (c545d_shell_verb_has_app (handler_verb))", 4, "has app checks")
     s = all_count(s, "if (handler_verb->app == NULL && handler_verb->is_uwp)",
                   "if (!c545d_shell_verb_has_app (handler_verb) && handler_verb->is_uwp)",
                   2, "UWP has app checks")
