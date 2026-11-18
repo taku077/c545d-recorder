@@ -1,0 +1,99 @@
+/*
+ * C545D GLib/GIO Win32 AppInfo registry rescan probe.
+ * For an isolated CI account only. Does NOT access cameras or recording.
+ * Mutates one disposable HKCU\Software\RegisteredApplications value
+ * and removes it on exit. No source process handles are closed.
+ */
+#include <windows.h>
+#include <psapi.h>
+#include <gio/gio.h>
+#include <stdio.h>
+#include <wchar.h>
+
+static volatile gint changed_count = 0;
+static void on_changed(GAppInfoMonitor *monitor, gpointer unused)
+{
+    (void) monitor;
+    (void) unused;
+    g_atomic_int_inc(&changed_count);
+}
+static void drain_context(void)
+{
+    int limit = 300;
+    while (limit-- > 0 && g_main_context_pending(NULL))
+        g_main_context_iteration(NULL, FALSE);
+}
+static void enumerate_apps(void)
+{
+    GList *apps = g_app_info_get_all();
+    g_list_free_full(apps, g_object_unref);
+    drain_context();
+}
+static void report(const char *label, int cycle)
+{
+    DWORD count = 0;
+    PROCESS_MEMORY_COUNTERS_EX memory;
+    ZeroMemory(&memory, sizeof(memory));
+    memory.cb = sizeof(memory);
+    if (!GetProcessHandleCount(GetCurrentProcess(), &count)) {
+        fprintf(stderr, "PROBE_FAIL: GetProcessHandleCount error=%lu\n", (unsigned long)GetLastError());
+        return;
+    }
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&memory, sizeof(memory))) {
+        fprintf(stderr, "PROBE_FAIL: GetProcessMemoryInfo error=%lu\n", (unsigned long)GetLastError());
+        return;
+    }
+    printf("GIO_PROBE,%s,%d,%ld,%lu,%llu\n", label, cycle,
+           (long)g_atomic_int_get(&changed_count), (unsigned long)count,
+           (unsigned long long)memory.PrivateUsage);
+    fflush(stdout);
+}
+int main(void)
+{
+    HKEY hkey = NULL;
+    LONG rc;
+    wchar_t value_name[96];
+    DWORD pid = GetCurrentProcessId();
+    GAppInfoMonitor *monitor;
+    int i;
+    /* The runner has a disposable HKCU profile. */
+    _snwprintf(value_name, 95, L"C545D_CI_Probe_%lu", (unsigned long)pid);
+    value_name[95] = L'\0';
+    rc = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &hkey);
+    if (rc != ERROR_SUCCESS) {
+        fprintf(stderr, "PROBE_FAIL: open disposable HKCU value target status=%ld\n", (long)rc);
+        return 2;
+    }
+
+    monitor = g_app_info_monitor_get();
+    g_signal_connect(monitor, "changed", G_CALLBACK(on_changed), NULL);
+    enumerate_apps();    /* Ensure registry watchers and AppInfo cache initialize. */
+    Sleep(1000);
+    report("baseline", 0);
+
+    for (i = 1; i <= 16; i++) {
+        /* Different data each iteration guarantees a LAST_SET notification. */
+        wchar_t value[128];
+        _snwprintf(value, 127, L"Software\\C545D_NoSuchCapabilities\\%d", i);
+        value[127] = L'\0';
+        rc = RegSetValueExW(hkey, value_name, 0, REG_SZ,
+                            (const BYTE *)value, (DWORD)((wcslen(value) + 1) * sizeof(wchar_t)));
+        if (rc != ERROR_SUCCESS) {
+            fprintf(stderr, "PROBE_FAIL: synthetic HKCU change status=%ld\n", (long)rc);
+            RegDeleteValueW(hkey, value_name);
+            RegCloseKey(hkey);
+            return 3;
+        }
+        Sleep(900);
+        drain_context();
+        enumerate_apps();
+        report("cycle", i);
+    }
+    RegDeleteValueW(hkey, value_name);
+    RegCloseKey(hkey);
+    Sleep(1200);
+    enumerate_apps();
+    report("after_cleanup", 17);
+    printf("GIO_PROBE_DONE,cycles=16,notifications=%ld\n", (long)g_atomic_int_get(&changed_count));
+    return 0;
+}
