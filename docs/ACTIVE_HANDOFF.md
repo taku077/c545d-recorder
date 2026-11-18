@@ -3,23 +3,33 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `4ccbc30449f4e1d8bc54732a9d4e07aedb84172e`
-- **PR updated at (UTC):** `2026-11-18T18:53:06Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4ccbc30449f4e1d8bc54732a9d4e07aedb84172e/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `9333b9b4f8aee51e45f87da42cd49c7f4d824be7`
+- **PR updated at (UTC):** `2026-11-18T18:53:59Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9333b9b4f8aee51e45f87da42cd49c7f4d824be7/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44374536680](https://github.com/taku077/c545d-recorder/actions/runs/44374536680) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44374536604](https://github.com/taku077/c545d-recorder/actions/runs/44374536604) |
-| Windows PowerShell source validation | in_progress | [#44374536584](https://github.com/taku077/c545d-recorder/actions/runs/44374536584) |
-| C545D GIO AppInfo camera-free short Key-handle probe | queued | [#44374536527](https://github.com/taku077/c545d-recorder/actions/runs/44374536527) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44374536522](https://github.com/taku077/c545d-recorder/actions/runs/44374536522) |
-| C545D active development handoff auto-refresh | in_progress | [#44374531250](https://github.com/taku077/c545d-recorder/actions/runs/44374531250) |
-| .github/workflows/c545d-gio-msvc-abi-ci.yml | failure | [#44374524537](https://github.com/taku077/c545d-recorder/actions/runs/44374524537) |
+| Windows PowerShell source validation | in_progress | [#44374697687](https://github.com/taku077/c545d-recorder/actions/runs/44374697687) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44374697676](https://github.com/taku077/c545d-recorder/actions/runs/44374697676) |
+| C545D GIO AppInfo camera-free short Key-handle probe | queued | [#44374697599](https://github.com/taku077/c545d-recorder/actions/runs/44374697599) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | queued | [#44374697585](https://github.com/taku077/c545d-recorder/actions/runs/44374697585) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | queued | [#44374697560](https://github.com/taku077/c545d-recorder/actions/runs/44374697560) |
+| C545D active development handoff auto-refresh | in_progress | [#44374691177](https://github.com/taku077/c545d-recorder/actions/runs/44374691177) |
+| .github/workflows/c545d-gio-msvc-abi-ci.yml | failure | [#44374681228](https://github.com/taku077/c545d-recorder/actions/runs/44374681228) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-19 JST — continued after 96.29% result: MSVC export parity PASS, runtime blocker and type-specific handle gate in CI
+
+- **Active PR #54 remains on this branch**. Previous 64-cycle camera-free Windows runner result: weakref-only PrivateUsage +39,497,728B versus combined weakref+UTF16 +1,466,368B (**96.29% reduction**); 16-cycle baseline +5,152 handles versus combined 0; combined 64 cycles +2 handles. **No user machine, recorder, or production DLL has been changed**.
+- New investigation of prior failing run [#44366839862](https://github.com/taku077/c545d-recorder/actions/runs/44366839862): total handles +7 under weakref-only, +2 under combined. The saved Windows \`HeapWalk\` data show BUSY heap deltas weakref-only **+32,632,218B** versus combined **+272,214B**; combined PrivateUsage delta in that same run **+1,540,096B**. Live BUSY bytes are not PrivateUsage. Residual heap growth and whether it plateaus remain **unresolved**, and +7 total handles are not independently proven to be Key handles.
+- MSVC ABI diff run [#44366839819](https://github.com/taku077/c545d-recorder/actions/runs/44366839819) revealed exactly one official GStreamer 1.28.8 SDK export absent in the source-built DLL: \`_g_io_modules_ensure_extension_points_registered\` (GIO private routine already defined in GLib source). New \`tests/patch_glib_msvc_gio_sdk_export.py\` exports the **real existing function** using the MSVC-only GIO link configuration; no dummy function. This produced [#44372463416](https://github.com/taku077/c545d-recorder/actions/runs/44372463416) **SUCCESS**, official SDK exports 2047, candidate 2047, missing 0. This verifies the subset of exports, **not entire ABI/runtime compatibility**.
+- Stronger test \`tests/gio_msvc_sdk_overlay_smoke.c\` is compiled using the OFFICIAL SDK import libraries and deliberately runs in an isolated directory with candidate GIO. [#44373607049](https://github.com/taku077/c545d-recorder/actions/runs/44373607049): compile and link succeeded but candidate load failed \`0xC0000135\` (missing dependent DLL). A new workflow diagnostic compares candidate versus official SDK DLL imports to identify the specific missing dependency; results must be inspected before changing dependencies or deploying. Another MSVC run [#44373550401](https://github.com/taku077/c545d-recorder/actions/runs/44373550401) failed in upstream zlib fallback download due to SHA256 mismatch, an **independent CI dependency problem**, not evidence of a GIO patch regression.
+- New CI-only \`GIO_KEY\` counters use Microsoft's read-only Sysinternals Handle64 \`-s -p\` for only the candidate process, to distinguish small total-handle variation from retained Key growth. First attempt [#44373277646](https://github.com/taku077/c545d-recorder/actions/runs/44373277646) stopped at runner setup (\`unzip: command not found\`); \`unzip\` was explicitly added to the MSYS2 package list. Keep the existing strict total-handle gate until measured Key counts justify a scientifically grounded change; do not silently dismiss +7.
+- **Next engineer-only checks:** read the newest same-HEAD (or later) CI logs/artifacts for the DLL dependency inventory, SDK overlay smoke and Key census; fix root causes in disposable Windows runners, then test native GStreamer pipeline and concurrency/ABI before any release. **No host 4-hour test, WPR/UMDH repetition, recorder restart or manual investigation requested.**
+
 
 ### UPDATE 2026-11-19 JST — Combined weak-reference + UTF-16 path ownership fix passes 16/64-cycle A/B
 
