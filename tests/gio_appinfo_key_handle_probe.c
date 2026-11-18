@@ -52,7 +52,12 @@ static void report(const char *label, int cycle)
 int main(int argc, char **argv)
 {
     HKEY hkey = NULL;
-    const int mutate_registry = !(argc > 1 && strcmp(argv[1], "--no-registry-change") == 0);
+    int cycle_count = 16;
+    int mutate_registry = 1;
+    for (int arg = 1; arg < argc; arg++) {
+        if (strcmp(argv[arg], "--no-registry-change") == 0) mutate_registry = 0;
+        else if (strcmp(argv[arg], "--cycles=64") == 0) cycle_count = 64;
+    }
     LONG rc;
     wchar_t value_name[96];
     DWORD pid = GetCurrentProcessId();
@@ -73,7 +78,7 @@ int main(int argc, char **argv)
     Sleep(1000);
     report("baseline", 0);
 
-    for (i = 1; i <= 16; i++) {
+    for (i = 1; i <= cycle_count; i++) {
         /* Different data each iteration guarantees a LAST_SET notification. */
         wchar_t value[128];
         _snwprintf(value, 127, L"Software\\C545D_NoSuchCapabilities\\%d", i);
@@ -93,7 +98,7 @@ int main(int argc, char **argv)
     if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
     Sleep(1200);
     enumerate_apps();
-    report("after_cleanup", 17);
-    printf("GIO_PROBE_DONE,cycles=16,notifications=%ld,reg_changes=%d\n", (long)g_atomic_int_get(&changed_count), mutate_registry);
+    report("after_cleanup", cycle_count + 1);
+    printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
