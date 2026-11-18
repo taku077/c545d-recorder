@@ -25,12 +25,25 @@ int main(void)
         fprintf(stderr, "LIFETIME_INCONCLUSIVE: no registered applications\n");
         return 3;
     }
-    held = g_object_ref(apps->data);
-    original_name = g_strdup(g_app_info_get_name(held));
-    original_executable = g_strdup(g_app_info_get_executable(held));
+    /*
+     * UWP registrations can legitimately have no executable path.
+     * Choose an entry with a stable name, while allowing a NULL executable.
+     * g_strcmp0() compares NULL values safely after refresh.
+     */
+    for (GList *it = apps; it != NULL; it = it->next) {
+        GAppInfo *candidate = G_APP_INFO(it->data);
+        if (g_app_info_get_name(candidate) != NULL) {
+            held = g_object_ref(candidate);
+            break;
+        }
+    }
+    if (held != NULL) {
+        original_name = g_strdup(g_app_info_get_name(held));
+        original_executable = g_strdup(g_app_info_get_executable(held));
+    }
     g_list_free_full(apps, g_object_unref);
-    if (!original_name || !original_executable) {
-        fprintf(stderr, "LIFETIME_INCONCLUSIVE: first app has incomplete properties\n");
+    if (held == NULL || original_name == NULL) {
+        fprintf(stderr, "LIFETIME_INCONCLUSIVE: no app with valid name\n");
         goto cleanup;
     }
     status = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &key);
