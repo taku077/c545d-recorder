@@ -5,6 +5,7 @@ on:
     paths:
       - 'native/gio_patch/**'
       - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/gio_appinfo_functional_smoke.c'
       - '.github/workflows/c545d-gio-cycle-ab.yml'
   workflow_dispatch:
 
@@ -76,6 +77,29 @@ jobs:
           ./gio_appinfo_probe.exe > artifacts/patched.csv 2> artifacts/patched.stderr
           grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched.csv
 
+      - name: Functional GAppInfo API/lifetime regression under patched DLL
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra \
+              tests/gio_appinfo_functional_smoke.c -o gio_appinfo_functional.exe \
+              $(pkg-config --cflags --libs gio-2.0) -ladvapi32
+          export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          ./gio_appinfo_functional.exe > artifacts/functional_api.txt 2> artifacts/functional_api.stderr
+          grep -q '^GIO_API_PASS,cycles=16' artifacts/functional_api.txt
+      - name: Isolate WinRT UWP package parsing in synthetic runner only
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          export GOBJECT_DEBUG=instance-count
+          export C545D_GIO_TEST_SKIP_UWP=1
+          ./gio_appinfo_probe.exe > artifacts/patched_skip_uwp.csv 2> artifacts/patched_skip_uwp.stderr
+          grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched_skip_uwp.csv
+          python3 native/gio_patch/compare_subsystem.py \
+            artifacts/patched.csv artifacts/patched_skip_uwp.csv \
+            > artifacts/uwp_isolation.txt
+          cat artifacts/uwp_isolation.txt
       - name: Compare handle delta and private bytes
         shell: msys2 {0}
         run: |
