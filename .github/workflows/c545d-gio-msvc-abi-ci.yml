@@ -49,12 +49,43 @@ jobs:
           if ($changed.Count -ne 3 -or @($changed | Where-Object {$_ -notin $expected}).Count) {
             throw "Unexpected modified GLib sources: $($changed -join ',')"
           }
+      - name: Install official GStreamer 1.28.8 MSVC SDK before dependency selection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'Official SDK download incomplete' }
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdkRoot") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($p.ExitCode)" }
+          if (-not (Test-Path (Join-Path $sdkRoot 'bin\gio-2.0-0.dll'))) {
+            throw 'Official GIO DLL missing from SDK'
+          }
+          $zlibLibs=@(Get-ChildItem (Join-Path $sdkRoot 'lib') -File -Filter '*z*.lib' |
+            Where-Object { $_.Name -match '^(z|zlib)[-.0-9]*\.lib$' } |
+            Select-Object -ExpandProperty Name)
+          "SDK_ZLIB_IMPORT_LIBS=$($zlibLibs -join ',')" | Add-Content artifacts/abi_inventory.txt
+          "SDK_ZLIB_PC_PRESENT=$(Test-Path (Join-Path $sdkRoot 'lib\pkgconfig\zlib.pc'))" |
+            Add-Content artifacts/abi_inventory.txt
+          "SDK_ZLIB_HEADER_PRESENT=$(Test-Path (Join-Path $sdkRoot 'include\zlib.h'))" |
+            Add-Content artifacts/abi_inventory.txt
       - name: Build combined fix in MSVC x64 environment
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
           $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          # Resolve zlib against the official MSVC SDK instead of building a
+          # fallback that imports non-SDK z.dll. No installed DLL is modified.
+          $env:LIB="$sdkRoot\lib;$env:LIB"
+          $env:INCLUDE="$sdkRoot\include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdkRoot\lib\pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdkRoot;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdkRoot\bin;$env:PATH"
           py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
           if ($LASTEXITCODE -ne 0) { throw 'MSVC GLib configure failed' }
           py -m mesonbuild.mesonmain compile -C $build -j 4
@@ -69,13 +100,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $ProgressPreference='SilentlyContinue'
-          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
-          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
-          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180
-          if ((Get-Item $installer).Length -lt 15000000) { throw 'Official SDK download incomplete' }
           $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
-          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdkRoot") -PassThru -Wait
-          if ($p.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($p.ExitCode)" }
           $sdkGio=Join-Path $sdkRoot 'bin\gio-2.0-0.dll'
           if (-not (Test-Path $sdkGio)) { throw 'Official GIO DLL missing from SDK' }
           $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
