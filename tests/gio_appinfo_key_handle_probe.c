@@ -107,7 +107,12 @@ static void report_key_handles(const char *label, int cycle)
     unsigned long long keys = 0, reported_total = 0, type_sum = 0;
     int found_key = 0, found_heading = 0, found_total = 0, in_summary = 0;
     int row_count = 0, parse_error = 0, rc;
+    DWORD native_before = 0, native_after = 0;
     if (!tool || !*tool) return;
+    if (!GetProcessHandleCount(GetCurrentProcess(), &native_before)) {
+        fprintf(stderr, "GIO_KEY_ERROR: native count before census failed\n");
+        exit(5);
+    }
     if (strlen(tool) > 1700) {
         fprintf(stderr, "GIO_KEY_ERROR: tool path unexpectedly long\n");
         exit(5);
@@ -180,6 +185,12 @@ static void report_key_handles(const char *label, int cycle)
                type_name, count);
     }
     rc = _pclose(pipe);
+    if (!GetProcessHandleCount(GetCurrentProcess(), &native_after)) {
+        fprintf(stderr, "GIO_KEY_ERROR: native count after census failed\n");
+        exit(5);
+    }
+    printf("GIO_H64NATIVE,%s,%d,%lu,%lu\n", label, cycle,
+           (unsigned long)native_before, (unsigned long)native_after);
     if (rc != 0 || parse_error || !found_heading || !found_total ||
         !found_key || row_count == 0 || type_sum != reported_total) {
         fprintf(stderr, "GIO_KEY_ERROR: invalid type census (exit=%d, rows=%d, "
@@ -294,6 +305,15 @@ int main(int argc, char **argv)
     report_key_handles("after_cleanup", cycle_count + 1);
     report_types("after_cleanup", cycle_count + 1);
     report_heaps("after_cleanup", cycle_count + 1);
+    /* Repeat after quiescence to distinguish async cleanup from a Handle64
+     * versus GetProcessHandleCount enumeration mismatch. CI only. */
+    Sleep(2500);
+    drain_context();
+    enumerate_apps();
+    report("settled_cleanup", cycle_count + 2);
+    report_key_handles("settled_cleanup", cycle_count + 2);
+    report_types("settled_cleanup", cycle_count + 2);
+    report_heaps("settled_cleanup", cycle_count + 2);
     printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
