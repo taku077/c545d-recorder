@@ -73,7 +73,15 @@ jobs:
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/patched_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
+          # Count Key handles separately from total handles at the two boundaries.
+          # Official Microsoft Sysinternals executable is used read-only, on CI only.
+          curl -fsSL --retry 2 --connect-timeout 20 -o ci-handle.zip https://download.sysinternals.com/files/Handle.zip
+          mkdir -p ci-handle-bin
+          unzip -qo ci-handle.zip handle64.exe -d ci-handle-bin
+          test -s ci-handle-bin/handle64.exe
+          export C545D_HANDLE_EXE="$(cygpath -w "$PWD/ci-handle-bin/handle64.exe")"
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types --heap-summary > artifacts/patched_registry_64.log
+          unset C545D_HANDLE_EXE
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
 
       - name: Remove redundant registry UTF16 path copy and retest
@@ -90,7 +98,9 @@ jobs:
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/ownedpath_lifetime.log
           grep -q 'GIO_API_PASS' artifacts/ownedpath_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/ownedpath_registry.log
+          export C545D_HANDLE_EXE="$(cygpath -w "$PWD/ci-handle-bin/handle64.exe")"
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types --cycles=64 --heap-summary > artifacts/ownedpath_registry_64.log
+          unset C545D_HANDLE_EXE
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/ownedpath_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/ownedpath_registry_64.log
 
@@ -141,7 +151,14 @@ jobs:
           $mem64=[long]$final64[5]-[long]$first64[5]
           "PATCHED_64_HANDLE_DELTA=$delta64" | Set-Content artifacts/longer_summary.txt
           "PATCHED_64_PRIVATE_DELTA=$mem64" | Add-Content artifacts/longer_summary.txt
-          if ([math]::Abs($delta64) -gt 4) { throw "64-cycle handle leak remains: $delta64" }
+          $keyBase=@($lines64 | Where-Object {$_ -match '^GIO_KEY,baseline,'})
+          $keyEnd=@($lines64 | Where-Object {$_ -match '^GIO_KEY,after_cleanup,'})
+          if ($keyBase.Count -ne 1 -or $keyEnd.Count -ne 1) { throw 'Weakref Key handle counts missing' }
+          $weakKeyDelta=[long]$keyEnd[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
+          "PATCHED_64_KEY_DELTA=$weakKeyDelta" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($weakKeyDelta) -gt 2) { throw "64-cycle Key handle leak remains: $weakKeyDelta" }
+          # Retain the existing strict total-handle gate until classified with new evidence.
+          if ([math]::Abs($delta64) -gt 4) { throw "64-cycle total handle delta exceeds gate: $delta64 (Key delta $weakKeyDelta)" }
           Write-Host (Get-Content artifacts/longer_summary.txt)
 
           $owned64=@(Get-Content artifacts/ownedpath_registry_64.log)
@@ -155,6 +172,12 @@ jobs:
           $u1=$uAfter[0].Split(',')
           $uHandle=[long]$u1[4]-[long]$u0[4]
           $uPrivate=[long]$u1[5]-[long]$u0[5]
+          $uKeyB=@($owned64 | Where-Object {$_ -match '^GIO_KEY,baseline,'})
+          $uKeyA=@($owned64 | Where-Object {$_ -match '^GIO_KEY,after_cleanup,'})
+          if ($uKeyB.Count -ne 1 -or $uKeyA.Count -ne 1) { throw 'Combined fix Key census missing' }
+          $uKeyDelta=[long]$uKeyA[0].Split(',')[3]-[long]$uKeyB[0].Split(',')[3]
+          "COMBINED_64_KEY_DELTA=$uKeyDelta" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($uKeyDelta) -gt 2) { throw "Combined fix still leaks Key handles: $uKeyDelta" }
           $comparison=@(
             [pscustomobject]@{mode='weakref_only';delta_16=$pr.private_delta;delta_64=$mem64;handles_64=$delta64},
             [pscustomobject]@{mode='weakref_plus_utf16';delta_16=$ur.private_delta;delta_64=$uPrivate;handles_64=$uHandle}
