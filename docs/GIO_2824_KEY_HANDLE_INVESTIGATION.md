@@ -58,6 +58,19 @@ A safe production patch must break the strong reference cycle while preserving t
 - A second short control test **without any registry modification** was added to distinguish plain repeated `g_app_info_get_all()` from notification-triggered rebuild. Compare both before selecting a patch.
 - This is a reproducible short-run candidate mechanism under the same GIO DLL version; it is **not yet a validated production fix** and not proof that the user's host has the identical path.
 
+
+## Second CI run: no-registry-change control isolates trigger (2026-11-19 JST)
+
+GitHub Actions run **44332409627**, GLib/GIO **2.82.4.0**, both 16-cycle programs compile and run.
+
+- **Control: no registry modifications.** Repeated \`g_app_info_get_all()\` calls, baseline **698 total handles / 5,918,720 Private bytes**, and every cycle through cycle 16 and cleanup remained *exactly 698 handles and 5,918,720 bytes*.
+- **Trigger: alter one synthetic user-scoped HKCU RegisteredApplications value in each cycle, then call \`g_app_info_get_all()\`.** Baseline **696 handles / 5,484,544 bytes**, cycle16 **5,849 handles / 28,377,088 bytes**, cleanup **5,848 handles / 28,377,088 bytes**. Per cycle +322 or +323 handles, almost all open Registry Key handles as independently sampled by Handle64.
+- Independent Handle64 observations: first sample **Key 168 / total 295** (prior to AppInfo initialization), later **Key 434 / total 696** (post-initialization), final **Key 5585 / total 5848**. Use post-initialization to final for like-for-like comparison (Key +5,151), rather than first sample to final.
+- \`GAppInfoMonitor::changed\` signal was not observed (\`notifications=0\`) in both tests. This signal is *not* a required proof of the internally triggered registry rebuild. The control comparison proves the growth is caused by the added synthetic-registry-modification path under the tested schedule. More granular internal callback attribution requires instrumentation, not another long host measurement.
+- \`322=2x161\` on CI and \`428=2x214\` on user's machine: **hypothesis** that two retained handles per registered handler/association per rebuild explain both environmental cardinalities. The actual number of unique retained keys on CI was not separately enumerated.
+- Source inspection confirms potential strong reference cycles \`Application->ShellVerb->Application\` and \`Application->Handler->ShellVerb->Application\` where Handler retains \`GWin32RegistryKey\`. The controlled trigger and registry-only handle growth now strongly support examining those cycles, but do not independently establish causality of each key without a patched runtime or finalizer/closure instrumentation.
+- **Decision:** no further host 4-hour measurement at this stage. Proceed with controlled GLib ref/lifetime patch experiment and re-run the same CI harness against baseline and candidate in one job. No user actions needed.
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
