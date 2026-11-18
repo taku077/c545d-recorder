@@ -2,6 +2,20 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18 JST: Handleの種類別4時間自動記録ツールを用意、実機CSV待ち（最優先）
+
+- ユーザーは4時間メモリCSVのハンドル増加（PID6168、3247→6671、+3424個／4h、約+856個/h、毎時01分・24分に約+428個）を受け、**ハンドル種類別の自動記録を開始することに同意**。これまでのUMDH再測定や手動測定には戻らない。
+- 2026-11-18のユーザー提供ファイル `C545D_Memory_20261118_033635.csv` は03:36〜07:36の241記録、Private 621.65→653.42MB (+31.77MB)、WorkingSet 536.71→585.34MB (+48.63MB)、PID6168は維持。今回の優先原因調査対象はハンドル種類ごとの増加。
+- 新しい提供物：`C545D_HandleTypes_AutoMonitor_4H.zip`。内容：`Monitor-C545DHandleTypes.ps1`、`START_HANDLE_TYPES_4H.cmd`、`README_JA.txt`。実行コードはGitHub `diagnostics/Monitor-C545DHandleTypes.ps1` [PR #45](https://github.com/taku077/c545d-recorder/pull/45) で**mainへマージ済み**。READMEとCMDも `diagnostics/` に保存。
+- **Microsoft純正HandleはZIPへ再配布せず**、ユーザー自身が https://learn.microsoft.com/ja-jp/sysinternals/downloads/handle から `Handle.zip` をダウンロードし、`handle64.exe` をモニタースクリプトと同じフォルダーに配置する。CMDを**右クリック→管理者として実行**（公式にHandle実行へ昇格必要）。初回EULA受諾は `-accepteula`。
+- モニターは `handle64.exe -accepteula -s -p <PID>`を**1分間隔、240分**実行。Preflightで取得可否・型別合計確認し失敗なら本測定しない。ProcessHandlesとHandleTotal、種類別件数、PrivateMB、WorkingSetMB、時刻、PID、開始時刻を2CSVに保存。4h後1ZIP `%LOCALAPPDATA%\C545D_GStreamer\HandleTypesMonitor\C545D_HandleEvidence_日時.zip` へまとめる。**提出はZIPのみ**。Raw handle names/paths/credentialsは保存しない。
+- **Windows PowerShell 5.1の実ツール試験合格**：CI [run 44246719535](https://github.com/taku077/c545d-recorder/actions/runs/44246719535) で構文検査、合成Handleサマリー・CSV往復、Microsoft公式Handle64実体ダウンロードと実際のPIDで `PROBE_PASS: Total=606, SumTypes=606, TypeKinds=20` を確認。他のSourceValidationとHeapTrace CIもPASS。**ユーザーのWindows10実機で4時間完走は未確認**。
+- UST解除済み、RC35通常録画は継続。録画を止めない、PIDが変わる／複数ならそれをエラー状態として記録、Handle -c等強制closeは使用しない。タイプ別結果でもリーク原因関数は未確定。
+- 過去のUMDH上位3は +380928/+178176/+94208B、共通 gstisomp4/gstbase/gstreamer/glib。MP4の正常なサンプル蓄積 vs 解放漏れも併存する仮説。まずハンドル種類別の増加状況を分類し、次の調査計画を立てる。
+- **次回再開時**、このCURRENT→非公開handoff→ユーザーの新しいHandleEvidence ZIP又はPreflightエラー→GitHub HEAD/CIの順に確認。古い毎時間手動測定やUMDH Captureを再案内しない。チャット内sandbox ZIPのリンクは別会話で再利用せず、必要ならGitHubにあるスクリプトから再生成してパスを検証する。
+
+
+
 ## CURRENT 2026-11-18 JST — 4時間CSV実機解析：Private +31.77MiB、ハンドル+3424（最優先）
 
 - ユーザーが自動ロガー出力CSVをアップロード。**実ファイルを読み取り分析済み**。241サンプル、約1分間隔、測定4時間（2026-11-18の早朝・JST）、全件`Status=OK`・同一PIDのまま。GST通常録画は継続、USTは解除済み。
