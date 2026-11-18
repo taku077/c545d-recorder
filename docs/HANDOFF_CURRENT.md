@@ -1,3 +1,10 @@
+### UPDATE 2026-11-19 JST — real Win32 heap allocation remained; exact additional source bug found
+
+- CI run #44340368530 (experimental GWeakRef patch): **+0 Key handles** after 16 iterations, Private Usage **+10,399,744 bytes**, Windows `HeapSummary` **cbAllocated +8,094,437 bytes**, **cbCommitted +10,383,360 bytes** across all 4 heaps, status MEASURED (zero failed heaps). Residual is not explained solely by committed-but-unused heap space. UWP-skip variant: cbAllocated +8,018,322 bytes; UWP not main contributor.
+- Audited upstream GLib `gio/gwin32appinfo.c` `read_capable_app()`: `friendly_name` returned by `g_win32_registry_key_get_value_w(...,L"LocalizedString",...)` has a g_wcsdup/g_utf16_to_utf8 copy into the app but **no normal-path g_free of original friendly_name**; only cleared if value type invalid. It is a real caller-owned allocation leak in both 2.82.4 and 2.88.3. This defect may explain only a fraction of overall residual.
+- New isolated source patch `native/gio_patch/apply_gio_friendly_free.py` adds final `g_clear_pointer(&friendly_name,g_free)` while preserving GWeakRef change. Windows CI now compares original, weakref-only and combined patch using 16 cycles; combined must also pass API lifetime smoke and UWP comparison. Do not install on PC, merge, or claim overall memory stability until CI.
+- Current approach avoids serial hours-long user measurements; status remains draft PR #55.
+
 ### UPDATE — A/B proof: registry Key leak eliminated in candidate, Private Memory not yet stable
 
 - A/B Windows run **44336149870**: unmodified GLib 2.82.4: total handles **694→5846 (+5152)**, Private **5,505,024→28,995,584 (+23,490,560 bytes)** after 16 synthetic HKCU change cycles. Experimental GWeakRef patch **builds successfully** and same test: handles **693→693 (+0)**, Private **5,566,464→16,220,160 (+10,653,696 bytes)**.

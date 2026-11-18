@@ -77,6 +77,27 @@ jobs:
           ./gio_appinfo_probe.exe > artifacts/patched.csv 2> artifacts/patched.stderr
           grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched.csv
 
+      - name: Apply and compile explicit LocalizedString cleanup
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python3 native/gio_patch/apply_gio_friendly_free.py glib82/gio/gwin32appinfo.c
+          meson compile -C build82
+      - name: Combined candidate 16 cycles with weak references and string cleanup
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          export GOBJECT_DEBUG=instance-count
+          ./gio_appinfo_probe.exe > artifacts/patched_friendly.csv 2> artifacts/patched_friendly.stderr
+          grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched_friendly.csv
+      - name: Compare weakref-only against combined patch
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python3 native/gio_patch/compare_variants.py \
+            artifacts/patched.csv artifacts/patched_friendly.csv > artifacts/friendly_string_cleanup.txt
+          cat artifacts/friendly_string_cleanup.txt
       - name: Functional GAppInfo API/lifetime regression under patched DLL
         shell: msys2 {0}
         run: |
@@ -97,7 +118,7 @@ jobs:
           ./gio_appinfo_probe.exe > artifacts/patched_skip_uwp.csv 2> artifacts/patched_skip_uwp.stderr
           grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched_skip_uwp.csv
           python3 native/gio_patch/compare_subsystem.py \
-            artifacts/patched.csv artifacts/patched_skip_uwp.csv \
+            artifacts/patched_friendly.csv artifacts/patched_skip_uwp.csv \
             > artifacts/uwp_isolation.txt
           cat artifacts/uwp_isolation.txt
       - name: Compare Win32 heap live-allocation and committed-memory deltas
@@ -112,7 +133,7 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          python3 native/gio_patch/evaluate_ab.py artifacts/baseline.csv artifacts/patched.csv | tee artifacts/result.txt
+          python3 native/gio_patch/evaluate_ab.py artifacts/baseline.csv artifacts/patched_friendly.csv | tee artifacts/result.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
