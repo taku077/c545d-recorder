@@ -27,6 +27,24 @@ Sources:
 - https://learn.microsoft.com/en-us/windows/win32/sysinfo/opening-creating-and-closing-keys
 - https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regclosekey
 
+
+## Newly found: candidate strong-reference cycles (concrete source-level finding)
+
+A more specific mechanism than a generic missing `RegCloseKey` is visible in the exact source:
+
+- `g_win32_appinfo_application_init()` (around line 553) constructs `app->verbs` as an owning `GPtrArray` whose free function is `g_object_unref`.
+- `app_add_verb()` (around 1882-1897), `uwp_app_add_verb()` (1914-1930), and related paths assign `shverb->app = g_object_ref(app_rec)` and add the same verb to `app->verbs`. This makes a **strong app -> verb -> app reference cycle**.
+- `GWin32AppInfoApplication.supported_exts` and `supported_urls` hold handlers with owning `g_object_unref` destructors (around 545-552). `link_handlers_to_fake_apps()` (around 3239-3259 and 3289-3310) inserts a `g_object_ref(handler)` while `handler->verbs` owns a verb whose `app` references this app. This makes a **strong app -> handler -> verb -> app cycle** on those paths.
+- `get_handler_object()` (around 1722-1731) retains `handler_rec->key = g_object_ref(handler_key)`. Only `g_win32_appinfo_handler_dispose()` (405) releases that reference. If the above cycle survives replacement of the app registry tables, a registry key reference can persist and keep its HKEY open.
+- `update_registry_data()` destroys old hash tables before rescanning, but ordinary GObject refcounting cannot collect reference cycles. Thus these exact ownership edges are a **specific, testable candidate** for the recurring retained registry keys.
+- The same essential ownership edges were found in GLib tag **2.88.3**, so a generic update alone is not shown to remove this candidate.
+
+**Important limit:** a source-level cycle is established; whether the specific 214 persistent registry keys are held by this cycle on this machine, or how many new cyclic objects survive each run, is not yet established. Avoid converting source-level suspicion into a definitive causal claim.
+
+### Narrow fix approach for an isolated branch
+
+A safe production patch must break the strong reference cycle while preserving the lifetime of externally returned GAppInfo/handler objects. Merely removing the `g_object_ref` from `shverb->app` could leave a dangling pointer; force-closing a live HKEY could corrupt state. First add a test that triggers two AppInfo rebuilds and checks that the old handler's GObject dispose and HKEY closure run after references are released. Then change one ownership edge to a controlled weak reference or another verified lifetime design, and run the same test plus existing recorder invariants. This is a targeted implementation gate, not a request for long host-side recording.
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
