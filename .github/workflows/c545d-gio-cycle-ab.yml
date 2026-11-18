@@ -56,6 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          export GOBJECT_DEBUG=instance-count
           ./gio_appinfo_probe.exe > artifacts/baseline.csv 2> artifacts/baseline.stderr
           grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/baseline.csv
 
@@ -71,6 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$PWD/build82/gio:$PWD/build82/glib:$PWD/build82/gobject:$PWD/build82/gmodule:$PATH"
+          export GOBJECT_DEBUG=instance-count
           ./gio_appinfo_probe.exe > artifacts/patched.csv 2> artifacts/patched.stderr
           grep -q '^GIO_PROBE_DONE,cycles=16' artifacts/patched.csv
 
