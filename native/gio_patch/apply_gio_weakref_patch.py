@@ -186,6 +186,21 @@ shell_verb_has_app (GWin32AppInfoShellVerb *verb)
 
 """ + s[end:]
 
+    # Test-only isolation switch; NEVER enabled in a production recorder.
+    # It distinguishes WinRT/UWP package enumeration memory from GObject lifetimes.
+    swap("""  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))
+    {
+      g_debug ("Unable to get UWP apps: %s", error->message);
+      g_clear_error (&error);
+    }
+""", """  if (g_getenv ("C545D_GIO_TEST_SKIP_UWP") == NULL &&
+      !g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))
+    {
+      g_debug ("Unable to get UWP apps: %s", error->message);
+      g_clear_error (&error);
+    }
+""")
+
     # A dangling raw ShellVerb->app access is never acceptable after the change.
     leaked = re.findall(r"\b(?:shverb|handler_verb)->app\b", s)
     # references inside shell_verb helpers are expected; direct dereference must be absent
