@@ -43,6 +43,28 @@ jobs:
           $inc=@("/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('tests/gio_appinfo_key_handle_probe.c',"/Fe:$exe",'/link',"/LIBPATH:$root\lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
           if ($LASTEXITCODE -ne 0) { throw 'Probe compile failed' }
+      - name: Control - repeatedly enumerate AppInfo without registry changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $env:PATH="$root\bin;$env:PATH"
+          $exe=Join-Path $env:RUNNER_TEMP 'gio_appinfo_probe.exe'
+          $log=Join-Path (Resolve-Path artifacts).Path 'gio_probe_nochange.log'
+          & $exe --no-registry-change | Out-File -LiteralPath $log -Encoding ascii
+          if ($LASTEXITCODE -ne 0) { throw "Control probe exit $LASTEXITCODE" }
+          $rows=@(Get-Content -LiteralPath $log)
+          $base=@($rows | Where-Object { $_ -match '^GIO_PROBE,baseline,' })
+          $last=@($rows | Where-Object { $_ -match '^GIO_PROBE,after_cleanup,' })
+          $rounds=@($rows | Where-Object { $_ -match '^GIO_PROBE,cycle,' })
+          if ($base.Count -ne 1 -or $last.Count -ne 1 -or $rounds.Count -ne 16) {
+            throw 'Control data incomplete'
+          }
+          $a=$base[0].Split(',')
+          $b=$last[0].Split(',')
+          $delta=[long]$b[3]-[long]$a[3]
+          "CONTROL_HANDLE_DELTA=$delta" | Add-Content 'artifacts/gio_probe_metadata.txt'
+          Write-Host "Control 16 AppInfo reads without registry writes: total handle delta $delta"
       - name: Run short rescan test and sample Key handles
         shell: pwsh
         run: |
