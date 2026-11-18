@@ -121,8 +121,19 @@ static void report_key_handles(const char *label, int cycle)
     }
     while (fgets(line, sizeof(line), pipe)) {
         char *entry = line;
+        char *colon;
+        char *name_end;
         while (*entry == ' ' || *entry == '\t') ++entry;
-        if (sscanf(entry, "Key: %llu", &keys) == 1) found = 1;
+        colon = strchr(entry, ':');
+        if (!colon) continue;
+        name_end = colon;
+        while (name_end > entry &&
+               (name_end[-1] == ' ' || name_end[-1] == '\t'))
+            --name_end;
+        if (name_end - entry == 3 &&
+            strncmp(entry, "Key", 3) == 0 &&
+            sscanf(colon + 1, " %llu", &keys) == 1)
+            found = 1;
     }
     rc = _pclose(pipe);
     if (rc != 0 || !found) {
