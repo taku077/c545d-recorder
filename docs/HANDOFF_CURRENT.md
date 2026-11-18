@@ -1,5 +1,7 @@
 # HANDOFF_CURRENT — C545D recorder
 
+**⚠️ 重要：この `main` の引継ぎは現行開発の最新ではありません。** 現在の開発結果は [ACTIVE_HANDOFF.md](ACTIVE_HANDOFF.md) と [PR #54](https://github.com/taku077/c545d-recorder/pull/54) にあります。古い「ETL解析待ち」に戻ってはいけません。64回テストでPrivateUsage増加96.29%削減、16回ハンドル増加+5,152→0をWindows CIで確認済み。実機録画PCへの適用は未実施です。
+
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
 ## CURRENT 2026-11-18 JST — ETL自動オフライン解析ツール完成、実機レポート待ち

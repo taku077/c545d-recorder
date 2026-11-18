@@ -1,0 +1,30 @@
+name: C545D active handoff regression guard
+
+on:
+  pull_request:
+    paths:
+      - 'tools/refresh_active_handoff.py'
+      - 'tests/test_active_handoff.py'
+      - '.github/workflows/active-handoff-*.yml'
+      - 'docs/ACTIVE_HANDOFF_CONFIG.json'
+  push:
+    paths:
+      - 'tools/refresh_active_handoff.py'
+      - 'tests/test_active_handoff.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify stale-hand-off guard and syntax
+        run: |
+          python -m py_compile tools/refresh_active_handoff.py
+          python -m unittest discover -s tests -p test_active_handoff.py -v

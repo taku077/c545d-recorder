@@ -1,0 +1,49 @@
+name: C545D active development handoff auto-refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */3 * * *'
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, closed]
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: c545d-active-handoff-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    # Never check out/execute pull-request code with the write-scoped token.
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate current handoff from live active PR and matching CI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python tools/refresh_active_handoff.py
+      - name: Commit only changed generated handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/ACTIVE_HANDOFF.md; then
+            echo 'Handoff is already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/ACTIVE_HANDOFF.md
+          git commit -m 'docs: auto-refresh active development handoff [skip ci]'
+          git push origin HEAD:main

@@ -28,4 +28,4 @@ The source code is user-owned material from the project; third-party dependencie
 retain their own licenses. No project-wide license has yet been selected.
 
 ## Continue development in a new ChatGPT conversation
-The **current, canonical handoff** is [docs/HANDOFF_CURRENT.md](docs/HANDOFF_CURRENT.md). Read it before new changes; it records the actual baseline, merged PRs, open issue, CI checks, privacy boundary and **next required action**. It is kept in GitHub so continuity does not depend on remembered chat details.
+**START HERE:** [docs/ACTIVE_HANDOFF.md](docs/ACTIVE_HANDOFF.md) and [docs/HANDOFF_READ_FIRST.md](docs/HANDOFF_READ_FIRST.md). The former is automatically refreshed from the active development PR and its CI runs. The older [docs/HANDOFF_CURRENT.md](docs/HANDOFF_CURRENT.md) on `main` is an archived baseline and MUST NOT override results from the active development branch. Verify the live PR HEAD and CI status before resuming.
