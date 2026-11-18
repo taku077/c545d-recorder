@@ -8,6 +8,7 @@
 #include <psapi.h>
 #include <gio/gio.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <wchar.h>
 #include <string.h>
 
