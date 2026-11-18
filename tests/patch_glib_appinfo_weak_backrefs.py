@@ -146,7 +146,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
       (!must_support_uris ||
        g_win32_app_supports_uris (shverb->app)))
     result = g_win32_app_info_new_from_app (shverb->app,
-                                             ext->chosen_handler);
+                                            ext->chosen_handler);
   else
 """
     after = """  result = NULL;
@@ -202,7 +202,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
       g_hash_table_add (apps, shverb->app);
       result = g_list_prepend (result,
                                g_win32_app_info_new_from_app (shverb->app,
-                                                               ext->chosen_handler));
+                                                              ext->chosen_handler));
     }
 """
     after = """  if (ext->chosen_handler != NULL &&
@@ -229,7 +229,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
           g_hash_table_add (apps, shverb->app);
           result = g_list_prepend (result,
                                    g_win32_app_info_new_from_app (shverb->app,
-                                                                   handler));
+                                                                  handler));
 """
     after = """          {
             GWin32AppInfoApplication *app = c545d_shell_verb_ref_app (shverb);
