@@ -1,0 +1,24 @@
+From: C545D investigation <no-reply@example.invalid>
+Subject: [EXPERIMENTAL] gio: opt-in static Win32 AppInfo cache for leak isolation
+
+Target: GLib 2.82.4 gio/gwin32appinfo.c
+NOT a production fix. An opt-in control for isolated Windows CI only.
+No-op unless C545D_GIO_APPINFO_STATIC=1 is explicitly set before process startup.
+With the env set, Windows program association changes will NOT refresh AppInfo.
+
+--- a/gio/gwin32appinfo.c
++++ b/gio/gwin32appinfo.c
+@@ -3860,6 +3860,14 @@ keys_updated (GWin32RegistryKey  *key,
+               gpointer            user_data)
+ {
++  /*
++   * C545D-only isolated test control: keep the initial AppInfo snapshot,
++   * but do not rebuild it on later registry notifications.
++   * NOT appropriate as a general-purpose GLib feature or production fix.
++   */
++  if (g_strcmp0 (g_getenv ("C545D_GIO_APPINFO_STATIC"), "1") == 0)
++    return;
++
+   watch_keys ();
+   /* Indicate the tree as not up-to-date, push a new job for the AppInfo thread */
+   g_atomic_int_inc (&gio_win32_appinfo_update_counter);
