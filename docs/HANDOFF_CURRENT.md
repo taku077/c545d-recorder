@@ -10,6 +10,14 @@
 - Results are sanitized and recorded in `docs/GIO_2824_KEY_HANDLE_INVESTIGATION.md`. CI source `tests/gio_appinfo_key_handle_probe.c`, workflow `.github/workflows/c545d-gio-key-probe.yml`, PR #54. Still no native GIO patched DLL, no real PC modification.
 - **Next engineer-side**: implement narrowed GLib reference-lifetime patch in CI isolated build, prove live Key plateau in this reproducible short synthetic test, and preserve GAppInfo functional semantics. No additional user WPR / 4h measurement for now.
 
+### UPDATE: 2026-11-19 JST — Controlled 16/64-cycle leak elimination results
+
+- Exact GLib 2.82.4 built from source on isolated Windows CI. Experimental forced-dispose source patch built and run in PR #54; run **44347320582** SUCCESS: unmodified 16 registry changes +5,152 total live handles / +23,080,960 Private bytes; experimental patch 0 live handle growth / +10,043,392 Private bytes. The no-registry-change control has 0 handle increase in both conditions. Retained GAppInfo name/executable basic check PASS.
+- Additional patched 64-cycle stress run **44348683100** SUCCESS: 678 baseline→679 after cleanup handles (within normal small variation); Private bytes 6,107,136→45,166,592 (+39,059,456). First 16-cycle Private bytes delta 9,388,032; last 16-cycle delta 9,129,984: **remaining linear-ish Private Bytes growth not fixed**.
+- All evidence / source and CI commands now in `docs/GIO_2824_KEY_HANDLE_INVESTIGATION.md`, `tests/patch_glib_appinfo_experiment.py`, `tests/gio_appinfo_key_handle_probe.c`, `tests/gio_appinfo_retained_lifetime.c`, `.github/workflows/c545d-gio-ownership-experiment.yml`. No user operation required so far. No recorder production changes.
+- **Hard safety constraint**: diagnostic `g_object_run_dispose()` on old app nodes is NOT production-ready due externally retained objects. **Must implement a safe ownership/lifetime fix and distinguish true remaining allocations from allocator caching** before a release. Do not repeat 4-hour host recording; design isolated CI tests first.
+- Confirmed `g_win32_registry_value_iter_get_data_w()` returns borrowed iterator-owned storage (transfer none): do not free pointer manually. Avoid inventing a fix based on that line.
+
 ## CURRENT 2026-11-19 JST — GIO 2.82.4 source-level leak candidate and zero-user-effort CI gate
 
 - User's instruction: Do all source inspection, existing-data analysis, CI and automated checks **before** any fresh user-side work. Manual checks only when technically necessary; do not request serial 4-hour experiments. If a host-only test eventually remains necessary, aggregate all required metrics into **one** automated capture and analyze before proposing any further run.
