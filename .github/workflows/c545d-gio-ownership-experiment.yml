@@ -40,8 +40,8 @@ jobs:
           git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
           meson setup glib-build glib-src -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
           meson compile -C glib-build
-          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
-          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           mkdir -p artifacts
           meson devenv -C glib-build ./gio_appinfo_retained_lifetime.exe > artifacts/baseline_retained_lifetime.log
           meson devenv -C glib-build ./gio_appinfo_probe.exe --no-registry-change > artifacts/baseline_nochange.log
