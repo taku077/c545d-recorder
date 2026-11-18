@@ -6,6 +6,7 @@ on:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - 'tests/gio_appinfo_retained_lifetime.c'
+      - 'tests/gio_appinfo_public_api_regression.c'
       - '.github/workflows/c545d-gio-weak-backref-ci.yml'
   workflow_dispatch:
 
@@ -43,9 +44,12 @@ jobs:
           meson compile -C glib-build
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_api_regression.exe ../tests/gio_appinfo_public_api_regression.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           mkdir -p artifacts
           git -C glib-src rev-parse HEAD > artifacts/glib_source_sha.txt
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/baseline_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/baseline_api.log
+          grep -q 'GIO_API_PASS' artifacts/baseline_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/baseline_nochange.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/baseline_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/baseline_registry.log
@@ -60,10 +64,14 @@ jobs:
           meson compile -C glib-build
           git -C glib-src diff -- gio/gwin32appinfo.c > artifacts/weak_backref_source.diff
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/patched_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/patched_api.log
+          grep -q 'GIO_API_PASS' artifacts/patched_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/patched_nochange.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/patched_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 > artifacts/patched_registry_64.log
+          grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
 
       - name: Compare counts with independent pass-fail gates
         shell: pwsh
@@ -97,6 +105,21 @@ jobs:
           if ([math]::Abs($bc.handles_delta) -gt 4 -or [math]::Abs($pc.handles_delta) -gt 4) { throw 'Control conditions unexpectedly grew' }
           if ($pr.handles_delta -gt 4) { throw "Weak backref candidate failed handle plateau: $($pr.handles_delta)" }
           if ($pr.private_delta -ge $br.private_delta) { throw 'Weak backref did not improve private memory delta' }
+          $lines64=@(Get-Content artifacts/patched_registry_64.log)
+          $base64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+          $after64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+          $cycles64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+          if ($base64.Count -ne 1 -or $after64.Count -ne 1 -or $cycles64.Count -ne 64) {
+            throw '64-cycle stress data incomplete'
+          }
+          $first64=$base64[0].Split(',')
+          $final64=$after64[0].Split(',')
+          $delta64=[long]$final64[4]-[long]$first64[4]
+          $mem64=[long]$final64[5]-[long]$first64[5]
+          "PATCHED_64_HANDLE_DELTA=$delta64" | Set-Content artifacts/longer_summary.txt
+          "PATCHED_64_PRIVATE_DELTA=$mem64" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($delta64) -gt 4) { throw "64-cycle handle leak remains: $delta64" }
+          Write-Host (Get-Content artifacts/longer_summary.txt)
           'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
           Get-Content artifacts/status.txt
 
