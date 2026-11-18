@@ -3,21 +3,33 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `12e6c2e13b32d598583d23e69731ba4d2e40b46d`
-- **PR updated at (UTC):** `2026-11-18T19:24:55Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/12e6c2e13b32d598583d23e69731ba4d2e40b46d/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `3ceaa604e1eb9d71f9d00f41201fbdebd874adca`
+- **PR updated at (UTC):** `2026-11-18T19:28:49Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3ceaa604e1eb9d71f9d00f41201fbdebd874adca/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44380292978](https://github.com/taku077/c545d-recorder/actions/runs/44380292978) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44380292876](https://github.com/taku077/c545d-recorder/actions/runs/44380292876) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44380292724](https://github.com/taku077/c545d-recorder/actions/runs/44380292724) |
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44380292593](https://github.com/taku077/c545d-recorder/actions/runs/44380292593) |
-| C545D active development handoff auto-refresh | in_progress | [#44380284465](https://github.com/taku077/c545d-recorder/actions/runs/44380284465) |
+| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44380980386](https://github.com/taku077/c545d-recorder/actions/runs/44380980386) |
+| Windows PowerShell source validation | in_progress | [#44380979275](https://github.com/taku077/c545d-recorder/actions/runs/44380979275) |
+| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44380979089](https://github.com/taku077/c545d-recorder/actions/runs/44380979089) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44380978913](https://github.com/taku077/c545d-recorder/actions/runs/44380978913) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | queued | [#44380978725](https://github.com/taku077/c545d-recorder/actions/runs/44380978725) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44380978708](https://github.com/taku077/c545d-recorder/actions/runs/44380978708) |
+| C545D active development handoff auto-refresh | in_progress | [#44380972001](https://github.com/taku077/c545d-recorder/actions/runs/44380972001) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-19 JST — 64-cycle handle-type census narrowed; native/Handle64 timing consistency gate added
+
+- Active development: PR #54 https://github.com/taku077/c545d-recorder/pull/54 . **No recording PC modification, no release DLL deployment, no new user-side recording/ETL or manual test.** Always compare this handoff SHA with live PR HEAD and **both pass and fail CI**.
+- Strong preserved result (Windows runner, not real recorder): weakref + redundant UTF-16 path copy removal reduced 64-cycle PrivateUsage +39,497,728 B (weakref only) to +1,466,368 B (combined), **96.29% reduction**. Earlier baseline 16 synthetic registry changes leaked +5,152 total handles; combined had 0. Official GStreamer 1.28.8 SDK-linked MSVC GIO candidate run #44376017336 PASSED export parity (2047 vs 2047, missing 0) plus real candidate DLL loader/basic GAppInfo API. Full app/GStreamer concurrency and production safety remain UNVERIFIED.
+- **New decisive Handle64 type evidence** from camera-free run [#44378212869](https://github.com/taku077/c545d-recorder/actions/runs/44378212869): in both weakref-only and combined conditions, Handle64 Key count **435 baseline -> 435 just before deleting disposable registry value after 64 mutations**. Other handle classes increased at most +1 (Event, Section, Thread). No hundreds of hidden other-type handles. However AFTER deletion, Handle64 type sum dropped from 686 to 365 (Key 435 to 114), whereas a GetProcessHandleCount sample just before Handle64 still showed **683**; do not treat these asynchronous/inconsistent samples as a stable whole-process total or conclusively claim Key-handle deletion under production workload.
+- A second full type CI [#44378692427](https://github.com/taku077/c545d-recorder/actions/runs/44378692427) passed the new sanitized *type growth* analyzer and its masked Event-vs-Key-growth selftest, but its **overall CI failed** because older native total count gate found +5 handles against limit +/-4. This is not a demonstrated new Key leak. Do NOT loosen the whole-process gate without evidence.
+- New code in tests/gio_appinfo_key_handle_probe.c adds (a) three-phase summary of all kernel-object **type names/counts only** from official Handle64 (never raw handle names, paths or ETL), (b) bracketing GetProcessHandleCount samples just before/after Handle64 invocation, and (c) a delayed settled_cleanup checkpoint. New tests/analyze_gio_handle_types.py validates sums/Key consistency/native timing and detects masked per-type positive growth. The version with native-bracket/settled gate is at commits **56dda788** and **12e6c2e1**; Windows CI started at #44380292724 and is not yet confirmed PASS at this writing.
+- **Existing memory artifact reanalysis** #44375471946: combined candidate after 64 cycles + final cleanup PrivateUsage **5,095,424 -> 6,533,120 B** (+1,437,696 B) but HeapWalk BUSY **1,493,746 -> 1,221,425 B** (-272,321 B). Windows PrivateUsage is process private commit; HeapWalk BUSY is narrower. Thus these readings do **not** prove the remaining ~1.37 MiB is live heap leakage; allocator retention or other commit sources remain plausible. No plateau proof yet. Reference: https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex
+- **Next work (AI/CI only)**: inspect latest exact-HEAD and later Windows CI artifacts for bracketing native-before/native-after total vs Handle64 total, and settled_cleanup, decide scientifically whether this is an asynchronous rescan, incomplete Handle64 enumeration, or genuine handle growth. Repair measurement/gates without weakening safety. Afterward differentiate residual private commit vs live allocations and verify full GStreamer pipeline/API, thread, dependency compatibility before any on-host deployment.
 
 ### UPDATE 2026-11-19 JST — MSVC SDK-linked GIO runtime smoke SUCCESS, Key-handle census pending
 
