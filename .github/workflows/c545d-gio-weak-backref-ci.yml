@@ -40,18 +40,19 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
-          meson setup glib-build glib-src -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
           meson compile -C glib-build
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_api_regression.exe ../tests/gio_appinfo_public_api_regression.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
           mkdir -p artifacts
           git -C glib-src rev-parse HEAD > artifacts/glib_source_sha.txt
+          export GOBJECT_DEBUG=instance-count
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/baseline_lifetime.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/baseline_api.log
           grep -q 'GIO_API_PASS' artifacts/baseline_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/baseline_nochange.log
-          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/baseline_registry.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/baseline_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/baseline_registry.log
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/baseline_lifetime.log
 
@@ -63,14 +64,15 @@ jobs:
           git -C glib-src diff --check
           meson compile -C glib-build
           git -C glib-src diff -- gio/gwin32appinfo.c > artifacts/weak_backref_source.diff
+          export GOBJECT_DEBUG=instance-count
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/patched_lifetime.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/patched_api.log
           grep -q 'GIO_API_PASS' artifacts/patched_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/patched_nochange.log
-          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/patched_registry.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/patched_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
-          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 > artifacts/patched_registry_64.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types > artifacts/patched_registry_64.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
 
       - name: Compare counts with independent pass-fail gates
@@ -120,6 +122,31 @@ jobs:
           "PATCHED_64_PRIVATE_DELTA=$mem64" | Add-Content artifacts/longer_summary.txt
           if ([math]::Abs($delta64) -gt 4) { throw "64-cycle handle leak remains: $delta64" }
           Write-Host (Get-Content artifacts/longer_summary.txt)
+          $objectSummaries = @()
+          foreach ($mode in @('baseline_registry','patched_registry','patched_registry_64')) {
+            $rows = @(Get-Content "artifacts/$mode.log" | Where-Object { $_ -match '^GIO_TYPE,' })
+            if ($rows.Count -lt 14) { throw "GObject instrumentation missing: $mode" }
+            $first = @{}
+            $last = @{}
+            foreach ($row in $rows) {
+              $cells = $row.Split(',')
+              if ($cells.Count -ne 5) { throw "Malformed GIO_TYPE entry in $mode" }
+              if ($cells[1] -eq 'baseline') { $first[$cells[3]] = [int]$cells[4] }
+              if ($cells[1] -eq 'after_cleanup') { $last[$cells[3]] = [int]$cells[4] }
+            }
+            $initialized=@($first.GetEnumerator() | Where-Object { $_.Value -gt 0 })
+            if ($initialized.Count -eq 0) { throw "GObject debug instance counting unavailable in $mode" }
+            foreach($name in $first.Keys) {
+              if (-not $last.ContainsKey($name)) { throw "Missing end count for $name in $mode" }
+              $objectSummaries += [pscustomobject]@{
+                mode = $mode; type = $name;
+                baseline = $first[$name]; after = $last[$name];
+                delta = $last[$name] - $first[$name]
+              }
+            }
+          }
+          $objectSummaries | Sort-Object mode,type | Export-Csv -Path artifacts/gobject_live_types.csv -NoTypeInformation
+          $objectSummaries | Sort-Object mode,type | Format-Table -AutoSize
           'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
           Get-Content artifacts/status.txt
 
