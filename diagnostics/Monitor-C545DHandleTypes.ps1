@@ -7,7 +7,8 @@ param(
     [ValidateRange(30,600)][int]$IntervalSeconds = 60,
     [string]$HandleExe = '',
     [switch]$SelfTest,
-    [switch]$Preflight
+    [switch]$Preflight,
+    [ValidateRange(0,2147483647)][int]$ProbePid = 0
 )
 $ErrorActionPreference = 'Stop'
 
@@ -210,6 +211,11 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'ADMIN_REQUIRED: Right-click START_HANDLE_TYPES_4H.cmd and select Run as administrator.'
 }
 $exe=Find-HandleExe $HandleExe
+if ($ProbePid -gt 0) {
+    $r=Invoke-HandleSummary $exe $ProbePid
+    Write-Host ('PROBE_PASS: Total={0}, SumTypes={1}, TypeKinds={2}' -f $r.Total,$r.Sum,$r.Rows.Count)
+    exit 0
+}
 $initial=Get-RecorderInfo
 if ($initial.Status -ne 'OK') {
     throw ('RECORDER_NOT_UNIQUE: status='+$initial.Status+'. Do not stop or restart the recorder.')
