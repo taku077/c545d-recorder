@@ -26,7 +26,7 @@ jobs:
           $ErrorActionPreference='Stop'
           py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
           if ($LASTEXITCODE -ne 0) { throw 'Meson tools install failed' }
-          meson --version
+          py -m mesonbuild.mesonmain --version
           git --version
       - name: Obtain exact upstream GLib tag and apply isolated source patch
         shell: pwsh
@@ -49,14 +49,14 @@ jobs:
           $ErrorActionPreference='Stop'
           $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
           $build=Join-Path $env:RUNNER_TEMP 'glib-experiment-build'
-          meson setup $build $glib --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          py -m mesonbuild.mesonmain setup $build $glib --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
           if ($LASTEXITCODE -ne 0) { throw 'GLib native build configure failed' }
       - name: Compile experimental GLib DLLs
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $build=Join-Path $env:RUNNER_TEMP 'glib-experiment-build'
-          meson compile -C $build -j 4
+          py -m mesonbuild.mesonmain compile -C $build -j 4
           if ($LASTEXITCODE -ne 0) { throw 'GLib native source build failed' }
           $gio=@(Get-ChildItem $build -Recurse -Filter 'gio-2.0-0.dll' -File)
           if ($gio.Count -ne 1) { throw "Expected exactly one patched GIO DLL, got $($gio.Count)" }
