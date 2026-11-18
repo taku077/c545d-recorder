@@ -71,6 +71,27 @@ GitHub Actions run **44332409627**, GLib/GIO **2.82.4.0**, both 16-cycle program
 - Source inspection confirms potential strong reference cycles \`Application->ShellVerb->Application\` and \`Application->Handler->ShellVerb->Application\` where Handler retains \`GWin32RegistryKey\`. The controlled trigger and registry-only handle growth now strongly support examining those cycles, but do not independently establish causality of each key without a patched runtime or finalizer/closure instrumentation.
 - **Decision:** no further host 4-hour measurement at this stage. Proceed with controlled GLib ref/lifetime patch experiment and re-run the same CI harness against baseline and candidate in one job. No user actions needed.
 
+
+## 2026-11-19: Controlled patched-GLib comparison SUCCESS (diagnostic fix only)
+
+GitHub Actions run https://github.com/taku077/c545d-recorder/actions/runs/44347320582 — **SUCCESS**, GLib 2.82.4 compiled from upstream source twice with exactly the same MinGW64 toolchain, first unmodified then with \`tests/patch_glib_appinfo_experiment.py\`.
+
+Results (16 HKCU synthetic registry updates and 16 \`g_app_info_get_all()\` calls, each run 16 cycles):
+
+| Variant | Total handle baseline→end | Δ handles | Private bytes baseline→end | Δ Private bytes |
+|---|---:|---:|---:|---:|
+| unmodified, no registry change | 677→677 | 0 | 5,664,768→5,664,768 | 0 |
+| unmodified, registry change | 678→5,830 | **+5,152** | 5,644,288→28,725,248 | **+23,080,960** |
+| experimental patch, no registry change | 677→677 | 0 | 5,713,920→5,713,920 | 0 |
+| experimental patch, registry change | 678→678 | **0** | 5,668,864→15,712,256 | **+10,043,392** |
+
+- Experimental patch invokes \`g_object_run_dispose()\` on old AppInfo applications in \`apps_by_id\`, \`apps_by_exe\`, \`fake_apps\` before cache table replacements. It **eliminates the reproducible +322 handle/cycle in CI** and halves the Private Bytes growth, without changing any Windows recorder files.
+- A retained \`GAppInfo\` instance tested by name and executable across 3 registry updates printed \`C545D_RETAINED_APPINFO,PASS\` in both baseline and patched configurations. **This tests only two properties on one instance**, not every supported GAppInfo operation nor multithreaded lifetime correctness.
+- Private Bytes still increased by **10,043,392 bytes (~9.58 MiB)** in the patched experiment, so a memory leak fix has **not** been established even though live total handle leak was stopped.
+- The patch is intentionally **NOT production-safe**: forced disposal during cache replacement can disrupt externally held object relationships. Do not package replacement DLL or deploy to the user's recorder. GObject documentation: \`g_object_run_dispose()\` can break cycles but requires careful lifetime discipline https://gnome.pages.gitlab.gnome.org/gtk/gobject/concepts.html .
+- Next engineering gate: prove safe lifetime under retained external \`GAppInfo\`/handler references, and implement a less invasive ownership fix with equivalent zero-handle-growth regression. Separately test whether remaining Private Bytes reaches a steady plateau under additional rapid synthetic cycles; no user-side 4-hour measurements.
+
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
