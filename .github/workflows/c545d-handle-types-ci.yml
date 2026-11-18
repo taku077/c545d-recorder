@@ -1,0 +1,51 @@
+name: Handle types Windows PowerShell 5.1 diagnostic CI
+
+on:
+  pull_request:
+    paths:
+      - diagnostics/Monitor-C545DHandleTypes.ps1
+      - diagnostics/START_HANDLE_TYPES_4H.cmd
+      - diagnostics/README_HANDLE_TYPES_JA.md
+      - .github/workflows/c545d-handle-types-ci.yml
+  push:
+    paths:
+      - diagnostics/Monitor-C545DHandleTypes.ps1
+      - diagnostics/START_HANDLE_TYPES_4H.cmd
+      - .github/workflows/c545d-handle-types-ci.yml
+
+jobs:
+  parser-and-live-handle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PS 5.1 syntax and synthetic Handle summary / CSV roundtrip
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptPath = (Resolve-Path diagnostics/Monitor-C545DHandleTypes.ps1).Path
+          $t=$null; $e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($scriptPath,[ref]$t,[ref]$e) | Out-Null
+          if (@($e).Count -gt 0) {
+            $e | Out-String | Write-Host
+            throw 'Windows PowerShell 5.1 parse failed'
+          }
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath -SelfTest
+          if ($LASTEXITCODE -ne 0) {throw 'Synthetic Handle -s test failed'}
+      - name: Download genuine Microsoft Sysinternals Handle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Handle.zip' -OutFile (Join-Path $env:RUNNER_TEMP 'Handle.zip') -UseBasicParsing
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP 'Handle.zip') -DestinationPath (Join-Path $env:RUNNER_TEMP 'Handle') -Force
+          $exe=Get-ChildItem (Join-Path $env:RUNNER_TEMP 'Handle') -Recurse -Filter handle64.exe | Select-Object -First 1
+          if(-not $exe) {throw 'Official Handle64.exe missing from ZIP'}
+          Write-Host 'Microsoft Handle binary retrieved'
+      - name: Read actual Handle -s output for runner PowerShell PID
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe=(Get-ChildItem (Join-Path $env:RUNNER_TEMP 'Handle') -Recurse -Filter handle64.exe | Select-Object -First 1).FullName
+          $selfPid=[System.Diagnostics.Process]::GetCurrentProcess().Id
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File diagnostics/Monitor-C545DHandleTypes.ps1 -HandleExe $exe -ProbePid $selfPid
+          if($LASTEXITCODE -ne 0) {throw 'Official Handle -s PID parser failed'}
