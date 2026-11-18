@@ -11,6 +11,33 @@
 #include <wchar.h>
 #include <string.h>
 
+static int report_type_instances = 0;
+
+/* Only meaningful with -Dglib_debug=enabled and GOBJECT_DEBUG=instance-count.
+ * This is a snapshot of *live* GObject instance counts, not allocations.
+ */
+static void report_types(const char *label, int cycle)
+{
+    static const char *type_names[] = {
+        "GWin32AppInfoApplication",
+        "GWin32AppInfoShellVerb",
+        "GWin32AppInfoHandler",
+        "GWin32AppInfoFileExtension",
+        "GWin32AppInfoURLSchema",
+        "GWin32RegistryKey",
+        "GWin32AppInfo",
+        NULL
+    };
+    int i;
+    if (!report_type_instances) return;
+    for (i = 0; type_names[i] != NULL; i++) {
+        GType type = g_type_from_name(type_names[i]);
+        int count = type ? g_type_get_instance_count(type) : -1;
+        printf("GIO_TYPE,%s,%d,%s,%d\n", label, cycle, type_names[i], count);
+    }
+    fflush(stdout);
+}
+
 static volatile gint changed_count = 0;
 static void on_changed(GAppInfoMonitor *monitor, gpointer unused)
 {
@@ -57,6 +84,7 @@ int main(int argc, char **argv)
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--no-registry-change") == 0) mutate_registry = 0;
         else if (strcmp(argv[arg], "--cycles=64") == 0) cycle_count = 64;
+        else if (strcmp(argv[arg], "--report-types") == 0) report_type_instances = 1;
     }
     LONG rc;
     wchar_t value_name[96];
@@ -77,6 +105,7 @@ int main(int argc, char **argv)
     enumerate_apps();    /* Ensure registry watchers and AppInfo cache initialize. */
     Sleep(1000);
     report("baseline", 0);
+    report_types("baseline", 0);
 
     for (i = 1; i <= cycle_count; i++) {
         /* Different data each iteration guarantees a LAST_SET notification. */
@@ -94,11 +123,13 @@ int main(int argc, char **argv)
         drain_context();
         enumerate_apps();
         report("cycle", i);
+        report_types("cycle", i);
     }
     if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
     Sleep(1200);
     enumerate_apps();
     report("after_cleanup", cycle_count + 1);
+    report_types("after_cleanup", cycle_count + 1);
     printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
