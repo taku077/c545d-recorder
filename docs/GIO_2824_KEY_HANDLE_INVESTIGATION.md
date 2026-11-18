@@ -123,6 +123,27 @@ GitHub Actions https://github.com/taku077/c545d-recorder/actions/runs/4434868310
 - Next investigation must target genuinely owned allocations/refcount cycles or allocator caching in the rebuild pathway (prefer malloc/free diagnostics or controlled second patch in Windows CI); avoid assumptions based only on PrivateUsage monotonic growth. No further four-hour real-host tests.
 
 
+
+## 2026-11-19 JST — Isolated combined patch: +5152 handles → 0, 64-cycle PrivateUsage reduced 96.29%
+
+Run [44363594321](https://github.com/taku077/c545d-recorder/actions/runs/44363594321) completed **SUCCESS** on a clean Windows-2022/MSYS2 runner using the exact upstream GLib 2.82.4. Changes were made only to CI-built GLib; **no user PC, recorder, or registry was modified**.
+
+| Condition | 16-cycle live handles delta | 16-cycle PrivateUsage delta | 64-cycle live handles delta | 64-cycle PrivateUsage delta |
+|---|---:|---:|---:|---:|
+| unmodified GLib 2.82.4 | +5,152 | +23,187,456 bytes | not run in this comparison | not run |
+| GWeakRef backref patch only | 0 | +10,084,352 bytes | +2 | +39,497,728 bytes |
+| GWeakRef + registry path constructor patch | **0** | **+532,480 bytes** | **+2** | **+1,466,368 bytes** |
+
+Combined 64-cycle delta is ~1.40 MiB vs weakref-only ~37.67 MiB, reducing that PrivateUsage increase by **96.29%**. The remaining increase **has not reached a demonstrated plateau**, so it is not valid to claim a complete memory leak fix yet.
+
+The second, separate ownership bug is in `gio/gwin32registrykey.c::g_win32_registry_key_new_w()`. Constructor passes `g_wcsdup(path, -1)` into a **pointer** GObject property (`path-utf16`), but `g_win32_registry_key_set_property()` copies it again via `g_wcsdup(path_w,-1)` without adopting/freeing the constructor-owned intermediate. `tests/patch_glib_registry_owned_path.py` passes borrowed input through `g_initable_new()`; setter still obtains a private copy. This source pattern was also confirmed in tags 2.86.4 and 2.88.3.
+
+GObject live inventories at the end of the combined 64-cycle run showed no growth for Application, Handler, ShellVerb, FileExtension, URLSchema (RegistryKey +1). Basic public GAppInfo (extension/URL lookup and existing retained object) regression tests PASS. **These are not comprehensive concurrent-use ABI tests.**
+
+New *separate* diagnostic work (source and CI committed, results pending): `gio_appinfo_key_handle_probe.c --heap-summary` uses documented Windows `GetProcessHeaps`, `HeapLock`, and `HeapWalk` to sample live allocated `PROCESS_HEAP_ENTRY_BUSY` bytes sparsely (initial, every 16th cycle, final) **only on disposable CI**. It will compare true live busy heap bytes against PrivateUsage; they measure different things. A positive busy-heap delta would support further *allocation attribution* work; a PrivateUsage-only rise could indicate heap fragmentation/committed-but-unused pages, thread stacks, or other allocations. Official Microsoft documentation: https://learn.microsoft.com/en-us/windows/win32/api/heapapi/nf-heapapi-heapwalk and https://learn.microsoft.com/en-us/windows/win32/memory/getting-process-heaps . This test has not yet been accepted as a production fix or deployed to the host.
+
+Next safety gates before producing a distributable version: classify residual allocations, compile against **MSVC-compatible** GStreamer 1.28.8/GLib, verify binary compatibility and GAppInfo lifetime/thread behavior, and run recorder-specific 2-camera sync/split/CPU invariants without touching live recording. No 4-hour manual host captures while CI can answer these questions.
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
