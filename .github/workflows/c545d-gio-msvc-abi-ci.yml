@@ -6,6 +6,7 @@ on:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
       - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/patch_glib_msvc_gio_sdk_export.py'
+      - 'tests/gio_msvc_sdk_overlay_smoke.c'
       - '.github/workflows/c545d-gio-msvc-abi-ci.yml'
   workflow_dispatch:
 
@@ -108,6 +109,36 @@ jobs:
             throw "MSVC ABI blocker: $($missing.Count) SDK public exports missing in combined build"
           }
           'MSVC_COMPILE_AND_EXPORT_SUBSET_PASS; RUNTIME_ABI_NOT_YET_CERTIFIED' | Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - name: Verify official SDK-linked client actually loads candidate GIO DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $overlay=Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay'
+          New-Item -ItemType Directory -Path $overlay -Force | Out-Null
+          $candidate=@(Get-ChildItem -LiteralPath $build -Recurse -File -Filter gio-2.0-0.dll)
+          if ($candidate.Count -ne 1) { throw 'Expected exactly one candidate GIO DLL' }
+          $target=Join-Path $overlay 'gio-2.0-0.dll'
+          Copy-Item -LiteralPath $candidate[0].FullName -Destination $target -Force
+          $exe=Join-Path $overlay 'gio_msvc_sdk_overlay_smoke.exe'
+          $inc=@("/I$sdk\include\glib-2.0","/I$sdk\lib\glib-2.0\include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+
+            @('tests/gio_msvc_sdk_overlay_smoke.c',"/Fe:$exe",
+              '/link',"/LIBPATH:$sdk\lib",'gio-2.0.lib',
+              'gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
+            throw 'Official MSVC SDK client compile/link failed'
+          }
+          $env:PATH="$overlay;$sdk\bin;$env:PATH"
+          $env:C545D_EXPECTED_GIO_DLL=$target
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "SDK overlay runtime smoke failed: $LASTEXITCODE"
+          }
+          'SDK_LINKED_CLIENT_CANDIDATE_RUNTIME_PASS; MULTITHREAD_ABI_NOT_YET_CERTIFIED' |
+            Add-Content artifacts/abi_inventory.txt
           Get-Content artifacts/abi_inventory.txt
       - uses: actions/upload-artifact@v4
         if: always()
