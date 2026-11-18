@@ -110,6 +110,19 @@ A separate opt-in patch `patches/glib-2.82.4-static-appinfo-experiment.patch` wa
 
 Next engineering goal: break the AppInfo/Verb/Handler strong-reference cycle without prematurely disposing caller-owned objects, and verify (a) live Key count plateau, (b) retained app handles/properties remain valid, and (c) private memory behavior with test-controlled cycles. Do not deploy either exploratory patch to production.
 
+
+## 2026-11-19: 64-cycle follow-up (no user machine), SUCCESS workflow
+
+GitHub Actions https://github.com/taku077/c545d-recorder/actions/runs/44348683100 completed successfully with the experimental patch and a separate *64-cycle* registry-change workload.
+
+- Patched process handles: baseline 678, cycle 1 678, cycle 64 680, after cleanup 679. Difference first→last sampled cycle **+2**, compared to +5,152 in the old 16-cycle baseline. This is **not** a return of the original proportional Key handle growth.
+- Private bytes: baseline **6,107,136**, cycle 64/end **45,166,592**, delta **39,059,456 bytes (~37.25 MiB)** over 64 cycles.
+- Private Bytes cycles 1→16 delta **9,388,032**; cycles 49→64 delta **9,129,984**. The growth rate **did not meaningfully fall**, so the experimental patch **does not fix ongoing Private Bytes growth**.
+- The diagnostic patch is still **not approved for production**; it force-disposes old AppInfo objects, which may invalidate legitimately retained external references beyond the narrow tested methods. User's recorder remains untouched.
+- Additional source audit: \`g_win32_registry_value_iter_get_data_w()\` returns a **transfer-none** pointer to iterator-owned data (\`gwin32registrykey.c\` lines ~1519–1558). Do **NOT** add \`g_free(value_data)\` to \`collect_capable_apps_from_registered_apps()\`; that would be an invalid free. The iterator is cleaned by \`g_win32_registry_value_iter_clear()\`.
+- Next investigation must target genuinely owned allocations/refcount cycles or allocator caching in the rebuild pathway (prefer malloc/free diagnostics or controlled second patch in Windows CI); avoid assumptions based only on PrivateUsage monotonic growth. No further four-hour real-host tests.
+
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
