@@ -133,6 +133,57 @@ jobs:
           }
           $env:PATH="$overlay;$sdk\bin;$env:PATH"
           $env:C545D_EXPECTED_GIO_DLL=$target
+          # Determine whether loading fails because the MSVC source build
+          # imports a DLL not included with the unmodified official SDK.
+          $candDeps=@(& dumpbin.exe /nologo /dependents $target)
+          $sdkDeps=@(& dumpbin.exe /nologo /dependents (Join-Path $sdk 'bin\gio-2.0-0.dll'))
+          $candNames=@($candDeps | ForEach-Object {
+            if ($_ -match '^\s+([A-Za-z0-9_.-]+\.dll)\s*
+          if ($LASTEXITCODE -ne 0) {
+            throw "SDK overlay runtime smoke failed: $LASTEXITCODE"
+          }
+          'SDK_LINKED_CLIENT_CANDIDATE_RUNTIME_PASS; MULTITHREAD_ABI_NOT_YET_CERTIFIED' |
+            Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-2824-msvc-abi-metadata
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
+) { $Matches[1].ToLowerInvariant() }
+          } | Sort-Object -Unique)
+          $sdkNames=@($sdkDeps | ForEach-Object {
+            if ($_ -match '^\s+([A-Za-z0-9_.-]+\.dll)\s*
+          if ($LASTEXITCODE -ne 0) {
+            throw "SDK overlay runtime smoke failed: $LASTEXITCODE"
+          }
+          'SDK_LINKED_CLIENT_CANDIDATE_RUNTIME_PASS; MULTITHREAD_ABI_NOT_YET_CERTIFIED' |
+            Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-2824-msvc-abi-metadata
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
+) { $Matches[1].ToLowerInvariant() }
+          } | Sort-Object -Unique)
+          "CANDIDATE_DEPENDENTS=$($candNames -join ',')" | Add-Content artifacts/abi_inventory.txt
+          "SDK_DEPENDENTS=$($sdkNames -join ',')" | Add-Content artifacts/abi_inventory.txt
+          $extra=@($candNames | Where-Object { $_ -notin $sdkNames })
+          "CANDIDATE_ONLY_DLL_DEPENDENTS=$($extra -join ',')" | Add-Content artifacts/abi_inventory.txt
+          foreach ($name in $candNames) {
+            $foundInSdk=Test-Path (Join-Path $sdk "bin\$name")
+            $foundInOverlay=Test-Path (Join-Path $overlay $name)
+            $foundInWindows=Test-Path (Join-Path $env:windir "System32\$name")
+            if (-not ($foundInSdk -or $foundInOverlay -or $foundInWindows)) {
+              "DEPENDENCY_MISSING_IN_SDK=$name" | Add-Content artifacts/abi_inventory.txt
+            }
+          }
+          Get-Content artifacts/abi_inventory.txt
           & $exe
           if ($LASTEXITCODE -ne 0) {
             throw "SDK overlay runtime smoke failed: $LASTEXITCODE"
