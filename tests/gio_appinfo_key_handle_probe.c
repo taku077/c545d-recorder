@@ -48,6 +48,23 @@ static void report(const char *label, int cycle)
            (long)g_atomic_int_get(&changed_count), (unsigned long)count,
            (unsigned long long)memory.PrivateUsage);
     fflush(stdout);
+    {
+        const char *types[] = {
+          "GWin32AppInfoApplication", "GWin32AppInfoHandler",
+          "GWin32AppInfoShellVerb", "GWin32AppInfoFileExtension",
+          "GWin32AppInfoURLSchema"
+        };
+        int counts[5] = {0};
+        int j;
+        for (j = 0; j < 5; j++) {
+            GType type = g_type_from_name(types[j]);
+            counts[j] = type ? g_type_get_instance_count(type) : -1;
+        }
+        printf("GIO_TYPES,%s,%d,%d,%d,%d,%d,%d\n",
+               label, cycle, counts[0], counts[1],
+               counts[2], counts[3], counts[4]);
+        fflush(stdout);
+    }
 }
 int main(int argc, char **argv)
 {
