@@ -73,7 +73,7 @@ jobs:
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/patched_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
-          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types > artifacts/patched_registry_64.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types --heap-summary > artifacts/patched_registry_64.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
 
       - name: Remove redundant registry UTF16 path copy and retest
@@ -90,7 +90,7 @@ jobs:
           grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/ownedpath_lifetime.log
           grep -q 'GIO_API_PASS' artifacts/ownedpath_api.log
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/ownedpath_registry.log
-          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types --cycles=64 > artifacts/ownedpath_registry_64.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types --cycles=64 --heap-summary > artifacts/ownedpath_registry_64.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/ownedpath_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/ownedpath_registry_64.log
 
@@ -191,6 +191,34 @@ jobs:
           }
           $objectSummaries | Sort-Object mode,type | Export-Csv -Path artifacts/gobject_live_types.csv -NoTypeInformation
           $objectSummaries | Sort-Object mode,type | Format-Table -AutoSize
+          $heapSummary = @()
+          foreach ($mode in @('patched_registry_64','ownedpath_registry_64')) {
+            $heapRows = @(Get-Content "artifacts/$mode.log" | Where-Object { $_ -match '^GIO_HEAP,' })
+            if ($heapRows.Count -lt 6) { throw "No sparse heap inventory: $mode" }
+            $firstRow = $null
+            $lastRow = $null
+            foreach ($line in $heapRows) {
+              $parts=$line.Split(',')
+              if ($parts.Count -ne 7) { throw "Malformed heap summary record: $mode" }
+              if ([int]$parts[6] -ne 0) { throw "HeapWalk failed during $mode (error heap count $($parts[6]))" }
+              if ($parts[1] -eq 'baseline') { $firstRow=$parts }
+              if ($parts[1] -eq 'after_cleanup') { $lastRow=$parts }
+            }
+            if ($null -eq $firstRow -or $null -eq $lastRow) { throw "Heap bounds absent: $mode" }
+            $heapSummary += [pscustomobject]@{
+              mode=$mode
+              busy_blocks_before=[long]$firstRow[3]
+              busy_blocks_after=[long]$lastRow[3]
+              busy_bytes_before=[long]$firstRow[4]
+              busy_bytes_after=[long]$lastRow[4]
+              busy_bytes_delta=[long]$lastRow[4]-[long]$firstRow[4]
+              heap_count_before=[int]$firstRow[5]
+              heap_count_after=[int]$lastRow[5]
+            }
+          }
+          $heapSummary | Export-Csv -Path artifacts/heap_busy_comparison.csv -NoTypeInformation
+          $heapSummary | Format-Table -AutoSize
+          Write-Host 'GIO_HEAP = live PROCESS_HEAP_ENTRY_BUSY bytes, not the same quantity as PrivateUsage.'
           'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
           Get-Content artifacts/status.txt
 
