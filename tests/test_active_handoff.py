@@ -10,7 +10,7 @@ spec.loader.exec_module(module)
 
 BOUNDARY = "## CURRENT 2026-11-18 JST — ETL自動オフライン解析ツール完成、実機レポート待ち"
 SAMPLE = ("# project\n<!-- CURRENT_HANDOFF_START: current -->\n"
-          "### 2026-11-19 latest\n96.29% private improvement\nKey handles controlled\n"
+          "### 2026-11-19 latest\n96.29% private improvement; regression tested by exact HEAD\nKey handles controlled by weakref and UTF16 allocation ownership fix\n"
           + BOUNDARY + "\nOLD: ETL WAIT\n")
 
 class TestHandoff(unittest.TestCase):
