@@ -1,0 +1,117 @@
+name: C545D GIO AppInfo camera-free short Key-handle probe
+
+on:
+  pull_request:
+    paths:
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - '.github/workflows/c545d-gio-key-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  short-rescan-probe:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install official GStreamer SDK on disposable Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180 -MaximumRedirection 5
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'SDK download incomplete' }
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$root") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "SDK install exit $($p.ExitCode)" }
+          if (-not (Test-Path "$root\lib\gio-2.0.lib")) { throw 'GIO import library missing' }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          "GIO_DLL_VERSION=$((Get-Item "$root\bin\gio-2.0-0.dll").VersionInfo.FileVersion)" | Out-File -FilePath 'artifacts/gio_probe_metadata.txt' -Encoding ascii
+      - name: Build isolated GAppInfo probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $exe=Join-Path $env:RUNNER_TEMP 'gio_appinfo_probe.exe'
+          $inc=@("/I$root\include\glib-2.0","/I$root\lib\glib-2.0\include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('tests/gio_appinfo_key_handle_probe.c',"/Fe:$exe",'/link',"/LIBPATH:$root\lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if ($LASTEXITCODE -ne 0) { throw 'Probe compile failed' }
+      - name: Run short rescan test and sample Key handles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $env:PATH="$root\bin;$env:PATH"
+          $zip=Join-Path $env:RUNNER_TEMP 'Handle.zip'
+          Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 180
+          $hDir=Join-Path $env:RUNNER_TEMP 'Handle'
+          Expand-Archive -LiteralPath $zip -DestinationPath $hDir -Force
+          $handle=(Get-ChildItem -LiteralPath $hDir -Recurse -File -Filter 'handle64.exe' | Select-Object -First 1).FullName
+          if (-not $handle) { throw 'Handle64 missing from official archive' }
+          $exe=Join-Path $env:RUNNER_TEMP 'gio_appinfo_probe.exe'
+          $out=(Resolve-Path artifacts).Path + '\gio_probe_counts.log'
+          $err=(Resolve-Path artifacts).Path + '\gio_probe_errors.log'
+          $typeOut=(Resolve-Path artifacts).Path + '\gio_probe_key_counts.csv'
+          'LocalSampleTime,KeyHandles,TotalHandles,ProbeStatus' | Out-File -FilePath $typeOut -Encoding ascii
+          $p=Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $out -RedirectStandardError $err -NoNewWindow
+          try {
+            for ($i=0; $i -lt 30; $i++) {
+              $p.Refresh()
+              if ($p.HasExited) { break }
+              $status='OK';$keyCount='';$total=''
+              try {
+                $raw=(& $handle -accepteula -s -p $p.Id 2>&1 | Out-String)
+                if ($LASTEXITCODE -ne 0) { throw 'HANDLE_EXIT_NONZERO' }
+                $m=[regex]::Match($raw,'(?m)^\s*Key\s*:\s*(\d+)\s*$')
+                $t=[regex]::Match($raw,'(?m)^\s*Total handles:\s*(\d+)\s*$')
+                if (-not $m.Success -or -not $t.Success) { throw 'HANDLE_SUMMARY_MISSING_KEY' }
+                $keyCount=$m.Groups[1].Value
+                $total=$t.Groups[1].Value
+              } catch { $status='HANDLE_SAMPLE_UNAVAILABLE' }
+              ('{0},{1},{2},{3}' -f (Get-Date -Format 'HH:mm:ss.fff'),$keyCount,$total,$status) |
+                  Add-Content -LiteralPath $typeOut -Encoding ascii
+              Start-Sleep -Milliseconds 1000
+            }
+            $p.Refresh()
+            if (-not $p.HasExited -and -not $p.WaitForExit(15000)) { throw 'Probe exceeded time budget' }
+            if ($p.ExitCode -ne 0) { throw "GIO probe exited $($p.ExitCode)" }
+            $log=Get-Content -LiteralPath $out -Raw
+            if ($log -notmatch 'GIO_PROBE_DONE,cycles=16,notifications=(\d+)') { throw 'Probe did not finish' }
+            $notify=[int]$Matches[1]
+            $rounds=@($log -split "\r?\n" | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+            if ($rounds.Count -ne 16) { throw "Only $($rounds.Count) cycles" }
+            $rows=@(Import-Csv -LiteralPath $typeOut)
+            $ok=@($rows | Where-Object { $_.ProbeStatus -eq 'OK' })
+            if ($ok.Count -ge 2) {
+              $delta=[long]$ok[-1].KeyHandles - [long]$ok[0].KeyHandles
+              "KEY_DELTA_OVER_PROBE=$delta" | Add-Content 'artifacts/gio_probe_metadata.txt'
+            } else {
+              'KEY_STATUS=NOT_MEASURED' | Add-Content 'artifacts/gio_probe_metadata.txt'
+            }
+            "REGISTRY_NOTIFICATIONS=$notify" | Add-Content 'artifacts/gio_probe_metadata.txt'
+            if ($notify -eq 0) {
+              'RESULT=INCONCLUSIVE_NOTIFICATIONS_NOT_OBSERVED' | Add-Content 'artifacts/gio_probe_metadata.txt'
+            } else {
+              'RESULT=MEASURED_NOT_PROOF_OF_FIX' | Add-Content 'artifacts/gio_probe_metadata.txt'
+            }
+            Write-Host (Get-Content 'artifacts/gio_probe_metadata.txt')
+          } finally {
+            $p.Refresh()
+            if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+            $p.Dispose()
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gio-appinfo-short-probe-sanitized
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
