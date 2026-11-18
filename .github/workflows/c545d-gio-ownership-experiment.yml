@@ -63,6 +63,9 @@ jobs:
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" > artifacts/patched_regchange.log
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_regchange.log
           grep '^GIO_PROBE,baseline\|^GIO_PROBE,after_cleanup' artifacts/patched_regchange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 > artifacts/patched_regchange_64.log
+          grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_regchange_64.log
+          grep '^GIO_PROBE,baseline\|^GIO_PROBE,after_cleanup' artifacts/patched_regchange_64.log
       - name: Compare before and after without hiding failure
         shell: pwsh
         run: |
@@ -94,6 +97,20 @@ jobs:
              'DIAGNOSTIC_EFFECT=HANDLE_GROWTH_REDUCED;FUNCTIONAL_SAFETY_UNTESTED' | Out-File -FilePath artifacts/status.txt
           } else {
              'DIAGNOSTIC_EFFECT=NO_HANDLE_GROWTH_REDUCTION' | Out-File -FilePath artifacts/status.txt
+          }
+          $c64=@(Get-Content 'artifacts/patched_regchange_64.log' | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+          if ($c64.Count -ne 64) { throw "64-cycle probe incomplete: $($c64.Count)" }
+          $vals=@($c64 | ForEach-Object { [long]($_.Split(',')[5]) })
+          $firstDelta=$vals[15]-$vals[0]
+          $lastDelta=$vals[63]-$vals[48]
+          $lastHandle=[long]($c64[63].Split(',')[4])
+          $startHandle=[long]($c64[0].Split(',')[4])
+          "PATCHED_64CYCLE_FIRST_16_PRIVATE_DELTA=$firstDelta" | Add-Content artifacts/status.txt
+          "PATCHED_64CYCLE_LAST_16_PRIVATE_DELTA=$lastDelta" | Add-Content artifacts/status.txt
+          "PATCHED_64CYCLE_HANDLE_DELTA=$($lastHandle-$startHandle)" | Add-Content artifacts/status.txt
+          if ($lastHandle-$startHandle -gt 5) { throw "Diagnostic patch failed to stabilize handles in 64-cycle check" }
+          if (-not (Select-String -LiteralPath artifacts/lifetime_status.txt -Pattern 'PATCHED_RETAINED_LIFETIME_EXIT=0' -Quiet)) {
+            throw "Patched GAppInfo retained-lifetime basic invariant failed"
           }
           Get-Content artifacts/status.txt
       - uses: actions/upload-artifact@v4
