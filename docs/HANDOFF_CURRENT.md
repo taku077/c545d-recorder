@@ -1,3 +1,11 @@
+### UPDATE — A/B proof: registry Key leak eliminated in candidate, Private Memory not yet stable
+
+- A/B Windows run **44336149870**: unmodified GLib 2.82.4: total handles **694→5846 (+5152)**, Private **5,505,024→28,995,584 (+23,490,560 bytes)** after 16 synthetic HKCU change cycles. Experimental GWeakRef patch **builds successfully** and same test: handles **693→693 (+0)**, Private **5,566,464→16,220,160 (+10,653,696 bytes)**.
+- **HANDLE_GATE PASS**, **PRIVATE_GATE FAIL**, overall CI intentionally fails (not ready to release). Quantitative proof only in synthetic Windows runner. See `gio-2824-cycle-ab-aggregated` artifact from run 44336149870.
+- The key-handle and GObject ref-cycle hypothesis is strongly corroborated: zero cumulative handles in patched A/B; Private Bytes growth remains and may have a distinct mechanism.
+- Added per-cycle `GIO_TYPES` counts for GWin32AppInfoApplication/Handler/ShellVerb/FileExtension/URLSchema and set `GOBJECT_DEBUG=instance-count` in *both* baseline/candidate CI runs (new run **44337631872**). This is source-level automated diagnostic and user need not do anything.
+- Next: inspect object-count deltas; if stable while Private grows, differentiate native OS/COM heap reuse vs persistent non-GObject allocations; if object counts rise, isolate residual retaining edge. Keep current recorder untouched and do not request host 4-hour test.
+
 ## CURRENT 2026-11-19 JST — GIO 2.82.4 experimental weak-backref fix, PR #55
 
 - User constraint: source audit, independent automated Windows build/tests and reuse existing measurements first; user-side manual tests only if unavoidable; avoid serial 4-hour tests.
