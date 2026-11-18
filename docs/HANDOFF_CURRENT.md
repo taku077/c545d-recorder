@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+## CURRENT — 2026-11-18 21:04 JST: WPR Handle profile ETL completed exactly across +428 handles
+
+- **User's newest real output**: Target PID=6168; expected burst 2026-11-18 21:01; WPR Handle capture **20:59–21:04**; `Starting WPR Handle capture...`, `Stopping WPR and saving ETL...`, before handles=17799, after=18227, **net +428**; output shows `Saved ETL:` and `COMPLETE`. Exact local saved path is known in the current conversation; keep absolute Windows username path out of public repo.
+- **Do not overclaim**: This proves a 428-handle net increase occurred during a successfully ended WPR window, not yet that all 428 were Key in this window, that the ETL contains readable Create Stack, or which DLL caused it. Previous 4h HandleTypes proves repeated +428 Key, and Handle64 user-provided histogram proves 214 unique registry keys ×79 handles =16906 of17078, but create-stack attribution remains unverified.
+- **Immediate next action**: On Windows PC run a read-only file size/existence check for saved `C545D_Handle_20261118_210100.etl`, check whether `wpa.exe` exists (WPR installed does not guarantee WPA installed), and if installed open ETL in WPA **File→Open**. Graph Explorer **Memory→Handles** (if present). Table group/filter **Creating Process=6168** and **Handle Type=Key** (also check owning process where available). Expose **Create Stack** and **Count/outstanding**. Use **Trace→Load Symbols** if names unresolved. Official Microsoft: https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/support-tools-xperf-wpa-wpr and https://learn.microsoft.com/en-us/windows-hardware/test/wpt/opening-and-analyzing-etl-files-in-wpa
+- **Privacy and performance**: ETL can contain registry keys, file paths and system events; do not upload raw ETL to public repo/chat. Only sanitized DLL or known function names and counts or redacted screenshot. WPA parsing/symbol loading on old HDD PC may be costly; stop analysis if recording suffers, preserve ETL, do not restart/capture again. No UST, GFlags, recorder stoppage, Handle -c or registry modification.
+- **Known user path** is available in private handoff; public says `%LOCALAPPDATA%\C545D_GStreamer\WPR_Handle\C545D_Handle_20261118_210100.etl`.
+
+
+
 ## CURRENT — 2026-11-18 JST 20:29: WPR Handle利用可能、記録停止中（次は短時間ETWで生成スタックを捕捉）
 
 - ユーザー実機報告: `wpr -profiles | Select-String -Pattern 'Handle'` → `Handle Handle usage`、`wpr -status` → Windows Performance Recorder `10.0.19041 (CoreSystem)`, `WPR is not recording`。**Handle profile使用可能で、現在のWPR記録は動いていない**。まだHandle ETLは取得していない。
