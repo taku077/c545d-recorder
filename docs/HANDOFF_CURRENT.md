@@ -1,3 +1,14 @@
+## CURRENT 2026-11-19 JST — GIO 2.82.4 experimental weak-backref fix, PR #55
+
+- User constraint: source audit, independent automated Windows build/tests and reuse existing measurements first; user-side manual tests only if unavoidable; avoid serial 4-hour tests.
+- Source-level finding: GLib AppInfo `Application->verbs->ShellVerb->app` and `Application->Handler->ShellVerb->app` create owning cycles; Handler can retain Windows registry Key.
+- Existing fixed-version A/B trigger (GIO 2.82.4.0, run #44332409627): **16 no-registry-change rounds: 698→698 handles / unchanged Private Bytes**; 16 synthetic HKCU changes: **696→5848 handles** (+5152), Private Bytes 5,484,544→28,377,088, ~322 extra handles per registry-change round. CI test uses only a disposable Windows runner.
+- New `fix/gio-2824-weak-refs-experiment` branch and draft PR **#55**: https://github.com/taku077/c545d-recorder/pull/55. Source transformation `native/gio_patch/apply_gio_weakref_patch.py` changes the ShellVerb back-reference to thread-safe GWeakRef and replaces readers with acquired/released strong temporary refs. Windows MSYS2 workflow `.github/workflows/c545d-gio-cycle-ab.yml` builds GLib **2.82.4 from source**, runs baseline and patched 16-cycle synthetic A/B, and gates handles and Private bytes with `native/gio_patch/evaluate_ab.py`.
+- This is **not deployed**, not an official upstream fix, and not accepted until source build/A-B/g_app_info regression checks succeed. Do not patch in-process DLL or adjust RTSP/record settings.
+- Current CI run for PR55 **44336149870**: https://github.com/taku077/c545d-recorder/actions/runs/44336149870 . Check status and job logs before making claims.
+- If build fails, fix test harness first; if baseline does not reproduce, report inconclusive, not success; if candidate fails metrics, fix lifetime design before any user-side request. Verify GAppInfo get_all_for_type and get_default_for_type while retaining returned objects across cache rebuilds.
+- Avoid generating repeated user measurements; do not merge until an isolated safe DLL strategy and regression passing.
+
 # HANDOFF_CURRENT — C545D recorder
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
