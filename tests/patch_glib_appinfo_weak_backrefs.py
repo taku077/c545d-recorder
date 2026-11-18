@@ -29,7 +29,9 @@ def all_count(src: str, before: str, after: str, count: int, label: str) -> str:
 
 def main(filename: str) -> None:
     path = Path(filename)
-    s = path.read_text(encoding="utf-8")
+    original_bytes = path.read_bytes()
+    original_newline = "\r\n" if b"\r\n" in original_bytes else "\n"
+    s = original_bytes.decode("utf-8").replace("\r\n", "\n")
     s = once(s, """struct _GWin32AppInfoShellVerb {
   GObject parent_instance;""",
              """struct _GWin32AppInfoShellVerb {
@@ -258,7 +260,7 @@ g_win32_appinfo_shell_verb_init (GWin32AppInfoShellVerb *self)
         raise ValueError(f"unconverted ShellVerb app use: {len(raw)} occurrences / {allowed} address-of")
     # Preserve exact LF bytes when generated source is written on Windows.
     # Otherwise Git treats the whole upstream file as changed/whitespace.
-    path.write_bytes(s.encode("utf-8"))
+    path.write_bytes(s.replace("\n", original_newline).encode("utf-8"))
     print("C545D_WEAK_BACKREF_PATCH_APPLIED", len(raw), "weak-ref accesses")
 
 
