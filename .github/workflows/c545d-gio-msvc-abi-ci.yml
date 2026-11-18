@@ -1,0 +1,113 @@
+name: C545D GLib 2.82.4 combined fix MSVC ABI inventory
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_appinfo_weak_backrefs.py'
+      - 'tests/patch_glib_registry_owned_path.py'
+      - '.github/workflows/c545d-gio-msvc-abi-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-msvc-and-compare-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install native build dependencies and fetch exact upstream GLib tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install native Meson tools' }
+          $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $glib
+          if ($LASTEXITCODE -ne 0) { throw 'GLib exact upstream source checkout failed' }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          "GLIB_SOURCE_COMMIT=$((git -C $glib rev-parse HEAD).Trim())" | Out-File -FilePath artifacts/abi_inventory.txt -Encoding ascii
+          py tests/patch_glib_appinfo_weak_backrefs.py "$glib/gio/gwin32appinfo.c"
+          if ($LASTEXITCODE -ne 0) { throw 'AppInfo weakref source patch failed' }
+          py tests/patch_glib_registry_owned_path.py "$glib/gio/gwin32registrykey.c"
+          if ($LASTEXITCODE -ne 0) { throw 'Win32 UTF16 source patch failed' }
+          git -C $glib diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Combined source patch whitespace verification failed' }
+          $changed=@(git -C $glib diff --name-only)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32registrykey.c')
+          if ($changed.Count -ne 2 -or @($changed | Where-Object {$_ -notin $expected}).Count) {
+            throw "Unexpected modified GLib sources: $($changed -join ',')"
+          }
+      - name: Build combined fix in MSVC x64 environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC GLib configure failed' }
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC combined GLib compile failed' }
+          $gio=@(Get-ChildItem -LiteralPath $build -Recurse -Filter gio-2.0-0.dll -File)
+          if ($gio.Count -ne 1) { throw "Expected exactly one compiled GIO DLL; got $($gio.Count)" }
+          "BUILD_ARCH=MSVC_x64" | Add-Content artifacts/abi_inventory.txt
+          "BUILT_GIO_VERSION=$($gio[0].VersionInfo.FileVersion)" | Add-Content artifacts/abi_inventory.txt
+          "BUILT_GIO_SHA256=$((Get-FileHash $gio[0].FullName -Algorithm SHA256).Hash)" | Add-Content artifacts/abi_inventory.txt
+      - name: Compare public GIO DLL exports with official GStreamer 1.28.8 SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'Official SDK download incomplete' }
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdkRoot") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($p.ExitCode)" }
+          $sdkGio=Join-Path $sdkRoot 'bin\gio-2.0-0.dll'
+          if (-not (Test-Path $sdkGio)) { throw 'Official GIO DLL missing from SDK' }
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $built=@(Get-ChildItem $build -Recurse -File -Filter gio-2.0-0.dll)
+          if ($built.Count -ne 1) { throw 'Compiled GIO DLL not uniquely found' }
+          "OFFICIAL_SDK_GIO_VERSION=$((Get-Item $sdkGio).VersionInfo.FileVersion)" | Add-Content artifacts/abi_inventory.txt
+          $r=@(& dumpbin.exe /nologo /exports $sdkGio)
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed on official SDK DLL' }
+          $p=@(& dumpbin.exe /nologo /exports $built[0].FullName)
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed on compiled DLL' }
+          function ExportNames([string[]]$lines) {
+            $out=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            foreach($line in $lines) {
+              if($line -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') {
+                [void]$out.Add($Matches[1])
+              }
+            }
+            return ,$out
+          }
+          $reference=ExportNames $r
+          $candidate=ExportNames $p
+          if ($reference.Count -lt 500 -or $candidate.Count -lt 500) {
+            throw "Unable to parse all GIO export symbols: SDK=$($reference.Count) candidate=$($candidate.Count)"
+          }
+          $missing=@($reference | Where-Object {-not $candidate.Contains($_)} | Sort-Object)
+          "SDK_EXPORT_COUNT=$($reference.Count)" | Add-Content artifacts/abi_inventory.txt
+          "CANDIDATE_EXPORT_COUNT=$($candidate.Count)" | Add-Content artifacts/abi_inventory.txt
+          "SDK_EXPORTS_MISSING_FROM_CANDIDATE=$($missing.Count)" | Add-Content artifacts/abi_inventory.txt
+          if ($missing.Count -gt 0) {
+            $missing | Select-Object -First 40 | Out-File artifacts/missing_public_exports.txt -Encoding ascii
+            throw "MSVC ABI blocker: $($missing.Count) SDK public exports missing in combined build"
+          }
+          'MSVC_COMPILE_AND_EXPORT_SUBSET_PASS; RUNTIME_ABI_NOT_YET_CERTIFIED' | Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-2824-msvc-abi-metadata
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
