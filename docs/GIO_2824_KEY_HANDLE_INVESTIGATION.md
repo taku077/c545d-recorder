@@ -92,6 +92,24 @@ Results (16 HKCU synthetic registry updates and 16 \`g_app_info_get_all()\` call
 - Next engineering gate: prove safe lifetime under retained external \`GAppInfo\`/handler references, and implement a less invasive ownership fix with equivalent zero-handle-growth regression. Separately test whether remaining Private Bytes reaches a steady plateau under additional rapid synthetic cycles; no user-side 4-hour measurements.
 
 
+
+## 2026-11-19 JST — Tested disposal mechanism (real GLib 2.82.4 source rebuild)
+
+The Windows-2022 / MSYS2 GitHub Actions run **44348396190** built actual upstream GLib **2.82.4** twice, first untouched and then after an experimental force-dispose of old AppInfo applications at cache replacement (`tests/patch_glib_appinfo_experiment.py`). The resulting artifact `gio-refcycle-baseline-vs-forced-dispose-experiment` was downloaded and inspected.
+
+| Measurement (16 cycles) | Untouched | Forced-dispose experiment |
+|---|---:|---:|
+| Registry unchanged, total handle delta | 0 | 0 |
+| Registry changed, total handle delta | **+5152** | **0** |
+| Registry changed, Private Bytes delta | **+22921216 bytes** | **+10113024 bytes** |
+| Previously-held GAppInfo name / executable check | PASS | PASS |
+
+**Interpretation:** The AppInfo object-lifetime/ownership pathway is causally involved in the recurring Key-handle increase under CI conditions; forcing cached app disposal makes total handles plateau in this test. **This is not a production-safe fix:** g_object_run_dispose() can clear fields in objects which other threads or caller-owned GAppInfo objects still reference, even though one retained-name/executable smoke test passed. Private Bytes still increased about 9.65 MiB, requiring separate investigation of residual allocations or allocator behavior. No user PC actions or long tests were involved.
+
+A separate opt-in patch `patches/glib-2.82.4-static-appinfo-experiment.patch` was also applied successfully to the exact source tag, and an MSVC DLL build completed in GitHub Actions run **44348889962**. This disables refresh only under `C545D_GIO_APPINFO_STATIC=1`; it is a diagnostic A/B control, not a safe default production fix. As of this note, no A/B runtime validation of the opt-in patch has been completed.
+
+Next engineering goal: break the AppInfo/Verb/Handler strong-reference cycle without prematurely disposing caller-owned objects, and verify (a) live Key count plateau, (b) retained app handles/properties remain valid, and (c) private memory behavior with test-controlled cycles. Do not deploy either exploratory patch to production.
+
 ## Precise remaining discriminator before a production fix
 Identify *which of the recurring 214 Key names remain referenced*, and attribute their owning GIO code path rather than merely counting all 42,662 transient Opens. Existing handle-stacks TXT alone has neither per-key identities nor per-handle close lifetime; an exact leaking statement cannot be inferred from it. Avoid repeating the same long host measurement.
 
