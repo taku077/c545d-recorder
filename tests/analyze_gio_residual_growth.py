@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 CHECKPOINTS = (0, 64, 128, 192, 256)
-KIND = {"GIO_PROBE": (6, 5), "GIO_HEAP": (7, 4), "GIO_VM": (9, 3)}
+KIND = {"GIO_PROBE": (6, 5), "GIO_HEAP": (7, 4), "GIO_VM": (8, 3)}
 
 
 def read_series(filename):
