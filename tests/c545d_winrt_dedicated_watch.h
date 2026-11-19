@@ -15,6 +15,11 @@
 extern "C" {
 #endif
 typedef struct c545d_dedicated_watch c545d_dedicated_watch;
+/* Keep the COM MTA alive across multiple watcher open/close operations.
+ * Must balance enter/leave outside DllMain, and leave only after last close.
+ */
+C545D_API int c545d_dedicated_runtime_enter(void);
+C545D_API void c545d_dedicated_runtime_leave(void);
 C545D_API int c545d_dedicated_open(c545d_dedicated_watch **out);
 C545D_API int c545d_dedicated_snapshot(c545d_dedicated_watch *watch,
                                           uint64_t *generation, uint64_t *locale_hash);

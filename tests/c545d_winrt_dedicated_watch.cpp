@@ -4,6 +4,7 @@
 #define C545D_DEDICATED_BUILD
 #include "c545d_winrt_dedicated_watch.h"
 #include <windows.h>
+#include <objbase.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.ApplicationModel.h>
@@ -21,6 +22,9 @@ namespace {
 std::atomic<uint64_t> g_registration_count{0};
 std::atomic<uint64_t> g_revocation_count{0};
 std::atomic<uint64_t> g_shutdown_errors{0};
+std::mutex g_mta_lock;
+CO_MTA_USAGE_COOKIE g_mta_cookie{};
+unsigned g_mta_references=0;
 
 struct WatchState {
   std::atomic<uint64_t> generation{1};
@@ -135,7 +139,30 @@ struct c545d_dedicated_watch {
   }
 };
 
+extern "C" int c545d_dedicated_runtime_enter(void) {
+  std::lock_guard<std::mutex> guard(g_mta_lock);
+  if(g_mta_references==0) {
+    const auto hr=CoIncrementMTAUsage(&g_mta_cookie);
+    if(FAILED(hr))return 2;
+  }
+  ++g_mta_references;
+  return 0;
+}
+extern "C" void c545d_dedicated_runtime_leave(void) {
+  std::lock_guard<std::mutex> guard(g_mta_lock);
+  if(g_mta_references>0 && --g_mta_references==0) {
+    CoDecrementMTAUsage(g_mta_cookie);
+    g_mta_cookie=CO_MTA_USAGE_COOKIE{};
+  }
+}
 extern "C" int c545d_dedicated_open(c545d_dedicated_watch** out) {
+  {
+    std::lock_guard<std::mutex> guard(g_mta_lock);
+    if(g_mta_references==0) {
+      if(out)*out=nullptr;
+      return 7; // Explicit lifetime contract: never tear down MTA per watcher.
+    }
+  }
   if(!out)return 2;
   *out=nullptr;
   try {

@@ -35,11 +35,16 @@ int main(void) {
   mem.cb=sizeof(mem);
   if(c545d_dedicated_open(NULL)==0)return fail(2);
   if(c545d_dedicated_snapshot(NULL,&gen,&lang)==0)return fail(3);
+  if(c545d_dedicated_open(&watch)==0)return fail(20);
+  if(c545d_dedicated_runtime_enter()!=0)return fail(21);
+  fprintf(stderr,"C545D_DEDICATED_CHECKPOINT=runtime_entered\n");fflush(stderr);
   // Warm up Windows COM and apartment caches outside resource delta.
   for(int i=0;i<4;i++){
+    fprintf(stderr,"C545D_DEDICATED_CHECKPOINT=warmup_begin_%d\n",i);fflush(stderr);
     if(c545d_dedicated_open(&watch)!=0 || !watch)return fail(4);
     if(c545d_dedicated_snapshot(watch,&gen,&lang)!=0)return fail(5);
     c545d_dedicated_close(watch);watch=NULL;
+    fprintf(stderr,"C545D_DEDICATED_CHECKPOINT=warmup_closed_%d\n",i);fflush(stderr);
   }
   if(!GetProcessHandleCount(GetCurrentProcess(),&h0) ||
      !GetProcessMemoryInfo(GetCurrentProcess(),
@@ -47,6 +52,7 @@ int main(void) {
   p0=mem.PrivateUsage;
 
   for(int i=0;i<64;i++){
+    fprintf(stderr,"C545D_DEDICATED_CHECKPOINT=loop_open_%d\n",i);fflush(stderr);
     if(c545d_dedicated_open(&watch)!=0 || !watch)return fail(7);
     if(c545d_dedicated_snapshot(watch,&gen,&lang)!=0 || gen!=1 || lang==0)
       return fail(8);
@@ -84,5 +90,7 @@ int main(void) {
        (unsigned long long)open_count,(unsigned long long)close_count,handles,
        private_delta,(unsigned long long)errors);
   if(handles>8)return fail(19);
+  c545d_dedicated_runtime_leave();
+  fprintf(stderr,"C545D_DEDICATED_CHECKPOINT=runtime_left\n");fflush(stderr);
   return 0;
 }
