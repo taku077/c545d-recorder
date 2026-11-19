@@ -59,13 +59,15 @@ jobs:
           set -euo pipefail
           export GOBJECT_DEBUG=instance-count
           unset C545D_HANDLE_EXE || true
-          for stage in default noop_callback skip_manifest skip_path skip_location; do
-            unset C545D_DIAG_UWP_NOOP_CALLBACK C545D_DIAG_UWP_SKIP_MANIFEST C545D_DIAG_UWP_SKIP_PATH C545D_DIAG_UWP_SKIP_LOCATION || true
+          for stage in default noop_callback skip_manifest skip_path skip_location skip_displayname skip_current; do
+            unset C545D_DIAG_UWP_NOOP_CALLBACK C545D_DIAG_UWP_SKIP_MANIFEST C545D_DIAG_UWP_SKIP_PATH C545D_DIAG_UWP_SKIP_LOCATION C545D_DIAG_UWP_SKIP_DISPLAYNAME C545D_DIAG_UWP_SKIP_CURRENT || true
             case "$stage" in
               noop_callback) export C545D_DIAG_UWP_NOOP_CALLBACK=1 ;;
               skip_manifest) export C545D_DIAG_UWP_SKIP_MANIFEST=1 ;;
               skip_path) export C545D_DIAG_UWP_SKIP_PATH=1 ;;
               skip_location) export C545D_DIAG_UWP_SKIP_LOCATION=1 ;;
+              skip_displayname) export C545D_DIAG_UWP_SKIP_DISPLAYNAME=1 ;;
+              skip_current) export C545D_DIAG_UWP_SKIP_CURRENT=1 ;;
             esac
             meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=16 --no-registry-change --heap-summary --vm-summary --report-types > "artifacts/$stage"_nochange_16.log
             grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/$stage"_nochange_16.log
