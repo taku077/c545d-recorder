@@ -82,6 +82,13 @@ static void report_heaps(const char *label, int cycle)
     DWORD n, found, i, bad = 0;
     HANDLE *heaps = NULL;
     unsigned long long busy_bytes = 0, busy_blocks = 0;
+    /* Read-only diagnostic: heap region commit can remain after busy blocks free.
+     * PROCESS_HEAP_ENTRY.Region.dwCommittedSize may be 0/unavailable; report
+     * coverage explicitly, never equate this census with PrivateUsage.
+     */
+    unsigned long long region_count = 0, known_region_count = 0;
+    unsigned long long region_committed = 0, region_uncommitted = 0;
+    unsigned long long free_block_bytes = 0, free_block_count = 0;
     unsigned int size_slot;
     memset(c545d_heap_sizes, 0, sizeof(c545d_heap_sizes));
     if (!report_heap_summary) return;
@@ -116,6 +123,18 @@ static void report_heaps(const char *label, int cycle)
                 size_slot = entry.cbData < 2048 ? (unsigned int)entry.cbData : 2048U;
                 c545d_heap_sizes[size_slot]++;
             }
+            else if (entry.wFlags & PROCESS_HEAP_REGION) {
+                region_count++;
+                if (entry.Region.dwCommittedSize != 0) {
+                    known_region_count++;
+                    region_committed += entry.Region.dwCommittedSize;
+                }
+                region_uncommitted += entry.Region.dwUnCommittedSize;
+            }
+            else if (!(entry.wFlags & PROCESS_HEAP_UNCOMMITTED_RANGE)) {
+                free_block_bytes += entry.cbData;
+                free_block_count++;
+            }
         }
         last_error = GetLastError();
         if (last_error != ERROR_NO_MORE_ITEMS) bad++;
@@ -124,6 +143,11 @@ static void report_heaps(const char *label, int cycle)
     free(heaps);
     printf("GIO_HEAP,%s,%d,%llu,%llu,%lu,%lu\n", label, cycle,
            busy_blocks, busy_bytes, (unsigned long)found, (unsigned long)bad);
+    /* Numeric aggregates only: never emit heap addresses or private paths. */
+    printf("GIO_HEAPREGION,%s,%d,%llu,%llu,%llu,%llu,%llu,%llu,%lu\n",
+           label, cycle, region_count, known_region_count,
+           region_committed, region_uncommitted, free_block_bytes,
+           free_block_count, (unsigned long)bad);
     if (bad == 0) {
         for (size_slot = 0; size_slot <= 2048; ++size_slot) {
             if (c545d_heap_sizes[size_slot] != 0)
