@@ -7,6 +7,7 @@ on:
       - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - 'tests/analyze_gio_residual_growth.py'
+      - 'tests/analyze_gio_heap_sizes.py'
       - 'tests/analyze_gio_handle_types.py'
       - 'tests/gio_appinfo_retained_lifetime.c'
       - 'tests/gio_appinfo_public_api_regression.c'
@@ -136,6 +137,21 @@ jobs:
           py tests/analyze_gio_residual_growth.py --output artifacts/residual_slope.csv artifacts/ownedpath_nochange_256.log artifacts/ownedpath_registry_256.log
           if ($LASTEXITCODE -ne 0) { throw 'Residual test data is incomplete or corrupt' }
           Get-Content artifacts/residual_slope.csv.status.txt
+
+      - name: Quantify exact retained heap size classes against same-run control
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_heap_sizes.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Heap-size analyzer selftest failed' }
+          if (-not (Test-Path artifacts/ownedpath_nochange_256.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_256.log)) {
+            Write-Warning '256-cycle heap-size logs unavailable; do not infer sizes'
+            exit 0
+          }
+          py tests/analyze_gio_heap_sizes.py --output artifacts/heap_size_deltas.csv artifacts/ownedpath_nochange_256.log artifacts/ownedpath_registry_256.log
+          if ($LASTEXITCODE -ne 0) { throw 'Heap-size data mismatched HeapWalk block count' }
 
       - name: Compare counts with independent pass-fail gates
         shell: pwsh
