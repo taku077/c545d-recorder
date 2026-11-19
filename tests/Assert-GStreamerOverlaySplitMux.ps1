@@ -127,7 +127,13 @@ try {
     $lengthSec=3600*[int]$match.Groups[1].Value+60*[int]$match.Groups[2].Value+[int]$match.Groups[3].Value+$fraction
     $seconds += $lengthSec
     $segmentLines += ("segment=$($f.Name) bytes=$($f.Length) duration_s=$([math]::Round($lengthSec,3)) tracks=H264+AAC")
-    if ($lengthSec -lt 0.3 -or $lengthSec -gt 4.0) {
+    # The first splitmux fragment can be short while synthetic RTP/H264
+    # chains reach the initial keyframe: official SDK and candidate both
+    # produced ~0.15s in CI 44555196915. Only the FIRST fragment gets
+    # the 0.10s startup allowance; later fragments retain the strict
+    # 0.30s minimum. Decode/caps and aggregate-duration checks are unchanged.
+    $minimumSeconds=if ($f.FullName -eq $files[0].FullName) { 0.10 } else { 0.30 }
+    if ($lengthSec -lt $minimumSeconds -or $lengthSec -gt 4.0) {
       $segmentLines += ("DURATION_GATE_FAIL segment=$($f.Name) duration_s=$([math]::Round($lengthSec,6))")
       $script:badFragmentDurations++
     }
