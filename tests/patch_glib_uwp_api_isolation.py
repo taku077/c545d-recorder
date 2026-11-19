@@ -56,6 +56,13 @@ def patch_packageparser(filename):
     data = p.read_bytes()
     nl = "\r\n" if b"\r\n" in data else "\n"
     s = data.decode("utf-8").replace("\r\n", "\n")
+    # The diagnostic early exits reach the package_cleanup label before the
+    # normal memset(sax,...). Initialize only the field read by cleanup.
+    s = replace_one(s,
+        "      hr = IIterator_get_Current (packages_iterator, &item);",
+        "      sax->exit_early = FALSE;\n"
+        "      hr = IIterator_get_Current (packages_iterator, &item);",
+        "SAX early-exit safety")
     location = """      hr = IPackage_get_InstalledLocation (ipackage, &package_install_location);
       canned_com_error_handler_pkg_named ("IPackage_get_InstalledLocation()", package_cleanup);"""
     location2 = """      /* DIAGNOSTIC ONLY: retain WinRT package/identity enumeration, but skip
