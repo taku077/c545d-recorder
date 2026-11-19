@@ -85,13 +85,13 @@ try {
   $info=(& $discover -v $uri 2>&1 | Out-String)
   if ($LASTEXITCODE -ne 0) { throw 'GStreamer discoverer rejected synthetic MP4' }
   # Discoverer validates EOS finalization and media stream negotiation.
-  if ($info -notmatch '(?i)h\\.?264|video/x-h264') { throw 'Encoded H264 not detected' }
+  if ($info -notmatch '(?i)h\.?264|video/x-h264') { throw 'Encoded H264 not detected' }
   if ($info -notmatch '(?i)aac|audio/mpeg') { throw 'Encoded AAC not detected' }
-  if ($info -notmatch '(?i)width:\\s*2560') { throw 'Video width not 2560' }
-  if ($info -notmatch '(?i)height:\\s*720') { throw 'Video height not 720' }
-  if ($info -notmatch '(?i)(frame rate|framerate):\\s*15/1') { throw 'Output frame rate not 15fps' }
-  if ($info -notmatch '(?i)(sample rate|rate):\\s*48000') { throw 'AAC rate not 48kHz' }
-  if ($info -notmatch '(?i)channels:\\s*1\\b') { throw 'AAC audio not mono' }
+  if ($info -notmatch '(?i)width:\s*2560') { throw 'Video width not 2560' }
+  if ($info -notmatch '(?i)height:\s*720') { throw 'Video height not 720' }
+  if ($info -notmatch '(?i)(frame rate|framerate):\s*15/1') { throw 'Output frame rate not 15fps' }
+  if ($info -notmatch '(?i)(sample rate|rate):\s*48000') { throw 'AAC rate not 48kHz' }
+  if ($info -notmatch '(?i)channels:\s*1\b') { throw 'AAC audio not mono' }
   # Decode only the first composite frame to assert black left / white right
   # in actual MP4 pixels, not just muxer metadata.
   $decode=@('-q','filesrc',("location="+$mp4.Replace('\','/')),
