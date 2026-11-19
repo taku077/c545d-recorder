@@ -38,7 +38,11 @@ def load(mode,kind):
             r"evictions=(\d+),errors=(\d+),ready=(\d+)$",lines,re.M)
         if not events:raise ValueError(f"missing dedicated watcher telemetry {kind}")
         scans,inj,evict,errors,ready=map(int,events[-1])
-        if scans<250 or inj or evict or errors or ready!=1:
+        # An unchanged-registry control opens AppInfo once, while the
+        # registry-change arm re-enumerates each cycle. Expect DIFFERENT
+        # scan counts; do not falsely flag an idle watcher as unavailable.
+        expected_scan_ok = scans==1 if kind=="nochange" else scans>=250
+        if not expected_scan_ok or inj or evict or errors or ready!=1:
             raise ValueError(f"dedicated watcher unhealthy in {kind}: {events[-1]}")
     else:
         if "C545D_WINRT_BRIDGE,scans=" in lines:
