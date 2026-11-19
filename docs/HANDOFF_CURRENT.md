@@ -2,6 +2,15 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — Six synthetic cache512 analyzer tests PASS; new WinRT cache MSVC smoke in CI
+
+- **Branch:** `investigate/c545d-last-residual-slope-20261120`. The current code-workflow HEAD is `9017a50fb98a4775de3bba7fe0425a4630225c31` before this documentation update. This experiment is NOT deployed or merge-authorized.
+- **Actual verified result:** [Linux numeric-only selftest #44584997777](https://github.com/taku077/c545d-recorder/actions/runs/44584997777) **SUCCESS, 6/6 tests** in 0.099 seconds: paired 512-cycle delta, missing heap-region checkpoints, heap walk error, impossible region coverage, retained +5 handles, and unavailable committed-region data. Commits `0accffa81cc87f89ca095009879b5074d1a3d720` and `1c19f912f63a047c95e5c5e2cbed4a587a914bcf`, no Windows host or media.
+- **Windows 512-cycle region/free-block test:** [run #44583345720](https://github.com/taku077/c545d-recorder/actions/runs/44583345720), HEAD `811cae162f726571760ee15c548b2953ed6bafce`. Build compiled successfully, measurement in progress on last check. **No new numerical measurements yet confirmed.** Analyze its result and artifact before labeling residual as allocator retention or leak.
+- **New independent Windows-2022 MSVC/GStreamer exact DisplayName diagnostic cache test:** workflow `.github/workflows/c545d-gio-displayname-cache-msvc-ci.yml` committed as `9017a50fb98a4775de3bba7fe0425a4630225c31`. [run #44585665458](https://github.com/taku077/c545d-recorder/actions/runs/44585665458) was in progress on last check. Uses GLib 2.82.4 original-source weakref+UTF16 fix, CI-only UWP stage hooks, and original-value cache under MSVC; checks SDK ABI, GAppInfo, synthetic 2×RTP H264 + AAC mux/splitmux/EOS. Cache may stale across real installs/locale changes, so **NEVER ship this diagnostic build**. Distinguish this new run from previously passed basic combined-fix-only MSVC run #44579422769.
+- **Next:** retrieve actual final status, failed steps, and sanitized aggregates for both Windows runs; repair code only if evidence warrants. Preserve exact Tapo video/audio settings; no user-side measurements or DLL replacement.
+
+
 
 ### UPDATE 2026-11-20 JST — Heap-region commit/free 512-cycle discriminator (Windows CI, NOT production)
 
