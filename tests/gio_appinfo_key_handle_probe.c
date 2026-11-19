@@ -16,6 +16,11 @@
 static int report_type_instances = 0;
 
 static int report_heap_summary = 0;
+/* Debug-only SIZE HISTOGRAM. Sizes/counts contain no addresses or registry names.
+ * Bin 2048 aggregates all allocations >=2048 bytes. Global, never heap-alloced.
+ */
+static unsigned long long c545d_heap_sizes[2049];
+
 
 /*
  * Read-only VirtualQuery inventory: counts committed memory by region type.
@@ -77,6 +82,8 @@ static void report_heaps(const char *label, int cycle)
     DWORD n, found, i, bad = 0;
     HANDLE *heaps = NULL;
     unsigned long long busy_bytes = 0, busy_blocks = 0;
+    unsigned int size_slot;
+    memset(c545d_heap_sizes, 0, sizeof(c545d_heap_sizes));
     if (!report_heap_summary) return;
     n = GetProcessHeaps(0, NULL);
     if (n == 0 || n > 4096) {
@@ -106,6 +113,8 @@ static void report_heaps(const char *label, int cycle)
             if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
                 busy_bytes += entry.cbData;
                 busy_blocks++;
+                size_slot = entry.cbData < 2048 ? (unsigned int)entry.cbData : 2048U;
+                c545d_heap_sizes[size_slot]++;
             }
         }
         last_error = GetLastError();
@@ -115,6 +124,13 @@ static void report_heaps(const char *label, int cycle)
     free(heaps);
     printf("GIO_HEAP,%s,%d,%llu,%llu,%lu,%lu\n", label, cycle,
            busy_blocks, busy_bytes, (unsigned long)found, (unsigned long)bad);
+    if (bad == 0) {
+        for (size_slot = 0; size_slot <= 2048; ++size_slot) {
+            if (c545d_heap_sizes[size_slot] != 0)
+                printf("GIO_HEAPSIZE,%s,%d,%u,%llu\n", label, cycle,
+                       size_slot, c545d_heap_sizes[size_slot]);
+        }
+    }
     fflush(stdout);
 }
 
