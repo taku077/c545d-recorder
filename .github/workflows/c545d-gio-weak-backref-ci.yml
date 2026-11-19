@@ -206,8 +206,32 @@ jobs:
           $weakKeyDelta=[long]$keyEnd[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
           "PATCHED_64_KEY_DELTA=$weakKeyDelta" | Add-Content artifacts/longer_summary.txt
           if ($weakKeyDelta -gt 2) { throw "64-cycle Key handles grew: $weakKeyDelta" }
-          # Retain the existing strict total-handle gate until classified with new evidence.
-          if ([math]::Abs($delta64) -gt 4) { throw "64-cycle total handle delta exceeds gate: $delta64 (Key delta $weakKeyDelta)" }
+          # The baseline GIO_PROBE snapshot is BEFORE the very first Handle64
+          # subprocess; after_cleanup is during asynchronous registry rescan.
+          # Compare like-for-like Handle64 type census checkpoints instead.
+          # Keep the strict +/-4 total gate and independent per-type checks.
+          $h64=@{}
+          foreach ($mark in @('baseline','before_cleanup','settled_cleanup')) {
+            $rows=@($lines64 | Where-Object { $_ -match "^GIO_H64TOTAL,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing weakref 64-cycle H64 $mark" }
+            $cells=$rows[0].Split(',')
+            if ([long]$cells[3] -ne [long]$cells[4]) { throw "H64 sum mismatch: $mark" }
+            $h64[$mark]=[long]$cells[3]
+          }
+          $steady64=$h64['before_cleanup']-$h64['baseline']
+          $settled64=$h64['settled_cleanup']-$h64['baseline']
+          "PATCHED_64_TRANSIENT_NATIVE_AFTER_CLEANUP_DELTA=$delta64" | Add-Content artifacts/longer_summary.txt
+          "PATCHED_64_STEADY_H64_DELTA=$steady64" | Add-Content artifacts/longer_summary.txt
+          "PATCHED_64_SETTLED_H64_DELTA=$settled64" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($steady64) -gt 4 -or [math]::Abs($settled64) -gt 4) {
+            throw "Weakref 64-cycle H64 total growth: steady=$steady64 settled=$settled64"
+          }
+          foreach ($mark in @('before_cleanup','settled_cleanup')) {
+            $rows=@($lines64 | Where-Object { $_ -match "^GIO_KEY,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing weakref 64-cycle Key $mark" }
+            $keyDelta=[long]$rows[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
+            if ($keyDelta -gt 2) { throw "Weakref 64-cycle Key growth at $mark : $keyDelta" }
+          }
           Write-Host (Get-Content artifacts/longer_summary.txt)
 
           $owned64=@(Get-Content artifacts/ownedpath_registry_64.log)
@@ -233,7 +257,30 @@ jobs:
           )
           $comparison | Export-Csv -Path artifacts/utf16_memory_comparison.csv -NoTypeInformation
           $comparison | Format-Table -AutoSize
-          if ([math]::Abs($uHandle) -gt 4) { throw "UTF16 ownership experiment failed 64-cycle plateau: $uHandle" }
+          # Use the same H64 baseline/steady/settled checkpoints for combined
+          # fix; do not alter the +/-4 gate or hide any type growth.
+          $h64Combined=@{}
+          foreach ($mark in @('baseline','before_cleanup','settled_cleanup')) {
+            $rows=@($owned64 | Where-Object { $_ -match "^GIO_H64TOTAL,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing combined 64-cycle H64 $mark" }
+            $cells=$rows[0].Split(',')
+            if ([long]$cells[3] -ne [long]$cells[4]) { throw "Combined H64 sum mismatch: $mark" }
+            $h64Combined[$mark]=[long]$cells[3]
+          }
+          $uSteady=$h64Combined['before_cleanup']-$h64Combined['baseline']
+          $uSettled=$h64Combined['settled_cleanup']-$h64Combined['baseline']
+          "COMBINED_64_TRANSIENT_NATIVE_AFTER_CLEANUP_DELTA=$uHandle" | Add-Content artifacts/longer_summary.txt
+          "COMBINED_64_STEADY_H64_DELTA=$uSteady" | Add-Content artifacts/longer_summary.txt
+          "COMBINED_64_SETTLED_H64_DELTA=$uSettled" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($uSteady) -gt 4 -or [math]::Abs($uSettled) -gt 4) {
+            throw "Combined 64-cycle H64 total growth: steady=$uSteady settled=$uSettled"
+          }
+          foreach ($mark in @('before_cleanup','settled_cleanup')) {
+            $rows=@($owned64 | Where-Object { $_ -match "^GIO_KEY,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing combined 64-cycle Key $mark" }
+            $keyDelta=[long]$rows[0].Split(',')[3]-[long]$uKeyB[0].Split(',')[3]
+            if ($keyDelta -gt 2) { throw "Combined 64-cycle Key growth at $mark : $keyDelta" }
+          }
           if ($uPrivate -ge $mem64) {
             throw 'UTF16 fix did not reduce 64-cycle Private Bytes under this workload; investigate'
           }

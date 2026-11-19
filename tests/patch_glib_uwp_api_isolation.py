@@ -91,6 +91,25 @@ def patch_packageparser(filename):
         }
 """ + display
     s = replace_one(s, display, skipped_display, "DisplayName bypass")
+    # Isolate ONLY the DisplayName WinRT getter, not all subsequent work.
+    # The diagnostic substitutes the Name field as display text, so this
+    # mode is deliberately semantically different and must never be shipped.
+    display_pair = ("""      hr = IPackage2_get_DisplayName (ipackage2, &display_name);
+      canned_com_error_handler_pkg ("IPackage2_get_DisplayName()", package_cleanup);""")
+    display_guard = """      /* CI DIAGNOSTIC ONLY: retain location, family, XML and callback. */
+      if (g_getenv ("C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER") == NULL)
+        {
+          hr = IPackage2_get_DisplayName (ipackage2, &display_name);
+          canned_com_error_handler_pkg ("IPackage2_get_DisplayName()", package_cleanup);
+        }"""
+    s = replace_one(s, display_pair, display_guard,
+                    "DisplayName getter-only bypass")
+    s = replace_one(s,
+        "      wcs_display_name = LoadedWindowsGetStringRawBuffer (display_name, NULL);",
+        """      /* Diagnostic-only fallback; changes display text, not package traversal. */
+      wcs_display_name = display_name
+        ? LoadedWindowsGetStringRawBuffer (display_name, NULL) : wcs_name;""",
+        "DisplayName-only diagnostic fallback")
     location = """      hr = IPackage_get_InstalledLocation (ipackage, &package_install_location);
       canned_com_error_handler_pkg_named ("IPackage_get_InstalledLocation()", package_cleanup);"""
     location2 = """      /* DIAGNOSTIC ONLY: retain WinRT package/identity enumeration, but skip
