@@ -34,6 +34,14 @@ static void report_vm(const char *label, int cycle)
     uintptr_t address, limit;
     unsigned long long private_bytes = 0, mapped_bytes = 0, image_bytes = 0;
     unsigned long long regions = 0;
+    /* CI numeric-only MEM_PRIVATE census by VirtualQuery RegionSize.
+     * Every committed MEM_PRIVATE region contributes exactly once to
+     * one of the four bins. Never print BaseAddress/AllocationBase.
+     * VirtualQuery can coalesce adjacent pages with identical flags;
+     * these are region-size bins, NOT allocation-object lifetimes.
+     */
+    unsigned long long private_bin_bytes[4] = {0, 0, 0, 0};
+    unsigned long long private_bin_regions[4] = {0, 0, 0, 0};
     unsigned int errors = 0;
     if (!report_vm_summary) return;
     GetSystemInfo(&info);
@@ -54,7 +62,14 @@ static void report_vm(const char *label, int cycle)
         }
         if (mbi.State == MEM_COMMIT) {
             ++regions;
-            if (mbi.Type == MEM_PRIVATE) private_bytes += (unsigned long long)mbi.RegionSize;
+            if (mbi.Type == MEM_PRIVATE) {
+                unsigned int bucket = (mbi.RegionSize <= 4096U) ? 0U
+                    : (mbi.RegionSize <= 65536U) ? 1U
+                    : (mbi.RegionSize <= 1048576U) ? 2U : 3U;
+                private_bytes += (unsigned long long)mbi.RegionSize;
+                private_bin_bytes[bucket] += (unsigned long long)mbi.RegionSize;
+                private_bin_regions[bucket]++;
+            }
             else if (mbi.Type == MEM_MAPPED) mapped_bytes += (unsigned long long)mbi.RegionSize;
             else if (mbi.Type == MEM_IMAGE) image_bytes += (unsigned long long)mbi.RegionSize;
         }
@@ -63,6 +78,11 @@ static void report_vm(const char *label, int cycle)
     printf("GIO_VM,%s,%d,%llu,%llu,%llu,%llu,%u\n",
            label, cycle, private_bytes, mapped_bytes, image_bytes,
            regions, errors);
+    printf("GIO_VMCLASS,%s,%d,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%u\n",
+           label, cycle, private_bin_bytes[0], private_bin_bytes[1],
+           private_bin_bytes[2], private_bin_bytes[3],
+           private_bin_regions[0], private_bin_regions[1],
+           private_bin_regions[2], private_bin_regions[3], errors);
     fflush(stdout);
     if (errors != 0) {
         fprintf(stderr, "GIO_VM_ERROR: VirtualQuery scan incomplete\n");
