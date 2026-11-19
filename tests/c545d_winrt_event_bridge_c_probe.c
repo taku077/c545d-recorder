@@ -32,6 +32,9 @@ int main(void) {
   if (c545d_watch_snapshot(NULL,&gen,&lang)==0) return fail_step(2);
   if (c545d_watch_open(NULL)==0) return fail_step(3);
   fprintf(stderr,"BRIDGE_CHECKPOINT=negative_arguments_ok\n"); fflush(stderr);
+  if(c545d_watch_open(&watch)==0) return fail_step(19);
+  if(c545d_thread_enter()!=0) return fail_step(20);
+  fprintf(stderr,"BRIDGE_CHECKPOINT=thread_apartment_entered\n"); fflush(stderr);
   /* Prewarm OS activation before counting long-lived process resources. */
   for(int i=0;i<4;i++) {
     fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_begin_%d\n",i); fflush(stderr);
@@ -86,5 +89,7 @@ int main(void) {
     fprintf(stderr,"C545D_WINRT_C_ABI_HANDLE_REGRESSION,%d\n",hd);
     return fail_step(18);
   }
+  c545d_thread_leave();
+  fprintf(stderr,"BRIDGE_CHECKPOINT=thread_apartment_left\n"); fflush(stderr);
   return 0;
 }

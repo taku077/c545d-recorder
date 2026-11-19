@@ -14,8 +14,15 @@ extern "C" {
 #define C545D_EXPORT __declspec(dllimport)
 #endif
 typedef struct c545d_winrt_watch c545d_winrt_watch;
+/* Initialize the calling thread's WinRT apartment ONCE for a series of
+ * watch open/close operations; uninitialize only after all watches close.
+ * Nested enter/leave pairs are permitted. If initialization fails, callers
+ * must bypass the cache and use the original WinRT getter.
+ */
+C545D_EXPORT int c545d_thread_enter(void);
+C545D_EXPORT void c545d_thread_leave(void);
 /* Returns 0 only when all four subscriptions succeeded. On error: *out=NULL.
- * Creation and destruction must be on the SAME COM-compatible thread.
+ * Thread must have called c545d_thread_enter; close on same thread.
  */
 C545D_EXPORT int c545d_watch_open(c545d_winrt_watch **out);
 /* Read atomic event generation AND effective user/thread UI-language hash.

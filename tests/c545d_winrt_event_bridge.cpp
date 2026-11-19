@@ -15,6 +15,8 @@
 using winrt::Windows::ApplicationModel::PackageCatalog;
 
 namespace {
+thread_local unsigned int c545d_apartment_depth = 0;
+
 struct EventState final {
   std::atomic<uint64_t> generation{1};
   std::atomic<bool> active{true};
@@ -93,24 +95,32 @@ struct c545d_winrt_watch {
   }
 };
 
+extern "C" int c545d_thread_enter(void) {
+  if (c545d_apartment_depth == 0) {
+    try {
+      winrt::init_apartment(winrt::apartment_type::single_threaded);
+    } catch (...) { return 4; }
+  }
+  ++c545d_apartment_depth;
+  return 0;
+}
+extern "C" void c545d_thread_leave(void) {
+  if (c545d_apartment_depth == 0) return;
+  if (--c545d_apartment_depth == 0)
+    winrt::uninit_apartment();
+}
 extern "C" int c545d_watch_open(c545d_winrt_watch **out) {
   if (!out) return 2;
   *out=nullptr;
+  if (!c545d_apartment_depth) return 6; // fail-closed, no apartment
   try {
-    winrt::init_apartment(winrt::apartment_type::single_threaded);
-    try {
-      *out=new c545d_winrt_watch;
-      return 0;
-    } catch (...) {
-      winrt::uninit_apartment();
-      return 3;
-    }
-  } catch (...) { return 4; }
+    *out=new c545d_winrt_watch;
+    return 0;
+  } catch (...) { return 3; }
 }
 extern "C" void c545d_watch_close(c545d_winrt_watch *watch) {
   if (!watch) return;
-  delete watch; // revoke every event token while state is still alive
-  winrt::uninit_apartment();
+  delete watch; // revoke tokens before an eventual thread_leave()
 }
 extern "C" int c545d_watch_snapshot(c545d_winrt_watch *watch,
                                        uint64_t *generation,uint64_t *lang_hash) {
