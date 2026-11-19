@@ -3,24 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `ce03d7f7f848f65e7a6c3da1f2edf6e9ceae3319`
-- **PR updated at (UTC):** `2026-11-19T12:27:22Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ce03d7f7f848f65e7a6c3da1f2edf6e9ceae3319/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `7ec83d036c8d76e2af85f14bbe266981a95e99e9`
+- **PR updated at (UTC):** `2026-11-19T12:33:01Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7ec83d036c8d76e2af85f14bbe266981a95e99e9/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44524042410](https://github.com/taku077/c545d-recorder/actions/runs/44524042410) |
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44524042395](https://github.com/taku077/c545d-recorder/actions/runs/44524042395) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44524042163](https://github.com/taku077/c545d-recorder/actions/runs/44524042163) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44524042071](https://github.com/taku077/c545d-recorder/actions/runs/44524042071) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44524041974](https://github.com/taku077/c545d-recorder/actions/runs/44524041974) |
-| C545D GIO UWP native package-path semantic and memory A/B | pending | [#44524041939](https://github.com/taku077/c545d-recorder/actions/runs/44524041939) |
-| C545D GIO UWP WinRT API versus XML and callback memory isolation | pending | [#44524041887](https://github.com/taku077/c545d-recorder/actions/runs/44524041887) |
-| C545D GIO residual-memory stage-isolation diagnostic | pending | [#44524041869](https://github.com/taku077/c545d-recorder/actions/runs/44524041869) |
-| Windows PowerShell source validation | in_progress | [#44524041853](https://github.com/taku077/c545d-recorder/actions/runs/44524041853) |
-| C545D active development handoff auto-refresh | in_progress | [#44524038936](https://github.com/taku077/c545d-recorder/actions/runs/44524038936) |
+| Windows PowerShell source validation | queued | [#44524927312](https://github.com/taku077/c545d-recorder/actions/runs/44524927312) |
+| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44524927263](https://github.com/taku077/c545d-recorder/actions/runs/44524927263) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44524927199](https://github.com/taku077/c545d-recorder/actions/runs/44524927199) |
+| C545D GIO UWP native package-path semantic and memory A/B | pending | [#44524927190](https://github.com/taku077/c545d-recorder/actions/runs/44524927190) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44524927128](https://github.com/taku077/c545d-recorder/actions/runs/44524927128) |
+| C545D GIO UWP WinRT API versus XML and callback memory isolation | pending | [#44524927102](https://github.com/taku077/c545d-recorder/actions/runs/44524927102) |
+| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44524927079](https://github.com/taku077/c545d-recorder/actions/runs/44524927079) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44524927075](https://github.com/taku077/c545d-recorder/actions/runs/44524927075) |
+| C545D GIO residual-memory stage-isolation diagnostic | pending | [#44524927065](https://github.com/taku077/c545d-recorder/actions/runs/44524927065) |
+| C545D active development handoff auto-refresh | in_progress | [#44524923409](https://github.com/taku077/c545d-recorder/actions/runs/44524923409) |
 
 ## Current development findings from the active PR
 
