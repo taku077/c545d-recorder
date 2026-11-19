@@ -41,6 +41,7 @@ class DisplayNameCache {
   bool lookup(const std::wstring& full_name, const std::wstring& languages,
               std::wstring& output) {
     std::lock_guard<std::mutex> guard(mutex_);
+    if (!enabled_) return false; // Original WinRT getter must run uncached.
     synchronize(languages);
     auto it = values_.find(full_name);
     if (it == values_.end()) {
@@ -57,6 +58,7 @@ class DisplayNameCache {
   bool remember(const std::wstring& full_name, const std::wstring& display,
                 const std::wstring& languages, uint64_t read_generation) {
     std::lock_guard<std::mutex> guard(mutex_);
+    if (!enabled_) return false; // Subscription/locale query failure: fail closed.
     synchronize(languages);
     if (generation_.snapshot() != read_generation ||
         languages_ != languages) {
@@ -69,6 +71,12 @@ class DisplayNameCache {
     }
     values_[full_name] = display; // empty string is a valid positive cache entry.
     return true;
+  }
+
+  void disable() {
+    std::lock_guard<std::mutex> guard(mutex_);
+    enabled_ = false;
+    values_.clear(); // no indefinitely stale entries if event subscription fails
   }
 
   size_t count() const {
@@ -106,6 +114,7 @@ class DisplayNameCache {
   EventGeneration& generation_;
   const size_t limit_;
   mutable std::mutex mutex_;
+  bool enabled_ = true;
   std::unordered_map<std::wstring, std::wstring> values_;
   std::wstring languages_;
   uint64_t current_epoch_ = 0;
@@ -165,6 +174,19 @@ static void deterministic_scenarios(EventGeneration& gen) {
   require(cache.stale_rejections() == 1, "in-flight stale result unobserved");
   require(cache.invalidations() >= 2, "event and language invalidations missing");
 
+  // A missed event subscription or failed locale query must NEVER leave old
+  // display strings cached. The caller falls back to the original WinRT getter.
+  DisplayNameCache failure_path(gen, 4);
+  require(failure_path.remember(L"pkg-x", L"original", ja, gen.snapshot()),
+          "failure baseline insertion failed");
+  require(failure_path.count() == 1, "failure baseline not cached");
+  failure_path.disable();
+  require(failure_path.count() == 0, "disabling cache retained entries");
+  require(!failure_path.lookup(L"pkg-x", ja, output),
+          "disabled cache returned stale display name");
+  require(!failure_path.remember(L"pkg-x", L"new", ja, gen.snapshot()),
+          "disabled cache silently re-enabled itself");
+
   // Concurrent notification/lookup exercises ownership under one mutex.
   std::thread writer([&] {
     for (unsigned n = 0; n < 1000; ++n) gen.invalidate();
@@ -180,7 +202,7 @@ static void deterministic_scenarios(EventGeneration& gen) {
   writer.join();
   reader.join();
   require(cache.count() <= 4, "concurrent access exceeded cache cap");
-  std::printf("CACHE_LIFECYCLE_MODEL_PASS,empty_string=true,notification_invalidation=true,locale_invalidation=true,stale_write_rejected=true,max_entries=4,concurrent_iterations=1000,evictions=%llu,stale_rejections=%llu,capacity_rejections=%llu\n",
+  std::printf("CACHE_LIFECYCLE_MODEL_PASS,empty_string=true,notification_invalidation=true,locale_invalidation=true,stale_write_rejected=true,subscription_failure_bypasses_cache=true,max_entries=4,concurrent_iterations=1000,evictions=%llu,stale_rejections=%llu,capacity_rejections=%llu\n",
       cache.invalidations(), cache.stale_rejections(), cache.capacity_rejections());
 }
 
