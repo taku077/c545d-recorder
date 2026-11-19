@@ -1,0 +1,96 @@
+name: C545D dedicated WinRT MTA watcher 256-cycle memory overhead isolated Windows
+
+on:
+  push:
+    branches:
+      - investigate/c545d-winrt-watch-dedicated-thread-20261120
+    paths:
+      - tests/analyze_gio_dedicated_mta_overhead_256.py
+      - .github/workflows/c545d-glib-dedicated-mta-overhead-256-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mta-256-overhead:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile standalone dedicated-WinRT-MTA C ABI bridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_winrt_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_winrt_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Dedicated MTA event watcher MSVC compile failed' }
+      - name: Build same exact original-value GLib and disposable C ABI cache hook
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          echo 'C545D_CI_ONLY_EXPERIMENT_NOT_DEPLOYABLE' > artifacts/NOT_FOR_PRODUCTION.txt
+      - name: Matched four-arm 256 scans for cache vs dedicated MTA watcher
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_winrt_dedicated_watch.dll")"
+          unset C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
+          for mode in cache_only mta_watch; do
+            unset C545D_DIAG_UWP_CACHE_EVENT_BRIDGE || true
+            if [ "$mode" = mta_watch ]; then export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1; fi
+            for scope in nochange registry; do
+              args=(--cycles=256 --heap-summary --vm-summary --report-types)
+              if [ "$scope" = nochange ]; then args+=(--no-registry-change); fi
+              echo "C545D_MTA_256_START,mode=$mode,scope=$scope"
+              meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" "${args[@]}" > "artifacts/${mode}_${scope}_256.log"
+              grep -q 'GIO_PROBE_DONE,cycles=256' "artifacts/${mode}_${scope}_256.log"
+              echo "C545D_MTA_256_COMPLETE,mode=$mode,scope=$scope"
+            done
+          done
+      - name: Analyze remaining live heap, private commit, cache and handles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_dedicated_mta_overhead_256.py | Tee-Object -FilePath artifacts/mta_watch_256_summary.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dedicated watcher last128 memory/handle gate failed' }
+          Get-Content artifacts/mta_watch_256_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-mta-watcher-256-numerical-metadata
+          path: |
+            artifacts/mta_watch_256_summary.txt
+            artifacts/mta_watch_256_aggregate.csv
+            artifacts/NOT_FOR_PRODUCTION.txt
+          retention-days: 7
+          if-no-files-found: warn
