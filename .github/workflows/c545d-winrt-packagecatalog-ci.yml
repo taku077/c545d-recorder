@@ -6,6 +6,11 @@ on:
     paths:
       - '.github/workflows/c545d-winrt-packagecatalog-ci.yml'
       - 'tests/winrt_packagecatalog_event_probe.cpp'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/c545d-winrt-packagecatalog-ci.yml'
+      - 'tests/winrt_packagecatalog_event_probe.cpp'
   workflow_dispatch:
 
 permissions:
