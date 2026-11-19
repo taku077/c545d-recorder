@@ -23,6 +23,7 @@ static int fail_step(int n) {
 }
 
 int main(void) {
+  fprintf(stderr,"BRIDGE_CHECKPOINT=entry\n"); fflush(stderr);
   c545d_winrt_watch *watch=NULL;
   uint64_t gen=0,lang=0,before=0,lang_before=0;
   DWORD start_h=0,end_h=0;
@@ -30,27 +31,37 @@ int main(void) {
   PROCESS_MEMORY_COUNTERS_EX m={0};
   if (c545d_watch_snapshot(NULL,&gen,&lang)==0) return fail_step(2);
   if (c545d_watch_open(NULL)==0) return fail_step(3);
+  fprintf(stderr,"BRIDGE_CHECKPOINT=negative_arguments_ok\n"); fflush(stderr);
   /* Prewarm OS activation before counting long-lived process resources. */
   for(int i=0;i<4;i++) {
+    fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_begin_%d\n",i); fflush(stderr);
     if(c545d_watch_open(&watch)!=0||!watch) return fail_step(4);
+    fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_open_%d\n",i); fflush(stderr);
     if(c545d_watch_snapshot(watch,&gen,&lang)!=0||!lang) return fail_step(5);
+    fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_snapshot_%d\n",i); fflush(stderr);
     c545d_watch_close(watch);
+    fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_close_%d\n",i); fflush(stderr);
     watch=NULL;
   }
   m.cb=sizeof(m);
   if(!GetProcessHandleCount(GetCurrentProcess(),&start_h)||
      !GetProcessMemoryInfo(GetCurrentProcess(),(PROCESS_MEMORY_COUNTERS *)&m,sizeof(m))) return fail_step(6);
   start_private=m.PrivateUsage;
+  fprintf(stderr,"BRIDGE_CHECKPOINT=warmup_done\n"); fflush(stderr);
   for(int i=0;i<64;i++) {
+    fprintf(stderr,"BRIDGE_CHECKPOINT=loop_begin_%d\n",i); fflush(stderr);
     if(c545d_watch_open(&watch)!=0||!watch) return fail_step(7);
     if(c545d_watch_snapshot(watch,&gen,&lang)!=0||!lang) return fail_step(8);
     if(c545d_watch_inject_synthetic(watch)!=0) return fail_step(9);
     if(c545d_watch_snapshot(watch,&gen,&lang)!=0||gen!=2) return fail_step(10);
     c545d_watch_close(watch);
+    fprintf(stderr,"BRIDGE_CHECKPOINT=loop_close_%d\n",i); fflush(stderr);
     watch=NULL;
   }
+  fprintf(stderr,"BRIDGE_CHECKPOINT=loop_done\n"); fflush(stderr);
   if(c545d_watch_open(&watch)!=0) return fail_step(11);
   if(c545d_watch_snapshot(watch,&before,&lang_before)!=0) return fail_step(12);
+  fprintf(stderr,"BRIDGE_CHECKPOINT=thread_start\n"); fflush(stderr);
   Worker w={watch,0};
   HANDLE t=CreateThread(NULL,0,run_notifications,&w,0,NULL);
   if(!t) return fail_step(13);
@@ -58,7 +69,9 @@ int main(void) {
   CloseHandle(t);
   if(w.errors) return fail_step(15);
   if(c545d_watch_snapshot(watch,&gen,&lang)!=0||gen-before!=1000||lang!=lang_before) return fail_step(16);
+  fprintf(stderr,"BRIDGE_CHECKPOINT=thread_complete\n"); fflush(stderr);
   c545d_watch_close(watch);
+  fprintf(stderr,"BRIDGE_CHECKPOINT=thread_close\n"); fflush(stderr);
   watch=NULL;
   Sleep(250);
   m.cb=sizeof(m);
