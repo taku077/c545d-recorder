@@ -1,0 +1,53 @@
+name: C545D direct WinRT InstalledLocation Path residual isolation
+
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - 'tests/winrt_package_location_direct_repro.cpp'
+      - 'tests/analyze_winrt_package_location_direct.py'
+      - '.github/workflows/c545d-winrt-package-location-direct-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  location-getter:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build standalone original WinRT getter calls, no GLib
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /W4 tests/winrt_package_location_direct_repro.cpp /Fe:artifacts/winrt_path_direct.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT direct getter compiler failure' }
+      - name: Compare 128-cycle ID-only vs DisplayName vs InstalledLocation Path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path artifacts/winrt_path_direct.exe).Path
+          foreach($mode in @('id_only','display','location')) {
+            & $exe $mode > "artifacts/winrt_${mode}_128.log"
+            if ($LASTEXITCODE -ne 0) { throw "WinRT getter probe failed mode=$mode exit=$LASTEXITCODE" }
+          }
+          py tests/analyze_winrt_package_location_direct.py
+          if ($LASTEXITCODE -ne 0) { throw 'Direct getter comparison analysis failed' }
+          Get-Content artifacts/winrt_location_direct_comparison.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-getter-direct-path-aggregate
+          path: |
+            artifacts/winrt_id_only_128.log
+            artifacts/winrt_display_128.log
+            artifacts/winrt_location_128.log
+            artifacts/winrt_location_direct_comparison.csv
+          retention-days: 7
+          if-no-files-found: warn
