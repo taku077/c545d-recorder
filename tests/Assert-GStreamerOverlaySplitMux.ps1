@@ -30,6 +30,22 @@ $root=[IO.Path]::GetFullPath('artifacts')
 $pattern=(Join-Path $root 'ci_split_%03d.mp4').Replace('\','/')
 $files=@()
 $script:badFragmentDurations=0
+# CI-only bounded execution; never let a stuck mux/decode hang the Windows job.
+function Invoke-C545DBoundedGst([string[]]$Arguments,[string]$Label,[int]$TimeoutMs) {
+  $out=Join-Path 'artifacts' ("$Label.stdout.txt")
+  $err=Join-Path 'artifacts' ("$Label.stderr.txt")
+  $proc=Start-Process -FilePath $gst -ArgumentList ($Arguments -join ' ') `
+    -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err
+  try {
+    if (-not $proc.WaitForExit($TimeoutMs)) {
+      try { $proc.Kill() } catch { }
+      try { [void]$proc.WaitForExit(5000) } catch { }
+      throw "$Label did not complete before timeout; possible EOS/decode hang"
+    }
+    if ($proc.ExitCode -ne 0) { throw "$Label exited $($proc.ExitCode); inspect sanitized stderr" }
+  }
+  finally { $proc.Dispose() }
+}
 try {
   $argsMedia=@(
     '-e','-q',
@@ -74,8 +90,7 @@ try {
     '!','avenc_aac','bitrate=192000','aac-coder=twoloop',
     '!','aacparse','!','mux.audio_0'
   )
-  & $gst @argsMedia 1>artifacts/ci_splitmux_stdout.txt 2>artifacts/ci_splitmux_stderr.txt
-  if ($LASTEXITCODE -ne 0) { throw "Synthetic splitmuxsink pipeline failure: $LASTEXITCODE" }
+  Invoke-C545DBoundedGst -Arguments $argsMedia -Label 'ci_splitmux_record' -TimeoutMs 70000
   $files=@(Get-ChildItem -LiteralPath $root -Filter 'ci_split_*.mp4' -File | Sort-Object Name)
   if ($files.Count -lt 2 -or $files.Count -gt 8) {
     throw "Unexpected MP4 segment count: $($files.Count)"
@@ -104,8 +119,7 @@ try {
       '!','fakesink','sync=false',
       'd.audio_0','!','queue','!','aacparse','!','avdec_aac',
       '!','fakesink','sync=false')
-    & $gst @decode 1>$null 2>artifacts/ci_split_decode_stderr.txt
-    if ($LASTEXITCODE -ne 0) { throw "MP4 segment A/V decode failed: $($f.Name)" }
+    Invoke-C545DBoundedGst -Arguments $decode -Label ("ci_decode_"+$f.BaseName) -TimeoutMs 25000
     $match=[regex]::Match($info,'(?im)^\s*Duration:\s*(\d+):(\d+):(\d+)\.(\d+)')
     if (-not $match.Success) { throw "Missing segment duration: $($f.Name)" }
     $fraction=[double]("0."+$match.Groups[4].Value)
