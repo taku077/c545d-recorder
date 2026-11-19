@@ -1,0 +1,91 @@
+name: C545D 384-cycle MEM_PRIVATE region-size isolation (CI ONLY)
+
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - 'tests/analyze_gio_vm_private_buckets.py'
+      - '.github/workflows/c545d-gio-vm-private-buckets-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vm-private-384:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check synthetic VM census before measuring
+        shell: pwsh
+        run: |
+          py tests/analyze_gio_vm_private_buckets.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'VM census selftest failed' }
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - name: Build GLib 2.82.4 with existing diagnostic DisplayName cache
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          python - <<'PY'
+          from pathlib import Path
+          source=Path("tests/gio_appinfo_key_handle_probe.c").read_text(encoding="utf-8")
+          old='else if (strcmp(argv[arg], "--cycles=256") == 0) cycle_count = 256;'
+          assert source.count(old)==1, "Original 256-cycle option not found"
+          source=source.replace(old,old+'\n        else if (strcmp(argv[arg], "--cycles=384") == 0) cycle_count = 384;')
+          Path("glib-build/gio_appinfo_probe_384.c").write_text(source,encoding="utf-8")
+          PY
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe_384.exe gio_appinfo_probe_384.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+      - name: Measure paired no-change and synthetic-registry-change 384 cycles
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          unset C545D_DIAG_UWP_SKIP_CURRENT C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER C545D_DIAG_UWP_CACHE_REFRESH_EVERY C545D_DIAG_UWP_CACHE_EVENT_BRIDGE || true
+          for scope in nochange registry; do
+            args=(--cycles=384 --heap-summary --vm-summary --report-types)
+            if [ "$scope" = nochange ]; then args+=(--no-registry-change); fi
+            echo "C545D_VMCLASS_START,scope=$scope"
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe_384.exe" "${args[@]}" > "artifacts/vm_${scope}_384.log"
+            grep -q 'GIO_PROBE_DONE,cycles=384' "artifacts/vm_${scope}_384.log"
+            echo "C545D_VMCLASS_COMPLETE,scope=$scope"
+          done
+      - name: Attribute committed MEM_PRIVATE region-size classes after warm-up
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_vm_private_buckets.py | Tee-Object -FilePath artifacts/vm384_summary.txt
+          if ($LASTEXITCODE -ne 0) { throw '384-cycle VM class analyzer failed' }
+          Get-Content artifacts/vm_384_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-vm-private-buckets-384-numeric-only
+          path: |
+            artifacts/vm384_summary.txt
+            artifacts/vm_384_aggregate.csv
+          retention-days: 7
+          if-no-files-found: warn
