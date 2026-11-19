@@ -6,6 +6,7 @@ on:
       - 'tests/patch_glib_appinfo_weak_backrefs.py'
       - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/analyze_gio_residual_growth.py'
       - 'tests/analyze_gio_handle_types.py'
       - 'tests/gio_appinfo_retained_lifetime.c'
       - 'tests/gio_appinfo_public_api_regression.c'
@@ -105,6 +106,36 @@ jobs:
           unset C545D_HANDLE_EXE
           grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/ownedpath_registry.log
           grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/ownedpath_registry_64.log
+
+      - name: Consolidated residual-memory test - 256 cycles in disposable Windows runner
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          # Both runs use the same candidate DLL and process-scoped public API.
+          # No camera and no real recorder. Registry variation is the only
+          # intended experimental dimension; no-change is the control.
+          export GOBJECT_DEBUG=instance-count
+          unset C545D_HANDLE_EXE || true
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change --cycles=256 --heap-summary --vm-summary --report-types > artifacts/ownedpath_nochange_256.log
+          grep -q 'GIO_PROBE_DONE,cycles=256' artifacts/ownedpath_nochange_256.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=256 --heap-summary --vm-summary --report-types > artifacts/ownedpath_registry_256.log
+          grep -q 'GIO_PROBE_DONE,cycles=256' artifacts/ownedpath_registry_256.log
+
+      - name: Quantify residual private/heap/virtual commit slopes against control
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_residual_growth.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Residual analyzer selftest failed' }
+          if (-not (Test-Path artifacts/ownedpath_nochange_256.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_256.log)) {
+            Write-Warning '256-cycle residual test missing; no plateau claim possible'
+            exit 0
+          }
+          py tests/analyze_gio_residual_growth.py --output artifacts/residual_slope.csv artifacts/ownedpath_nochange_256.log artifacts/ownedpath_registry_256.log
+          if ($LASTEXITCODE -ne 0) { throw 'Residual test data is incomplete or corrupt' }
+          Get-Content artifacts/residual_slope.csv.status.txt
 
       - name: Compare counts with independent pass-fail gates
         shell: pwsh
