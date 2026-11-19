@@ -3,24 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `c8f90b5a152e21908dd0ccec15fb9bd878a922fd`
-- **PR updated at (UTC):** `2026-11-19T12:00:05Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c8f90b5a152e21908dd0ccec15fb9bd878a922fd/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `f8d968c4b572986f8b7925f95d85ce262505d013`
+- **PR updated at (UTC):** `2026-11-19T12:09:30Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f8d968c4b572986f8b7925f95d85ce262505d013/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GIO UWP WinRT API versus XML and callback memory isolation | pending | [#44519811746](https://github.com/taku077/c545d-recorder/actions/runs/44519811746) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44519811634](https://github.com/taku077/c545d-recorder/actions/runs/44519811634) |
-| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44519811409](https://github.com/taku077/c545d-recorder/actions/runs/44519811409) |
-| C545D GIO UWP native package-path semantic and memory A/B | pending | [#44519811325](https://github.com/taku077/c545d-recorder/actions/runs/44519811325) |
-| Windows PowerShell source validation | in_progress | [#44519811317](https://github.com/taku077/c545d-recorder/actions/runs/44519811317) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44519811314](https://github.com/taku077/c545d-recorder/actions/runs/44519811314) |
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44519811299](https://github.com/taku077/c545d-recorder/actions/runs/44519811299) |
-| C545D GIO residual-memory stage-isolation diagnostic | pending | [#44519811259](https://github.com/taku077/c545d-recorder/actions/runs/44519811259) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44519811225](https://github.com/taku077/c545d-recorder/actions/runs/44519811225) |
-| C545D active development handoff auto-refresh | in_progress | [#44519806056](https://github.com/taku077/c545d-recorder/actions/runs/44519806056) |
+| Same-SHA CI not found | unknown | - |
 
 ## Current development findings from the active PR
 
