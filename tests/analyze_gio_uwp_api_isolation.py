@@ -8,7 +8,7 @@ import csv
 import sys
 from pathlib import Path
 
-STAGES = ("default", "noop_callback", "skip_manifest", "skip_path", "skip_location")
+STAGES = ("default", "noop_callback", "skip_manifest", "skip_path", "skip_location", "skip_displayname", "skip_current")
 TAGS = {"GIO_PROBE": 6, "GIO_HEAP": 7, "GIO_VM": 8}
 
 
