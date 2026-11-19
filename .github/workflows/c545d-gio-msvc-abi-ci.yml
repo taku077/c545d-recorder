@@ -206,6 +206,9 @@ jobs:
           $refDir=Join-Path $env:RUNNER_TEMP 'c545d-gio-reference-overlay'
           New-Item -ItemType Directory -Path $refDir -Force | Out-Null
           Copy-Item (Join-Path $sdk 'bin\gio-2.0-0.dll') (Join-Path $refDir 'gio-2.0-0.dll') -Force
+          foreach($name in @('gst-launch-1.0.exe','gst-inspect-1.0.exe','gst-discoverer-1.0.exe')) {
+            Copy-Item (Join-Path $sdk ('bin\'+$name)) (Join-Path $refDir $name) -Force
+          }
           & ./tests/Assert-GStreamerOverlaySplitMux.ps1 `
             -SdkRoot $sdk `
             -OverlayDir $refDir `
