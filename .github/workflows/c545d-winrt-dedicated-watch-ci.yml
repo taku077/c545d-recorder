@@ -1,0 +1,54 @@
+name: C545D dedicated MTA PackageCatalog watcher C ABI lifecycle (CI only)
+
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - 'tests/c545d_winrt_dedicated_watch.h'
+      - 'tests/c545d_winrt_dedicated_watch.cpp'
+      - 'tests/c545d_winrt_dedicated_watch_probe.c'
+      - '.github/workflows/c545d-winrt-dedicated-watch-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dedicated-watch:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile C++/WinRT dedicated-thread event bridge and C-only external client
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC C++/WinRT dedicated DLL compilation failed' }
+          & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_winrt_dedicated_watch_probe.c /Fe:artifacts/c545d_dedicated_watch_probe.exe /link artifacts/c545d_dedicated_watch.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Pure C watch client failed to compile' }
+      - name: Run repeated event subscription/teardown and cross-thread polling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & artifacts/c545d_dedicated_watch_probe.exe > artifacts/dedicated_watch_summary.txt 2> artifacts/dedicated_watch_error.txt
+          $code=$LASTEXITCODE
+          if($code -ne 0) {
+            Get-Content artifacts/dedicated_watch_error.txt
+            throw "Dedicated WinRT watch lifecycle failed with exit $code"
+          }
+          Get-Content artifacts/dedicated_watch_summary.txt
+          if((Get-Content artifacts/dedicated_watch_summary.txt -Raw) -notmatch 'C545D_DEDICATED_WINRT_WATCH_PASS') {throw 'Missing success marker'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-dedicated-winrt-watch-numeric-only
+          path: |
+            artifacts/dedicated_watch_summary.txt
+            artifacts/dedicated_watch_error.txt
+          retention-days: 7
+          if-no-files-found: warn
