@@ -7,6 +7,7 @@ on:
       - 'tests/patch_glib_registry_owned_path.py'
       - 'tests/patch_glib_msvc_gio_sdk_export.py'
       - 'tests/gio_msvc_sdk_overlay_smoke.c'
+      - 'tests/Assert-GStreamerOverlayMedia.ps1'
       - '.github/workflows/c545d-gio-msvc-abi-ci.yml'
   workflow_dispatch:
 
@@ -187,6 +188,14 @@ jobs:
           'SDK_LINKED_CLIENT_CANDIDATE_RUNTIME_PASS; MULTITHREAD_ABI_NOT_YET_CERTIFIED' |
             Add-Content artifacts/abi_inventory.txt
           Get-Content artifacts/abi_inventory.txt
+      - name: Camera-free two-video RTP decode plus AAC MP4 media integration under patched GIO
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Assert-GStreamerOverlayMedia.ps1 `
+            -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
+            -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate GIO media integration test failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
