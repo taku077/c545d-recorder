@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - investigate/c545d-glib-winrt-event-integration-20261120
+      - investigate/gio-2824-key-handle-lifecycle
     paths:
       - tests/patch_glib_uwp_bridge_integration_diagnostic.py
       - tests/analyze_gio_winrt_bridge_integration.py
