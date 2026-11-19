@@ -20,7 +20,7 @@ def generate(scope, *, handle_growth=0, bad_misses=False,
         if missing_cycle and i==412:
             continue
         count=i//64
-        growth=(count*32768 if persistent else min(count,4)*32768) if changing else 0
+        growth=(count*98304 if persistent else min(count,4)*32768) if changing else 0
         rows.append(f"GIO_PROBE,{phase},{i},0,678,{8000000+growth}")
         if i%64==0:
             blocks=2000+ (count*10 if changing else 0)
