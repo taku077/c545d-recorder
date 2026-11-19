@@ -1,0 +1,18 @@
+name: C545D VM region bucket analyzer isolated regression
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - tests/test_analyze_gio_vm_private_buckets.py
+      - .github/workflows/c545d-gio-vm-buckets-unit-ci.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vm-bucket-parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check 384-cycle VM region size parsing under synthetic error cases
+        run: python3 -m unittest discover -s tests -p test_analyze_gio_vm_private_buckets.py -v
