@@ -11,10 +11,61 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include <string.h>
+#include <stdint.h>
 
 static int report_type_instances = 0;
 
 static int report_heap_summary = 0;
+
+/*
+ * Read-only VirtualQuery inventory: counts committed memory by region type.
+ * A MEM_PRIVATE region total is NOT equivalent to process PrivateUsage.
+ * This census is sampled sparsely and only in disposable CI.
+ */
+static int report_vm_summary = 0;
+static void report_vm(const char *label, int cycle)
+{
+    SYSTEM_INFO info;
+    uintptr_t address, limit;
+    unsigned long long private_bytes = 0, mapped_bytes = 0, image_bytes = 0;
+    unsigned long long regions = 0;
+    unsigned int errors = 0;
+    if (!report_vm_summary) return;
+    GetSystemInfo(&info);
+    address = (uintptr_t)info.lpMinimumApplicationAddress;
+    limit = (uintptr_t)info.lpMaximumApplicationAddress;
+    while (address < limit) {
+        MEMORY_BASIC_INFORMATION mbi;
+        SIZE_T got = VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi));
+        uintptr_t next;
+        if (got != sizeof(mbi)) {
+            ++errors;
+            break;
+        }
+        next = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+        if (next <= address) {
+            ++errors;
+            break;
+        }
+        if (mbi.State == MEM_COMMIT) {
+            ++regions;
+            if (mbi.Type == MEM_PRIVATE) private_bytes += (unsigned long long)mbi.RegionSize;
+            else if (mbi.Type == MEM_MAPPED) mapped_bytes += (unsigned long long)mbi.RegionSize;
+            else if (mbi.Type == MEM_IMAGE) image_bytes += (unsigned long long)mbi.RegionSize;
+        }
+        address = next;
+    }
+    printf("GIO_VM,%s,%d,%llu,%llu,%llu,%llu,%u\n",
+           label, cycle, private_bytes, mapped_bytes, image_bytes,
+           regions, errors);
+    fflush(stdout);
+    if (errors != 0) {
+        fprintf(stderr, "GIO_VM_ERROR: VirtualQuery scan incomplete\n");
+        exit(6);
+    }
+}
+
+
 
 /*
  * Expensive debug-only heap census. Run on disposable CI exclusively, and
@@ -250,8 +301,10 @@ int main(int argc, char **argv)
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--no-registry-change") == 0) mutate_registry = 0;
         else if (strcmp(argv[arg], "--cycles=64") == 0) cycle_count = 64;
+        else if (strcmp(argv[arg], "--cycles=256") == 0) cycle_count = 256;
         else if (strcmp(argv[arg], "--report-types") == 0) report_type_instances = 1;
         else if (strcmp(argv[arg], "--heap-summary") == 0) report_heap_summary = 1;
+        else if (strcmp(argv[arg], "--vm-summary") == 0) report_vm_summary = 1;
     }
     LONG rc;
     wchar_t value_name[96];
@@ -275,6 +328,7 @@ int main(int argc, char **argv)
     report_key_handles("baseline", 0);
     report_types("baseline", 0);
     report_heaps("baseline", 0);
+    report_vm("baseline", 0);
 
     for (i = 1; i <= cycle_count; i++) {
         /* Different data each iteration guarantees a LAST_SET notification. */
@@ -293,7 +347,10 @@ int main(int argc, char **argv)
         enumerate_apps();
         report("cycle", i);
         report_types("cycle", i);
-        if (i % 16 == 0 || i == cycle_count) report_heaps("cycle", i);
+        if (i % (cycle_count > 64 ? 64 : 16) == 0 || i == cycle_count) {
+            report_heaps("cycle", i);
+            report_vm("cycle", i);
+        }
     }
     /* The last steady-state sample, before the probe deletes its disposable
      * registration. Cleanup can legitimately release a large AppInfo graph. */
@@ -305,6 +362,7 @@ int main(int argc, char **argv)
     report_key_handles("after_cleanup", cycle_count + 1);
     report_types("after_cleanup", cycle_count + 1);
     report_heaps("after_cleanup", cycle_count + 1);
+    report_vm("after_cleanup", cycle_count + 1);
     /* Repeat after quiescence to distinguish async cleanup from a Handle64
      * versus GetProcessHandleCount enumeration mismatch. CI only. */
     Sleep(2500);
@@ -314,6 +372,7 @@ int main(int argc, char **argv)
     report_key_handles("settled_cleanup", cycle_count + 2);
     report_types("settled_cleanup", cycle_count + 2);
     report_heaps("settled_cleanup", cycle_count + 2);
+    report_vm("settled_cleanup", cycle_count + 2);
     printf("GIO_PROBE_DONE,cycles=%d,notifications=%ld,reg_changes=%d\n", cycle_count, (long)g_atomic_int_get(&changed_count), mutate_registry);
     return 0;
 }
