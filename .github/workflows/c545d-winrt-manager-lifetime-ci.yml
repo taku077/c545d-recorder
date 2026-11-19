@@ -1,0 +1,54 @@
+name: C545D direct WinRT PackageManager lifetime effect on DisplayName
+
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - 'tests/winrt_displayname_manager_lifetime_repro.cpp'
+      - 'tests/analyze_winrt_manager_lifetime.py'
+      - '.github/workflows/c545d-winrt-manager-lifetime-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manager-lifetime:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build isolated pure WinRT PackageManager lifetime test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/winrt_displayname_manager_lifetime_repro.cpp /Fe:artifacts/winrt_manager_lifetime.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT manager lifetime C++ compilation failed' }
+      - name: Same-run persistent/scoped manager with ID-only matched controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path artifacts/winrt_manager_lifetime.exe).Path
+          foreach($mode in @('persistent_id','persistent_display','scoped_id','scoped_display')) {
+            & $exe $mode > "artifacts/${mode}_128.log"
+            if ($LASTEXITCODE -ne 0) { throw "WinRT manager mode failed: $mode exit=$LASTEXITCODE" }
+          }
+          py tests/analyze_winrt_manager_lifetime.py
+          if ($LASTEXITCODE -ne 0) { throw 'Manager lifetime analyzer failure' }
+          Get-Content artifacts/manager_lifetime_comparison.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-manager-lifetime-numeric-only
+          path: |
+            artifacts/persistent_id_128.log
+            artifacts/persistent_display_128.log
+            artifacts/scoped_id_128.log
+            artifacts/scoped_display_128.log
+            artifacts/manager_lifetime_comparison.csv
+          retention-days: 7
+          if-no-files-found: warn
