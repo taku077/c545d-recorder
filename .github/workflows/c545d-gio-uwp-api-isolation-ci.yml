@@ -67,7 +67,7 @@ jobs:
           meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/display_snapshot_cached.log
           grep '^C545D_APPINFO_DISPLAY_SNAPSHOT' artifacts/display_snapshot_uncached.log > artifacts/display_snapshot_uncached.txt
           grep '^C545D_APPINFO_DISPLAY_SNAPSHOT' artifacts/display_snapshot_cached.log > artifacts/display_snapshot_cached.txt
-          diff -u artifacts/display_snapshot_uncached.txt artifacts/display_snapshot_cached.txt
+          python -c 'from pathlib import Path; a=Path("artifacts/display_snapshot_uncached.txt").read_bytes(); b=Path("artifacts/display_snapshot_cached.txt").read_bytes(); assert a == b, "Cache changed GLib AppInfo display-name hash"; print("C545D_DISPLAYNAME_HASH_PARITY_PASS")'
           grep -q '^C545D_DISPLAY_CACHE,hits=' artifacts/display_snapshot_cached.log
           unset C545D_DIAG_UWP_CACHE_DISPLAYNAME
           echo 'C545D_DISPLAY_CACHE_INITIAL_SNAPSHOT_PARITY_PASS; DIAGNOSTIC_ONLY'
