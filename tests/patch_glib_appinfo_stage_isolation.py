@@ -28,9 +28,9 @@ def patch(filename):
         ('  read_classes (classes_root);',
          '  if (g_getenv ("C545D_DIAG_SKIP_EXE_CLASSES") == NULL)\n    read_classes (classes_root);'),
         ('  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))',
-         '  if (g_getenv ("C545D_DIAG_SKIP_UWP") == NULL &&\n      !g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))'),
+         '  if (g_getenv ("C545D_DIAG_SKIP_UWP") == NULL &&\n      g_getenv ("C545D_DIAG_SKIP_UWP_ENUM") == NULL &&\n      !g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))'),
         ('  read_uwp_handler_info ();',
-         '  if (g_getenv ("C545D_DIAG_SKIP_UWP") == NULL)\n    read_uwp_handler_info ();'),
+         '  if (g_getenv ("C545D_DIAG_SKIP_UWP") == NULL &&\n      g_getenv ("C545D_DIAG_SKIP_UWP_HANDLERS") == NULL)\n    read_uwp_handler_info ();'),
     ]
     for before, after in changes:
         if section.count(before) != 1:
