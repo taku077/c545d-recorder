@@ -18,10 +18,12 @@ METRICS={
     "busy_bytes":("GIO_HEAP",1),
     "busy_blocks":("GIO_HEAP",0),
     "vm_private_commit":("GIO_VM",0),
+    "heap_region_committed":("GIO_HEAPREGION",2),
+    "heap_region_free_bytes":("GIO_HEAPREGION",4),
 }
 
 def load(path):
-    data={k:{} for k in ("GIO_PROBE","GIO_HEAP","GIO_VM")}
+    data={k:{} for k in ("GIO_PROBE","GIO_HEAP","GIO_VM","GIO_HEAPREGION")}
     text=path.read_text(encoding="utf-8")
     if text.count("GIO_PROBE_DONE,cycles=512,")!=1:
         raise ValueError("missing completion marker: "+str(path))
@@ -30,7 +32,7 @@ def load(path):
         v=line.strip().split(",")
         if not v or v[0] not in data:continue
         tag=v[0]
-        if len(v)!={"GIO_PROBE":6,"GIO_HEAP":7,"GIO_VM":8}[tag]:
+        if len(v)!={"GIO_PROBE":6,"GIO_HEAP":7,"GIO_VM":8,"GIO_HEAPREGION":10}[tag]:
             raise ValueError(f"{path}: malformed {tag}")
         if v[1]=="cycle":count+=tag=="GIO_PROBE"
         if v[1] not in ("cycle","baseline","settled_cleanup"):continue
@@ -44,7 +46,7 @@ def load(path):
     for tag in data:
         if set(data[tag])!=set((*CHECKPOINTS,514)):
             raise ValueError(f"{path}: missing {tag} checkpoints")
-        if tag in ("GIO_HEAP","GIO_VM") and any(z[-1]!=0 for z in data[tag].values()):
+        if tag in ("GIO_HEAP","GIO_VM","GIO_HEAPREGION") and any(z[-1]!=0 for z in data[tag].values()):
             raise ValueError(f"{path}: invalid {tag} snapshot")
     return data,text
 
@@ -66,6 +68,15 @@ def main():
         if h[514]-h[0]>4:
             raise ValueError(f"{scope}: positive retained handles")
         print(f"C545D_CACHE512_HANDLES,{scope},settled_delta={h[514]-h[0]}")
+        regions=metric(data,"GIO_HEAPREGION",0)
+        known=metric(data,"GIO_HEAPREGION",1)
+        if any(known[k]>regions[k] for k in regions):
+            raise ValueError(f"{scope}: invalid heap region coverage counts")
+        # The Windows API explicitly allows dwCommittedSize=0 (not available).
+        # Report coverage and refrain from interpreting incomplete totals.
+        complete=sum(1 for k in CHECKPOINTS if regions[k]>0 and regions[k]==known[k])
+        print(f"C545D_CACHE512_REGION_COVERAGE,{scope},complete_checkpoints={complete}/9,"
+              f"baseline_regions={regions[0]},baseline_known={known[0]}")
     rows=[]
     growth={}
     for name,(tag,index) in METRICS.items():
@@ -89,6 +100,13 @@ def main():
     label=("SHORT_WINDOW_PLATEAU_CANDIDATE"
            if abs(private[1])<=262144 and abs(busy[1])<=262144
            else "RESIDUAL_GROWTH_REQUIRES_INVESTIGATION")
+    print("C545D_CACHE512_REGION_DISPOSITION;"
+          f"last256_private_bytes={private[1]};"
+          f"last256_busy_bytes={busy[1]};"
+          f"last256_heap_region_committed={growth['heap_region_committed'][1]};"
+          f"last256_heap_region_free_bytes={growth['heap_region_free_bytes'][1]};"
+          "heap_region_committed_is_partial_if_coverage_incomplete=true;"
+          "no_allocation_lifetime_or_leak_causality_claim=true")
     print(f"C545D_CACHE512_CLASSIFICATION={label};"
           f"last256_private={private[1]};last256_busy={busy[1]};"
           f"hits={hits};initial_misses={misses};entries={entries}")
