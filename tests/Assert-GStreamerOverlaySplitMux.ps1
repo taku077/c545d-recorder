@@ -29,6 +29,7 @@ New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 $root=[IO.Path]::GetFullPath('artifacts')
 $pattern=(Join-Path $root 'ci_split_%03d.mp4').Replace('\','/')
 $files=@()
+$script:badFragmentDurations=0
 try {
   $argsMedia=@(
     '-e','-q',
@@ -109,11 +110,17 @@ try {
     if (-not $match.Success) { throw "Missing segment duration: $($f.Name)" }
     $fraction=[double]("0."+$match.Groups[4].Value)
     $lengthSec=3600*[int]$match.Groups[1].Value+60*[int]$match.Groups[2].Value+[int]$match.Groups[3].Value+$fraction
-    if ($lengthSec -lt 0.3 -or $lengthSec -gt 4.0) {
-      throw "Unexpected fragment duration $($f.Name): $lengthSec seconds"
-    }
     $seconds += $lengthSec
     $segmentLines += ("segment=$($f.Name) bytes=$($f.Length) duration_s=$([math]::Round($lengthSec,3)) tracks=H264+AAC")
+    if ($lengthSec -lt 0.3 -or $lengthSec -gt 4.0) {
+      $segmentLines += ("DURATION_GATE_FAIL segment=$($f.Name) duration_s=$([math]::Round($lengthSec,6))")
+      $script:badFragmentDurations++
+    }
+  }
+  # Persist complete sanitized diagnostics BEFORE enforcing the duration gates.
+  $segmentLines | Set-Content artifacts/ci_splitmux_segment_diagnostics.txt
+  if ($script:badFragmentDurations -ne 0) {
+    throw "$($script:badFragmentDurations) fragments failed duration gate; inspect complete ci_splitmux_segment_diagnostics.txt"
   }
   if ($seconds -lt 5.0 -or $seconds -gt 7.8) {
     throw "Incorrect total MP4 duration $seconds across segments"
