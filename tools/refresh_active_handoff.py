@@ -34,9 +34,35 @@ def extract_current(source, boundary, guard):
     current = source[start:end].strip()
     if guard and guard not in current:
         raise ValueError("Latest handoff lost required validated evidence")
-    if not 100 < len(current) < 22000:
-        raise ValueError("Active handoff is empty or unexpectedly long")
-    return current
+    if len(current) <= 22000:
+        if len(current) < 100:
+            raise ValueError("Active handoff is empty")
+        return current
+    # Handoff history grows monotonically. It is not safe to abort all future
+    # updates merely because the current section exceeded a fixed byte cap.
+    # Preserve the full history at the exact-SHA source link and retain newest
+    # complete, chronological UPDATE sections in the generated entry point.
+    import re
+    headers = list(re.finditer(r"(?m)^### UPDATE .+$", current))
+    if not headers or headers[0].start() != 0:
+        raise ValueError("Oversized handoff has no first UPDATE heading")
+    chunks = [current[m.start():headers[i + 1].start() if i + 1 < len(headers)
+                      else len(current)].strip()
+              for i, m in enumerate(headers)]
+    retained = []
+    for chunk in chunks:
+        if sum(map(len, retained)) + len(chunk) + 2 * len(retained) > 18000:
+            break
+        retained.append(chunk)
+    if not retained:
+        raise ValueError("Newest UPDATE section is unexpectedly long")
+    excerpt = "\n\n".join(retained) + (
+        "\n\nOlder UPDATE sections remain at the exact-commit source link "
+        "above; do not treat their omission here as forgotten validation."
+    )
+    if guard and guard not in excerpt:
+        raise ValueError("Latest excerpt missing protected validation evidence")
+    return excerpt
 
 
 def main():
