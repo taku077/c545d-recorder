@@ -1,0 +1,25 @@
+name: C545D dedicated-MTA 256-cycle analyzer synthetic-only unit tests
+
+on:
+  push:
+    branches:
+      - investigate/c545d-winrt-watch-dedicated-thread-20261120
+    paths:
+      - tests/test_analyze_gio_dedicated_mta_overhead_256.py
+      - .github/workflows/c545d-mta-overhead-analyzer-unit-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyzer-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run 7 strict resource and watcher-control parser fixtures
+        run: python -m unittest -v tests/test_analyze_gio_dedicated_mta_overhead_256.py
