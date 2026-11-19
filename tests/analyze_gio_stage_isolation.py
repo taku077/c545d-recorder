@@ -8,7 +8,7 @@ import argparse
 import csv
 from pathlib import Path
 
-STAGES = ("default", "skip_uwp", "skip_associations", "skip_exe_classes")
+STAGES = ("default", "skip_uwp", "skip_uwp_enum", "skip_uwp_handlers")
 EVENTS = ("baseline", "settled_cleanup")
 
 
