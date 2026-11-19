@@ -65,13 +65,13 @@ def main():
                 log = (root / f"cache_displayname_{suffix}_16.log").read_text(
                     encoding="utf-8"
                 )
-                rows = re.findall(
+                cache_rows = re.findall(
                     r"^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$",
                     log, re.MULTILINE
                 )
-                if not rows:
+                if not cache_rows:
                     raise ValueError("Missing cache counters: " + suffix)
-                hits, misses, entries = map(int, rows[-1])
+                hits, misses, entries = map(int, cache_rows[-1])
                 # The no-change control may need only one initial scan,
                 # legitimately producing zero cache hits. Registry mutations
                 # must trigger repeated scans and actual cache reuse.
