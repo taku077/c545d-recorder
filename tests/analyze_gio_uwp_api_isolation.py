@@ -72,7 +72,10 @@ def main():
                 if not rows:
                     raise ValueError("Missing cache counters: " + suffix)
                 hits, misses, entries = map(int, rows[-1])
-                if hits <= 0 or misses <= 0 or not 0 < entries <= 1024:
+                # The no-change control may need only one initial scan,
+                # legitimately producing zero cache hits. Registry mutations
+                # must trigger repeated scans and actual cache reuse.
+                if misses <= 0 or not 0 < entries <= 1024 or (suffix == "registry" and hits <= 0):
                     raise ValueError("Unusable cache census: " + suffix)
                 print(f"C545D_DISPLAY_CACHE_VALIDATED,{suffix},"
                       f"hits={hits},misses={misses},entries={entries}")
