@@ -26,6 +26,8 @@ static GHashTable *c545d_display_cache;
 static guint c545d_display_cache_hits;
 static guint c545d_display_cache_misses;
 static gint c545d_display_cache_null_hstring_returns;
+static guint c545d_diag_refresh_scans;
+static guint c545d_diag_refresh_resets;
 
 static gunichar2 *
 c545d_cache_display_lookup (const wchar_t *full_name)
@@ -82,6 +84,41 @@ c545d_cache_display_store (const wchar_t *full_name, const wchar_t *display_name
 }
 
 static void
+c545d_cache_maybe_refresh (void)
+{
+  const gchar *value;
+  gchar *end = NULL;
+  guint64 n;
+
+  /* Synthetic event delivery only. Real package events are NOT subscribed
+   * by this GLib source; unlike an actual OS notification, this is a fixed
+   * scan interval and is never a production invalidation strategy.
+   */
+  if (g_getenv ("C545D_DIAG_UWP_CACHE_DISPLAYNAME") == NULL)
+    return;
+  value = g_getenv ("C545D_DIAG_UWP_CACHE_REFRESH_EVERY");
+  if (value == NULL)
+    return;
+  n = g_ascii_strtoull (value, &end, 10);
+  if (!end || *end != '\0' || n < 2 || n > 256)
+    return;
+
+  g_mutex_lock (&c545d_display_cache_lock);
+  c545d_diag_refresh_scans++;
+  if (c545d_diag_refresh_scans > 1 &&
+      (c545d_diag_refresh_scans - 1) % n == 0)
+    {
+      /* Caches keep fully-owned UTF16 copies; atomically drop under lock.
+       * Future readers must call the actual WinRT getter again.
+       */
+      if (c545d_display_cache != NULL)
+        g_hash_table_remove_all (c545d_display_cache);
+      c545d_diag_refresh_resets++;
+    }
+  g_mutex_unlock (&c545d_display_cache_lock);
+}
+
+static void
 c545d_cache_display_report (void)
 {
   guint entries;
@@ -98,6 +135,8 @@ c545d_cache_display_report (void)
            hits, misses, entries);
   g_print ("C545D_DISPLAY_CACHE_NULL_HSTRING_RETURNS=%d\n",
            g_atomic_int_get (&c545d_display_cache_null_hstring_returns));
+  g_print ("C545D_DISPLAY_CACHE_REFRESH,scans=%u,resets=%u\n",
+           c545d_diag_refresh_scans, c545d_diag_refresh_resets);
 }
 
 """
@@ -112,6 +151,12 @@ def main(path):
         s, "gboolean\ng_win32_package_parser_enum_packages",
         HELPERS + "gboolean\ng_win32_package_parser_enum_packages",
         "helper functions")
+
+    s = replace_one(
+        s, "  gboolean result = TRUE;\n  HRESULT hr;",
+        "  gboolean result = TRUE;\n  HRESULT hr;\n"
+        "  c545d_cache_maybe_refresh ();",
+        "CI-only synthetic cache refresh at each package scan")
 
     s = replace_one(
         s, "      HSTRING display_name = NULL;",
