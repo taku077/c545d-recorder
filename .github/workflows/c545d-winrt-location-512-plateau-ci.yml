@@ -1,0 +1,62 @@
+name: C545D isolated WinRT InstalledLocation.Path 512-cycle plateau diagnosis
+
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - 'tests/analyze_winrt_path_512_plateau.py'
+      - '.github/workflows/c545d-winrt-location-512-plateau-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  path-plateau:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile 512-cycle variant from verified 128-cycle probe, without changing production sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $src=Get-Content tests/winrt_package_location_direct_repro.cpp -Raw
+          foreach($edit in @(
+            @('for(int i=0;i<=128;i++)','for(int i=0;i<=512;i++)'),
+            @('if(i%32==0)','if(i%64==0)'),
+            @('cycles=128','cycles=512')
+          )) {
+            if ($src.Split(@($edit[0])).Length -ne 2) { throw "Expected exactly one source anchor: $($edit[0])" }
+            $src=$src.Replace($edit[0],$edit[1])
+          }
+          $temporary=Join-Path artifacts 'winrt_path_512_generated.cpp'
+          Set-Content -Path $temporary -Value $src -Encoding utf8
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 $temporary /Fe:artifacts/winrt_path_512.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT 512-cycle direct probe compiler failed' }
+      - name: Compare 512-cycle InstalledLocation.Path and ID-only (no actual host)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path artifacts/winrt_path_512.exe).Path
+          foreach($mode in @('id_only','location')) {
+            & $exe $mode > "artifacts/${mode}_512.log"
+            if ($LASTEXITCODE -ne 0) { throw "WinRT 512-cycle mode failed $mode exit=$LASTEXITCODE" }
+          }
+          py tests/analyze_winrt_path_512_plateau.py
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT plateau analysis failed' }
+          Get-Content artifacts/path_512_control_subtracted.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-path-512-aggregate-only
+          path: |
+            artifacts/id_only_512.log
+            artifacts/location_512.log
+            artifacts/path_512_control_subtracted.csv
+          retention-days: 7
+          if-no-files-found: warn
