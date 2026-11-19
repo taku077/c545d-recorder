@@ -23,8 +23,17 @@ def read(mode, kind):
     hits, misses, entries = map(int,match[-1])
     scans, resets=map(int,refresh[-1])
     empty=int(nulls[-1])
-    if entries != 32 or empty != 1 or scans < 1 or hits < 0:
-        raise ValueError(f"{path}: unexpected cache census")
+    if entries != 32 or hits < 0:
+        raise ValueError(f"{path}: unexpected cache size or hits")
+    if mode == "cache":
+        # The ordinary cache never enables synthetic refresh counting.
+        if scans != 0 or resets != 0 or empty != 1:
+            raise ValueError(f"{path}: control cache telemetry invalid")
+    else:
+        # Each actual reset re-fetches one empty HSTRING, preserving its
+        # original value. Do NOT confuse successful empty re-fetches with leaks.
+        if scans < 1 or empty != resets + 1:
+            raise ValueError(f"{path}: invalid synthetic reset or null-result census")
     return values,(hits,misses,entries,scans,resets,empty)
 
 def main():
