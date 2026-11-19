@@ -3,28 +3,27 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `ac5acafc7f28f8dde652ea6166f0ef754e4d2e49`
-- **PR updated at (UTC):** `2026-11-19T14:37:51Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ac5acafc7f28f8dde652ea6166f0ef754e4d2e49/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `d4cceff825654c2074998542a1db339643453eba`
+- **PR updated at (UTC):** `2026-11-19T15:06:02Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/d4cceff825654c2074998542a1db339643453eba/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GIO UWP WinRT API versus XML and callback memory isolation | in_progress | [#44545854719](https://github.com/taku077/c545d-recorder/actions/runs/44545854719) |
-| C545D PackageCatalog invalidation signal feasibility (isolated Windows) | in_progress | [#44545854657](https://github.com/taku077/c545d-recorder/actions/runs/44545854657) |
-| C545D direct WinRT DisplayName getter-only retention control | in_progress | [#44545854393](https://github.com/taku077/c545d-recorder/actions/runs/44545854393) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44545854337](https://github.com/taku077/c545d-recorder/actions/runs/44545854337) |
-| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44545854286](https://github.com/taku077/c545d-recorder/actions/runs/44545854286) |
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44545854233](https://github.com/taku077/c545d-recorder/actions/runs/44545854233) |
-| Windows PowerShell source validation | in_progress | [#44545854221](https://github.com/taku077/c545d-recorder/actions/runs/44545854221) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44545854203](https://github.com/taku077/c545d-recorder/actions/runs/44545854203) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44545854130](https://github.com/taku077/c545d-recorder/actions/runs/44545854130) |
-| C545D GIO residual-memory stage-isolation diagnostic | in_progress | [#44545854048](https://github.com/taku077/c545d-recorder/actions/runs/44545854048) |
-| C545D GIO UWP native package-path semantic and memory A/B | in_progress | [#44545853866](https://github.com/taku077/c545d-recorder/actions/runs/44545853866) |
-| C545D active development handoff auto-refresh | in_progress | [#44545848895](https://github.com/taku077/c545d-recorder/actions/runs/44545848895) |
-| C545D DisplayName exact-cache 256-cycle Windows residual A/B | in_progress | [#44545844200](https://github.com/taku077/c545d-recorder/actions/runs/44545844200) |
-| C545D DisplayName cache lifecycle correctness isolated Windows | success | [#44545352342](https://github.com/taku077/c545d-recorder/actions/runs/44545352342) |
+| Windows PowerShell source validation | in_progress | [#44550985649](https://github.com/taku077/c545d-recorder/actions/runs/44550985649) |
+| C545D direct WinRT DisplayName getter-only retention control | in_progress | [#44550985488](https://github.com/taku077/c545d-recorder/actions/runs/44550985488) |
+| C545D GIO UWP WinRT API versus XML and callback memory isolation | in_progress | [#44550985462](https://github.com/taku077/c545d-recorder/actions/runs/44550985462) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44550985455](https://github.com/taku077/c545d-recorder/actions/runs/44550985455) |
+| C545D GIO UWP native package-path semantic and memory A/B | in_progress | [#44550985389](https://github.com/taku077/c545d-recorder/actions/runs/44550985389) |
+| C545D GIO residual-memory stage-isolation diagnostic | in_progress | [#44550985339](https://github.com/taku077/c545d-recorder/actions/runs/44550985339) |
+| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44550985306](https://github.com/taku077/c545d-recorder/actions/runs/44550985306) |
+| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44550985242](https://github.com/taku077/c545d-recorder/actions/runs/44550985242) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44550985241](https://github.com/taku077/c545d-recorder/actions/runs/44550985241) |
+| C545D PackageCatalog invalidation signal feasibility (isolated Windows) | in_progress | [#44550985226](https://github.com/taku077/c545d-recorder/actions/runs/44550985226) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44550985224](https://github.com/taku077/c545d-recorder/actions/runs/44550985224) |
+| C545D active development handoff auto-refresh | in_progress | [#44550981070](https://github.com/taku077/c545d-recorder/actions/runs/44550981070) |
+| C545D C ABI WinRT package-event bridge resource lifecycle | success | [#44550667190](https://github.com/taku077/c545d-recorder/actions/runs/44550667190) |
 
 ## Current development findings from the active PR
 
