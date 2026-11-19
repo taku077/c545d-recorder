@@ -3,21 +3,21 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
-- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `0cf7bfccf8e9fb63cddd3ed3cbbbaa3c7ea4e9cc`
-- **PR updated at (UTC):** `2026-11-19T06:54:01Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/0cf7bfccf8e9fb63cddd3ed3cbbbaa3c7ea4e9cc/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `e5ee768ee8ce94ae79c7586fbb393a0b96a8d39e`
+- **PR updated at (UTC):** `2026-11-19T06:54:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/e5ee768ee8ce94ae79c7586fbb393a0b96a8d39e/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44475546885](https://github.com/taku077/c545d-recorder/actions/runs/44475546885) |
-| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44475546846](https://github.com/taku077/c545d-recorder/actions/runs/44475546846) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | queued | [#44475546845](https://github.com/taku077/c545d-recorder/actions/runs/44475546845) |
-| Windows PowerShell source validation | in_progress | [#44475546807](https://github.com/taku077/c545d-recorder/actions/runs/44475546807) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44475546746](https://github.com/taku077/c545d-recorder/actions/runs/44475546746) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44475546680](https://github.com/taku077/c545d-recorder/actions/runs/44475546680) |
-| C545D active development handoff auto-refresh | in_progress | [#44475541142](https://github.com/taku077/c545d-recorder/actions/runs/44475541142) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44475632844](https://github.com/taku077/c545d-recorder/actions/runs/44475632844) |
+| Windows PowerShell source validation | in_progress | [#44475632811](https://github.com/taku077/c545d-recorder/actions/runs/44475632811) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | queued | [#44475632802](https://github.com/taku077/c545d-recorder/actions/runs/44475632802) |
+| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44475632712](https://github.com/taku077/c545d-recorder/actions/runs/44475632712) |
+| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44475632686](https://github.com/taku077/c545d-recorder/actions/runs/44475632686) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44475632684](https://github.com/taku077/c545d-recorder/actions/runs/44475632684) |
+| C545D active development handoff auto-refresh | in_progress | [#44475630423](https://github.com/taku077/c545d-recorder/actions/runs/44475630423) |
 
 ## Current development findings from the active PR
 
