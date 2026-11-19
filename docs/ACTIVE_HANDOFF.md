@@ -12,8 +12,8 @@
 | Workflow | Outcome | Evidence |
 |---|---|---|
 | C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44489681740](https://github.com/taku077/c545d-recorder/actions/runs/44489681740) |
-| C545D GIO UWP WinRT API versus XML and callback memory isolation | queued | [#44489681603](https://github.com/taku077/c545d-recorder/actions/runs/44489681603) |
-| C545D active development handoff auto-refresh | pending | [#44489681562](https://github.com/taku077/c545d-recorder/actions/runs/44489681562) |
+| C545D GIO UWP WinRT API versus XML and callback memory isolation | in_progress | [#44489681603](https://github.com/taku077/c545d-recorder/actions/runs/44489681603) |
+| C545D active development handoff auto-refresh | in_progress | [#44489681562](https://github.com/taku077/c545d-recorder/actions/runs/44489681562) |
 | C545D isolate GLib 2.82.4 AppInfo ownership candidate | in_progress | [#44489681556](https://github.com/taku077/c545d-recorder/actions/runs/44489681556) |
 | GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44489681513](https://github.com/taku077/c545d-recorder/actions/runs/44489681513) |
 | Windows PowerShell source validation | in_progress | [#44489681434](https://github.com/taku077/c545d-recorder/actions/runs/44489681434) |
