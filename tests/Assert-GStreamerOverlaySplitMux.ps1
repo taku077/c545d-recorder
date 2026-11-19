@@ -127,7 +127,12 @@ try {
     $lengthSec=3600*[int]$match.Groups[1].Value+60*[int]$match.Groups[2].Value+[int]$match.Groups[3].Value+$fraction
     $seconds += $lengthSec
     $segmentLines += ("segment=$($f.Name) bytes=$($f.Length) duration_s=$([math]::Round($lengthSec,3)) tracks=H264+AAC")
-    if ($lengthSec -lt 0.3 -or $lengthSec -gt 4.0) {
+    # splitmuxsink may emit a short but independently decodable initial fragment
+    # while the two synthetic RTP/H264 chains reach their first keyframe.
+    # Matched official-SDK and candidate runs both produced ~0.15s first
+    # fragments (CI 44555196915). Keep an explicit >0.10s lower bound,
+    # independent H264+AAC decode/caps and aggregate duration gates.
+    if ($lengthSec -lt 0.10 -or $lengthSec -gt 4.0) {
       $segmentLines += ("DURATION_GATE_FAIL segment=$($f.Name) duration_s=$([math]::Round($lengthSec,6))")
       $script:badFragmentDurations++
     }
