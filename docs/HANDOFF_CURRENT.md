@@ -2,6 +2,17 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — cache MSVC startup-fragment gate synced from PR #54
+
+- **Experiment branch** `investigate/c545d-last-residual-slope-20261120`. Previous diagnostic cache MSVC run [#44585665458](https://github.com/taku077/c545d-recorder/actions/runs/44585665458) **FAILED** only at MP4 duration gating. Retrieved artifact 14560968625: both SDK control and cache-enabled candidate emitted the same decodable first short fragment, 0.149667 s; subsequent durations 1.552, 1.683, 1.680, 1.166 s; 5/5 MP4 segments had H264+AAC. Candidate passed SDK exports **2047/2047**, no missing export or candidate-only dependency, GAppInfo runtime loading, and the synthetic two-RTP H264 plus AAC MP4/EOS media smoke. Do not call the overall run success.
+- Source mismatch confirmed: isolated branch had older `tests/Assert-GStreamerOverlaySplitMux.ps1` unconditional 0.30 s minimum, while active PR #54 had already passed the corrected first-only 0.10 s exception (all remaining fragments retain 0.30 s). **Exact matching file content** copied from PR #54, commit [6ab7ce2](https://github.com/taku077/c545d-recorder/commit/6ab7ce264be2b5793bebfe6a6507d503b7a37f1e); follow-up workflow trigger update [791bf3e](https://github.com/taku077/c545d-recorder/commit/791bf3e65c06222e04790a3925d6341d623602eb).
+- **New Windows CI** [#44586796586](https://github.com/taku077/c545d-recorder/actions/runs/44586796586) was **IN PROGRESS**, not yet declared PASS, at this writing. Inspect both official SDK and cache candidate splitmux results; do not loosen later-fragment/audio/EOS/caps checks.
+- **Heap-region 512-cycle CI** [#44583345720](https://github.com/taku077/c545d-recorder/actions/runs/44583345720) still measured 512 control and registry-change cycles when last checked; build succeeded, no final numeric output yet. Do not start another lengthy run.
+- **6/6 analyzer synthetic tests PASS** in [#44584997777](https://github.com/taku077/c545d-recorder/actions/runs/44584997777).
+- Production Tapo recorder, live DLL, actual video, credentials, registry and recording settings unchanged. Cache has potentially stale DisplayName semantics under install/update and cannot yet be shipped.
+
+
+
 ### UPDATE 2026-11-20 JST — Six synthetic cache512 analyzer tests PASS; new WinRT cache MSVC smoke in CI
 
 - **Branch:** `investigate/c545d-last-residual-slope-20261120`. The current code-workflow HEAD is `9017a50fb98a4775de3bba7fe0425a4630225c31` before this documentation update. This experiment is NOT deployed or merge-authorized.
