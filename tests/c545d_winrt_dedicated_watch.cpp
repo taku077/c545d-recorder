@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
