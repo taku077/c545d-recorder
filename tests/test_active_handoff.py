@@ -31,5 +31,23 @@ class TestHandoff(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.extract_current("old docs only", BOUNDARY, "96.29%")
 
+    def test_oversized_handoff_keeps_newest_complete_sections(self):
+        newest = ("### UPDATE 2026-11-19 latest\n96.29% verified\n"
+                  + "Latest critical result in synthetic Windows CI.\n")
+        old = "### UPDATE older\n" + "stale details in archived history.\n" * 900
+        sample = ("<!-- CURRENT_HANDOFF_START: current -->\n"
+                  + newest + old + "\n" + BOUNDARY)
+        actual = module.extract_current(sample, BOUNDARY, "96.29%")
+        self.assertIn("Latest critical result", actual)
+        self.assertNotIn("stale details", actual)
+        self.assertIn("Older UPDATE sections remain", actual)
+
+    def test_oversized_newest_update_fails_closed(self):
+        huge = ("<!-- CURRENT_HANDOFF_START: current -->\n"
+                "### UPDATE 2026-11-19\n96.29%\n" + "x" * 23000
+                + "\n" + BOUNDARY)
+        with self.assertRaisesRegex(ValueError, "Newest UPDATE section"):
+            module.extract_current(huge, BOUNDARY, "96.29%")
+
 if __name__ == "__main__":
     unittest.main()
