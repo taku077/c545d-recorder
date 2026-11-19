@@ -4,7 +4,8 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$SdkRoot,
-  [Parameter(Mandatory=$true)][string]$OverlayDir
+  [Parameter(Mandatory=$true)][string]$OverlayDir,
+  [string]$Prefix='ci_split'
 )
 $ErrorActionPreference='Stop'
 $bin=Join-Path $SdkRoot 'bin'
@@ -27,7 +28,7 @@ foreach($e in @('splitmuxsink','qtdemux','mp4mux','avdec_h264','avdec_aac','aven
 }
 New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 $root=[IO.Path]::GetFullPath('artifacts')
-$pattern=(Join-Path $root 'ci_split_%03d.mp4').Replace('\','/')
+$pattern=(Join-Path $root ($Prefix+'_%03d.mp4')).Replace('\','/')
 $files=@()
 $script:badFragmentDurations=0
 # CI-only bounded execution; never let a stuck mux/decode hang the Windows job.
@@ -90,8 +91,8 @@ try {
     '!','avenc_aac','bitrate=192000','aac-coder=twoloop',
     '!','aacparse','!','mux.audio_0'
   )
-  Invoke-C545DBoundedGst -Arguments $argsMedia -Label 'ci_splitmux_record' -TimeoutMs 70000
-  $files=@(Get-ChildItem -LiteralPath $root -Filter 'ci_split_*.mp4' -File | Sort-Object Name)
+  Invoke-C545DBoundedGst -Arguments $argsMedia -Label ($Prefix+'_record') -TimeoutMs 70000
+  $files=@(Get-ChildItem -LiteralPath $root -Filter ($Prefix+'_*.mp4') -File | Sort-Object Name)
   if ($files.Count -lt 2 -or $files.Count -gt 8) {
     throw "Unexpected MP4 segment count: $($files.Count)"
   }
@@ -119,7 +120,7 @@ try {
       '!','fakesink','sync=false',
       'd.audio_0','!','queue','!','aacparse','!','avdec_aac',
       '!','fakesink','sync=false')
-    Invoke-C545DBoundedGst -Arguments $decode -Label ("ci_decode_"+$f.BaseName) -TimeoutMs 25000
+    Invoke-C545DBoundedGst -Arguments $decode -Label ($Prefix+"_decode_"+$f.BaseName) -TimeoutMs 25000
     $match=[regex]::Match($info,'(?im)^\s*Duration:\s*(\d+):(\d+):(\d+)\.(\d+)')
     if (-not $match.Success) { throw "Missing segment duration: $($f.Name)" }
     $fraction=[double]("0."+$match.Groups[4].Value)
@@ -132,9 +133,9 @@ try {
     }
   }
   # Persist complete sanitized diagnostics BEFORE enforcing the duration gates.
-  $segmentLines | Set-Content artifacts/ci_splitmux_segment_diagnostics.txt
+  $segmentLines | Set-Content ('artifacts/'+$Prefix+'_segment_diagnostics.txt')
   if ($script:badFragmentDurations -ne 0) {
-    throw "$($script:badFragmentDurations) fragments failed duration gate; inspect complete ci_splitmux_segment_diagnostics.txt"
+    throw "$($script:badFragmentDurations) fragments failed duration gate; inspect prefixed segment diagnostics"
   }
   if ($seconds -lt 5.0 -or $seconds -gt 7.8) {
     throw "Incorrect total MP4 duration $seconds across segments"
@@ -144,11 +145,11 @@ try {
     "two_RTP_H264_decoders=avdec_h264 AAC=48kHz_mono " +
     "output=2560x720@15fps x264=medium_quantizer24 " +
     "async_finalize=false all_segments_av_decodable=true Windows_CI_only=true" |
-    Tee-Object -FilePath artifacts/ci_splitmux_summary.txt
-  $segmentLines | Add-Content artifacts/ci_splitmux_summary.txt
+    Tee-Object -FilePath ('artifacts/'+$Prefix+'_summary.txt')
+  $segmentLines | Add-Content ('artifacts/'+$Prefix+'_summary.txt')
 }
 finally {
   # Do not upload even synthetic media. Only sanitized summary/logs.
-  @(Get-ChildItem -LiteralPath $root -Filter 'ci_split_*.mp4' -File -ErrorAction SilentlyContinue) |
+  @(Get-ChildItem -LiteralPath $root -Filter ($Prefix+'_*.mp4') -File -ErrorAction SilentlyContinue) |
     Remove-Item -Force -ErrorAction SilentlyContinue
 }

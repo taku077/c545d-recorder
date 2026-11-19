@@ -197,6 +197,20 @@ jobs:
             -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
             -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
           if ($LASTEXITCODE -ne 0) { throw 'Candidate GIO media integration test failed' }
+      - name: Official GStreamer SDK control for splitmux startup fragment (diagnostic only)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $refDir=Join-Path $env:RUNNER_TEMP 'c545d-gio-reference-overlay'
+          New-Item -ItemType Directory -Path $refDir -Force | Out-Null
+          Copy-Item (Join-Path $sdk 'bin\gio-2.0-0.dll') (Join-Path $refDir 'gio-2.0-0.dll') -Force
+          & ./tests/Assert-GStreamerOverlaySplitMux.ps1 `
+            -SdkRoot $sdk `
+            -OverlayDir $refDir `
+            -Prefix 'ci_reference_split'
+          if ($LASTEXITCODE -ne 0) { throw 'Reference splitmux diagnostic failed' }
       - name: Camera-free repeated MP4 splitmuxsink EOS and per-fragment AV regression
         shell: pwsh
         run: |
