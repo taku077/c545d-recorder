@@ -8,6 +8,7 @@ on:
       - 'tests/patch_glib_msvc_gio_sdk_export.py'
       - 'tests/gio_msvc_sdk_overlay_smoke.c'
       - 'tests/Assert-GStreamerOverlayMedia.ps1'
+      - 'tests/Assert-GStreamerOverlaySplitMux.ps1'
       - '.github/workflows/c545d-gio-msvc-abi-ci.yml'
   workflow_dispatch:
 
@@ -196,6 +197,14 @@ jobs:
             -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
             -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
           if ($LASTEXITCODE -ne 0) { throw 'Candidate GIO media integration test failed' }
+      - name: Camera-free repeated MP4 splitmuxsink EOS and per-fragment AV regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Assert-GStreamerOverlaySplitMux.ps1 `
+            -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
+            -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
+          if ($LASTEXITCODE -ne 0) { throw 'Patched GIO splitmuxsink segmentation test failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
