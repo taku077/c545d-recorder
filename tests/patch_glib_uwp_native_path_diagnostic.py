@@ -21,7 +21,11 @@ def patch(filename):
     nl = "\r\n" if b"\r\n" in data else "\n"
     s = data.decode("utf-8").replace("\r\n", "\n")
     s = replace_one(s, "#include <windows.h>",
-                    "#include <windows.h>\n#include <appmodel.h>", "appmodel.h")
+                    ("#include <windows.h>\n"
+                     '#pragma push_macro("PACKAGE_VERSION")\n'
+                     "#undef PACKAGE_VERSION\n"
+                     "#include <appmodel.h>\n"
+                     '#pragma pop_macro("PACKAGE_VERSION")'), "appmodel.h")
     s = replace_one(s, "  struct _xml_sax_state *sax = &sax_stack;",
        """  struct _xml_sax_state *sax = &sax_stack;
   guint native_success = 0, native_fallback = 0;
