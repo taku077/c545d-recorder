@@ -1,0 +1,121 @@
+name: C545D GLib cache dedicated MTA WinRT watcher CI (CI ONLY)
+
+on:
+  push:
+    branches:
+      - investigate/c545d-winrt-watch-dedicated-thread-20261120
+    paths:
+      - tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py
+      - tests/c545d_winrt_dedicated_watch.cpp
+      - tests/c545d_winrt_dedicated_watch.h
+      - .github/workflows/c545d-glib-winrt-dedicated-integration-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  glib-bridge:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build separately loaded pure-C ABI WinRT event bridge (not linked to GIO)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_winrt_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_winrt_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot build standalone CI-only WinRT C bridge' }
+
+      - name: Build disposable GLib with original-value cache and C ABI polling hook
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_display_snapshot.exe ../tests/gio_appinfo_displayname_snapshot.c $(pkg-config --cflags --libs gio-2.0)'
+          echo 'EXPERIMENT_ONLY_NOT_GIO_PRODUCTION_DLL' > artifacts/NO_PRODUCTION_DEPLOYMENT.txt
+
+      - name: Confirm identical GAppInfo DisplayName content under C bridge and failure fallback
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_winrt_dedicated_watch.dll")"
+          unset C545D_DIAG_UWP_CACHE_EVENT_BRIDGE C545D_DIAG_UWP_BRIDGE_INJECT_SCAN || true
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/name_plain.log
+          export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/name_bridge.log
+          export C545D_DIAG_UWP_C_BRIDGE_DLL='Z:\C545D_NONEXISTENT_CI_ONLY\no-such.dll'
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/name_failclosed.log
+          for mode in plain bridge failclosed; do
+            grep '^C545D_APPINFO_DISPLAY_SNAPSHOT' "artifacts/name_${mode}.log" > "artifacts/name_${mode}.hash"
+          done
+          python -c 'from pathlib import Path; p=Path("artifacts/name_plain.hash").read_bytes(); assert p == Path("artifacts/name_bridge.hash").read_bytes() == Path("artifacts/name_failclosed.hash").read_bytes(), "DisplayName changed under package-event bridge/failure fallback"; print("C545D_GLIB_BRIDGE_DISPLAYNAME_PARITY_PASS")'
+
+      - name: Same-run four-arm 16-cycle matched controls, synthetic event and missing-DLL fail-closed
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          unset C545D_HANDLE_EXE C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
+          GOOD_DLL="$(cygpath -w "$PWD/artifacts/c545d_winrt_dedicated_watch.dll")"
+          for mode in cache_plain bridge_plain bridge_injected bridge_missing; do
+            unset C545D_DIAG_UWP_CACHE_EVENT_BRIDGE C545D_DIAG_UWP_BRIDGE_INJECT_SCAN || true
+            export C545D_DIAG_UWP_C_BRIDGE_DLL="$GOOD_DLL"
+            if [ "$mode" != cache_plain ]; then export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1; fi
+            if [ "$mode" = bridge_injected ]; then export C545D_DIAG_UWP_BRIDGE_INJECT_SCAN=5; fi
+            if [ "$mode" = bridge_missing ]; then export C545D_DIAG_UWP_C_BRIDGE_DLL='Z:\C545D_NONEXISTENT_CI_ONLY\no-such.dll'; fi
+            for scope in nochange registry; do
+              args=(--cycles=16 --heap-summary --vm-summary --report-types)
+              if [ "$scope" = nochange ]; then args+=(--no-registry-change); fi
+              meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" "${args[@]}" > "artifacts/${mode}_${scope}_16.log"
+              grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/${mode}_${scope}_16.log"
+            done
+          done
+
+      - name: Verify GIO bridge event generation, value parity, refills, handles and fail-closed behavior
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_winrt_bridge_integration.py | Tee-Object -FilePath artifacts/winrt_bridge_analysis.txt
+          if ($LASTEXITCODE -ne 0) { throw 'GIO WinRT C bridge semantic/lifecycle regression' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-winrt-dedicated-mta-numeric-only
+          path: |
+            artifacts/*.log
+            artifacts/*.hash
+            artifacts/winrt_bridge_analysis.txt
+            artifacts/NO_PRODUCTION_DEPLOYMENT.txt
+          retention-days: 7
+          if-no-files-found: warn
