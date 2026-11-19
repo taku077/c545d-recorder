@@ -63,6 +63,34 @@ def patch_packageparser(filename):
         "      sax->exit_early = FALSE;\n"
         "      hr = IIterator_get_Current (packages_iterator, &item);",
         "SAX early-exit safety")
+    # Skip only per-item COM retrieval while preserving PackageManager,
+    # iterable construction and iterator advancement.
+    current = """      hr = IIterator_get_Current (packages_iterator, &item);"""
+    skipped_current = """      /* DIAGNOSTIC ONLY: isolate WinRT iterator overhead without
+       * retrieving IPackage/identity objects. Nothing is allocated here.
+       */
+      if (g_getenv ("C545D_DIAG_UWP_SKIP_CURRENT") != NULL)
+        {
+          hr = IIterator_MoveNext (packages_iterator, &has_current);
+          if (FAILED (hr))
+            result = FALSE;
+          continue;
+        }
+""" + current
+    s = replace_one(s, current, skipped_current, "per-item getter bypass")
+
+    # Keep GetCurrent/identity/Name but exit before DisplayName and location.
+    display = """      hr = IPackage2_get_DisplayName (ipackage2, &display_name);"""
+    skipped_display = """      /* DIAGNOSTIC ONLY: stop before IPackage2 DisplayName. */
+      if (g_getenv ("C545D_DIAG_UWP_SKIP_DISPLAYNAME") != NULL)
+        {
+          hr = IIterator_MoveNext (packages_iterator, &has_current);
+          if (FAILED (hr))
+            result = FALSE;
+          goto package_cleanup;
+        }
+""" + display
+    s = replace_one(s, display, skipped_display, "DisplayName bypass")
     location = """      hr = IPackage_get_InstalledLocation (ipackage, &package_install_location);
       canned_com_error_handler_pkg_named ("IPackage_get_InstalledLocation()", package_cleanup);"""
     location2 = """      /* DIAGNOSTIC ONLY: retain WinRT package/identity enumeration, but skip
