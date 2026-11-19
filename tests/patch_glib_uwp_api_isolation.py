@@ -106,10 +106,24 @@ def patch_packageparser(filename):
                     "DisplayName getter-only bypass")
     s = replace_one(s,
         "      wcs_display_name = LoadedWindowsGetStringRawBuffer (display_name, NULL);",
-        """      /* Diagnostic-only fallback; changes display text, not package traversal. */
+        """      /* Diagnostic-only comparison: call WinRT DisplayName normally,
+       * then release its HSTRING before downstream processing. Compare to
+       * skip-getter using identical Name fallback and UWP callback behavior.
+       * A source-stage experiment; NEVER ship this semantic substitution.
+       */
+      if (g_getenv ("C545D_DIAG_UWP_CALL_DISPLAYNAME_DISCARD") != NULL &&
+          display_name != NULL)
+        {
+#ifndef G_WINAPI_ONLY_APP
+          LoadedWindowsDeleteString (display_name);
+#else
+          WindowsDeleteString (display_name);
+#endif
+          display_name = NULL;
+        }
       wcs_display_name = display_name
         ? LoadedWindowsGetStringRawBuffer (display_name, NULL) : wcs_name;""",
-        "DisplayName-only diagnostic fallback")
+        "DisplayName getter-call and immediate-HSTRING-release ablation")
     location = """      hr = IPackage_get_InstalledLocation (ipackage, &package_install_location);
       canned_com_error_handler_pkg_named ("IPackage_get_InstalledLocation()", package_cleanup);"""
     location2 = """      /* DIAGNOSTIC ONLY: retain WinRT package/identity enumeration, but skip
