@@ -60,12 +60,12 @@ jobs:
           set -euo pipefail
           export GOBJECT_DEBUG=instance-count
           unset C545D_HANDLE_EXE || true
-          for stage in default skip_uwp skip_associations skip_exe_classes; do
-            unset C545D_DIAG_SKIP_UWP C545D_DIAG_SKIP_ASSOCIATIONS C545D_DIAG_SKIP_EXE_CLASSES || true
+          for stage in default skip_uwp skip_uwp_enum skip_uwp_handlers; do
+            unset C545D_DIAG_SKIP_UWP C545D_DIAG_SKIP_UWP_ENUM C545D_DIAG_SKIP_UWP_HANDLERS C545D_DIAG_SKIP_ASSOCIATIONS C545D_DIAG_SKIP_EXE_CLASSES || true
             case "$stage" in
               skip_uwp) export C545D_DIAG_SKIP_UWP=1 ;;
-              skip_associations) export C545D_DIAG_SKIP_ASSOCIATIONS=1 ;;
-              skip_exe_classes) export C545D_DIAG_SKIP_EXE_CLASSES=1 ;;
+              skip_uwp_enum) export C545D_DIAG_SKIP_UWP_ENUM=1 ;;
+              skip_uwp_handlers) export C545D_DIAG_SKIP_UWP_HANDLERS=1 ;;
             esac
             meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --no-registry-change --heap-summary --vm-summary --report-types > "artifacts/$stage"_nochange_64.log
             grep -q 'GIO_PROBE_DONE,cycles=64' "artifacts/$stage"_nochange_64.log
