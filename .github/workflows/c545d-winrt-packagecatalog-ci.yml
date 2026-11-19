@@ -2,7 +2,7 @@ name: C545D PackageCatalog invalidation signal feasibility (isolated Windows)
 
 on:
   push:
-    branches: ['investigate/gio-2824-key-handle-lifecycle']
+    branches: ['investigate/gio-2824-key-handle-lifecycle', 'investigate/c545d-packagecatalog-invalidation-probe-20261119']
     paths:
       - '.github/workflows/c545d-winrt-packagecatalog-ci.yml'
       - 'tests/winrt_packagecatalog_event_probe.cpp'
