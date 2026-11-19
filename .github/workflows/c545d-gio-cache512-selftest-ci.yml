@@ -1,0 +1,25 @@
+name: C545D 512-cycle residual analyzer synthetic regression
+
+on:
+  push:
+    branches:
+      - investigate/c545d-last-residual-slope-20261120
+    paths:
+      - tests/test_analyze_gio_cache512_selftest.py
+      - .github/workflows/c545d-gio-cache512-selftest-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyzer-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate original and synthetically corrupted numeric 512-cycle logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_analyze_gio_cache512_selftest.py' -v
