@@ -11,13 +11,13 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D GIO AppInfo camera-free short Key-handle probe | in_progress | [#44380980386](https://github.com/taku077/c545d-recorder/actions/runs/44380980386) |
-| Windows PowerShell source validation | in_progress | [#44380979275](https://github.com/taku077/c545d-recorder/actions/runs/44380979275) |
-| C545D GLib 2.82.4 combined fix MSVC ABI inventory | in_progress | [#44380979089](https://github.com/taku077/c545d-recorder/actions/runs/44380979089) |
-| GLib 2.82.4 experimental AppInfo rescan isolation | in_progress | [#44380978913](https://github.com/taku077/c545d-recorder/actions/runs/44380978913) |
-| C545D isolate GLib 2.82.4 AppInfo ownership candidate | queued | [#44380978725](https://github.com/taku077/c545d-recorder/actions/runs/44380978725) |
-| C545D GLib 2.82.4 weak-backref ownership A/B | in_progress | [#44380978708](https://github.com/taku077/c545d-recorder/actions/runs/44380978708) |
-| C545D active development handoff auto-refresh | in_progress | [#44380972001](https://github.com/taku077/c545d-recorder/actions/runs/44380972001) |
+| C545D GIO AppInfo camera-free short Key-handle probe | success | [#44380980386](https://github.com/taku077/c545d-recorder/actions/runs/44380980386) |
+| Windows PowerShell source validation | success | [#44380979275](https://github.com/taku077/c545d-recorder/actions/runs/44380979275) |
+| C545D GLib 2.82.4 combined fix MSVC ABI inventory | success | [#44380979089](https://github.com/taku077/c545d-recorder/actions/runs/44380979089) |
+| GLib 2.82.4 experimental AppInfo rescan isolation | success | [#44380978913](https://github.com/taku077/c545d-recorder/actions/runs/44380978913) |
+| C545D isolate GLib 2.82.4 AppInfo ownership candidate | success | [#44380978725](https://github.com/taku077/c545d-recorder/actions/runs/44380978725) |
+| C545D GLib 2.82.4 weak-backref ownership A/B | success | [#44380978708](https://github.com/taku077/c545d-recorder/actions/runs/44380978708) |
+| C545D active development handoff auto-refresh | success | [#44380972001](https://github.com/taku077/c545d-recorder/actions/runs/44380972001) |
 
 ## Current development findings from the active PR
 
