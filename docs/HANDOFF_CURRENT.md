@@ -2,6 +2,19 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+
+### UPDATE 2026-11-20 JST — Heap-region commit/free 512-cycle discriminator (Windows CI, NOT production)
+
+- **Current isolated experiment branch:** `investigate/c545d-last-residual-slope-20261120`; code commits `4f8e7dd61fd093b20ae63b22b9f8641a946fc62a` (probe) and `811cae162f726571760ee15c548b2953ed6bafce` (analyzer). The exact branch HEAD has advanced further after this note. Do not confuse this branch with active PR #54 HEAD; PR #54 is the main integration investigation.
+- **Verified prior baseline:** [512-cycle original DisplayName cache run #44565966197](https://github.com/taku077/c545d-recorder/actions/runs/44565966197) succeeded with same-run registry-change minus unchanged control: last 256 cycles PrivateUsage **+307,200 B** vs HeapWalk BUSY **-6,956 B**; last64 PrivateUsage **-24,576 B** and BUSY **0 B**. This is **not** zero-leak proof. PrivateUsage reflects private committed bytes, while the HeapWalk BUSY census counts live blocks.
+- **New code, not yet measured:** `tests/gio_appinfo_key_handle_probe.c` reports sanitised `GIO_HEAPREGION` totals under existing `--heap-summary`: region count; known committed-region count; committed/uncommitted region bytes; free-block bytes and count; errors. Addresses, paths, ETL, registry key names and media are NOT emitted.
+- `tests/analyze_gio_cache_512_plateau.py` requires valid region telemetry at every 64-cycle checkpoint, rejects invalid/corrupt records and positive retained handles, subtracts matched no-registry-change control, and reports region coverage. The Win32 `PROCESS_HEAP_ENTRY.Region.dwCommittedSize` field can be 0 when unavailable; therefore partial region inventory **cannot** be equated with PrivateUsage or considered proof of memory release. Source: https://learn.microsoft.com/en-us/windows/win32/api/minwinbase/ns-minwinbase-process_heap_entry .
+- Existing workflow `.github/workflows/c545d-gio-cache-512-plateau-ci.yml` has a **push trigger on the modified analyzer**. Its new post-change CI result has **NOT been independently retrieved/verified** at the time of this note (GitHub connector's commit workflow tool enumerates only PR-triggered runs). Do not claim success or new memory results. Inspect actual workflow run and numerical aggregate first. If failed, check build/parser compatibility before touching user host.
+- Separately verified: [MSVC/GStreamer CI #44579422769](https://github.com/taku077/c545d-recorder/actions/runs/44579422769) passed on active PR #54 at `cd12b570...`: 5 independently H264+AAC-decodable splitmux fragments under patched GIO and official SDK control (6.229 s / 6.231 s). This is Windows-2022 camera-free CI, not real Windows 10/Tapo certification.
+- **Next AI-only action:** inspect newly triggered 512-cycle run, then distinguish genuine live-object growth from allocator-held committed/free heap blocks and other private commit. If region coverage incomplete, treat remaining private difference as unclassified and design another read-only Win32 discriminator. Preserve recorder settings, `avdec_h264`, two-stream mux and audio/EOS behavior. No user manual tests, DLL replacement, registry changes, or release deployment.
+
+
+
 ### UPDATE 2026-11-19 JST — UWP API leak localized; behavior-preserving Win32 path alternative passes CI, not host-certified
 
 - **Active PR #54**, `investigate/gio-2824-key-handle-lifecycle`. Earlier **96.29% reduction** (combined GWeakRef and UTF16 duplicate-path fix) and elimination of old hundreds-per-cycle Key handle growth were **Windows isolated CI observations**, NOT real Tapo recording-PC results. **No actual recorder, streaming, DLL, registry settings, capture settings or credentials changed.**
