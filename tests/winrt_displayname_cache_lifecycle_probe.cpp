@@ -138,6 +138,24 @@ static std::wstring preferred_user_languages() {
   return std::wstring(buffer.data(), chars); // include MULTI_SZ's embedded NULs
 }
 
+static std::wstring effective_language_fingerprint() {
+  // Package resource resolution can be affected by thread/process preferences,
+  // not only the per-user list. Include both; preserve MULTI_SZ separators.
+  const auto user = preferred_user_languages();
+  ULONG count = 0, chars = 0;
+  if (!GetThreadPreferredUILanguages(MUI_LANGUAGE_NAME, &count, nullptr, &chars) ||
+      count == 0 || chars == 0 || chars > 16384)
+    throw std::runtime_error("invalid effective thread UI language census");
+  std::vector<wchar_t> buffer(chars);
+  if (!GetThreadPreferredUILanguages(MUI_LANGUAGE_NAME, &count,
+                                      buffer.data(), &chars))
+    throw std::runtime_error("failed effective thread UI language census");
+  std::wstring fingerprint = user;
+  fingerprint.push_back(L'\x1e'); // disambiguate user/thread MULTI_SZ fields
+  fingerprint.append(buffer.data(), chars);
+  return fingerprint;
+}
+
 static void deterministic_scenarios(EventGeneration& gen) {
   DisplayNameCache cache(gen, 4);
   std::wstring empty, output;
@@ -216,7 +234,7 @@ int main() {
     // outside this test process. No package names or display strings logged.
     PackageManager manager;
     DisplayNameCache cache(gen);
-    const auto language = preferred_user_languages();
+    const auto language = effective_language_fingerprint();
     size_t packages = 0, failures = 0, identical = 0, empty_names = 0;
     for (const auto& pkg : manager.FindPackagesForUser(L"")) {
       try {
