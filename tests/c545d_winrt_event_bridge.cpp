@@ -20,10 +20,7 @@ struct EventState final {
   std::atomic<bool> active{true};
 };
 
-bool add_languages_to_digest(bool (*get)(DWORD, PULONG, PZZWSTR, PULONG),
-                             uint64_t& digest) = delete;
-
-bool add_user_languages(uint64_t& digest) noexcept {
+bool add_user_languages(uint64_t& digest) {
   ULONG count=0, chars=0;
   if (!GetUserPreferredUILanguages(MUI_LANGUAGE_NAME,&count,nullptr,&chars) ||
       count == 0 || chars == 0 || chars > 16384) return false;
@@ -39,7 +36,7 @@ bool add_user_languages(uint64_t& digest) noexcept {
   }
   return true;
 }
-bool add_thread_languages(uint64_t& digest) noexcept {
+bool add_thread_languages(uint64_t& digest) {
   ULONG count=0, chars=0;
   if (!GetThreadPreferredUILanguages(MUI_LANGUAGE_NAME,&count,nullptr,&chars) ||
       count == 0 || chars == 0 || chars > 16384) return false;

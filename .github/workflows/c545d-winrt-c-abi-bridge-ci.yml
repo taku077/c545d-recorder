@@ -32,8 +32,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinRT C++ bridge DLL compile/link failed' }
           & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_winrt_event_bridge_c_probe.c /Fe:artifacts/c545d_c_abi_probe.exe /link artifacts/c545d_winrt_event_bridge.lib psapi.lib
           if ($LASTEXITCODE -ne 0) { throw 'Pure C program failed to link against MSVC WinRT bridge' }
-          & artifacts/c545d_c_abi_probe.exe | Tee-Object -FilePath artifacts/winrt_c_abi_summary.txt
-          if ($LASTEXITCODE -ne 0) { throw 'WinRT C event bridge lifecycle/handle gate failed' }
+          & artifacts/c545d_c_abi_probe.exe 2> artifacts/winrt_c_abi_errors.txt | Tee-Object -FilePath artifacts/winrt_c_abi_summary.txt
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content artifacts/winrt_c_abi_errors.txt
+            throw "WinRT C event bridge lifecycle/handle gate failed with exit code $LASTEXITCODE"
+          }
           if ((Get-Content artifacts/winrt_c_abi_summary.txt -Raw) -notmatch 'C545D_WINRT_C_ABI_PASS') {
             throw 'WinRT C ABI success marker missing'
           }
@@ -41,6 +44,8 @@ jobs:
         if: always()
         with:
           name: c545d-winrt-c-abi-numeric-only
-          path: artifacts/winrt_c_abi_summary.txt
+          path: |
+            artifacts/winrt_c_abi_summary.txt
+            artifacts/winrt_c_abi_errors.txt
           retention-days: 7
           if-no-files-found: warn
