@@ -5,6 +5,7 @@ on:
     branches: ['investigate/c545d-last-residual-slope-20261120']
     paths:
       - '.github/workflows/c545d-gio-displayname-cache-msvc-ci.yml'
+      - 'tests/Assert-GStreamerOverlaySplitMux.ps1'
   workflow_dispatch:
 
 permissions:
