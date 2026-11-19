@@ -1,7 +1,10 @@
 name: C545D DisplayName exact-cache 256-cycle Windows residual A/B
 
 on:
-  pull_request:
+  # Branch push paths are computed from the newest push, unlike PR paths
+  # which match the entire accumulated diff and cancel lengthy running jobs.
+  push:
+    branches: ['investigate/gio-2824-key-handle-lifecycle']
     paths:
       - 'tests/patch_glib_uwp_displayname_cache_diagnostic.py'
       - 'tests/analyze_gio_displayname_cache_long.py'
