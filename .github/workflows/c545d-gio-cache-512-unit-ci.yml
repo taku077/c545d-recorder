@@ -1,0 +1,24 @@
+name: C545D cache-512 analyzer synthetic regression (no Windows measurement)
+
+on:
+  push:
+    branches: ['investigate/c545d-last-residual-slope-20261120']
+    paths:
+      - 'tests/test_analyze_gio_cache_512_plateau.py'
+      - '.github/workflows/c545d-gio-cache-512-unit-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test bounded cache, last-window analysis and strict handle gates
+        run: python -m unittest -v tests/test_analyze_gio_cache_512_plateau.py
