@@ -77,6 +77,17 @@ def main():
                 # must trigger repeated scans and actual cache reuse.
                 if misses <= 0 or not 0 < entries <= 1024 or (suffix == "registry" and hits <= 0):
                     raise ValueError("Unusable cache census: " + suffix)
+                # Dummy registry writes cannot install/remove packages.
+                # Reject a repeated getter miss for the same empty HSTRING.
+                if suffix == "registry" and misses > entries + 1:
+                    raise ValueError("Repeated uncached DisplayName getter detected")
+                null_rows = re.findall(
+                    r"^C545D_DISPLAY_CACHE_NULL_HSTRING_RETURNS=(\d+)$",
+                    log, re.MULTILINE
+                )
+                if not null_rows:
+                    raise ValueError("No numeric null-HSTRING census: " + suffix)
+                print(f"C545D_DISPLAY_CACHE_NULL_HSTRING,{suffix},count={null_rows[-1]}")
                 print(f"C545D_DISPLAY_CACHE_VALIDATED,{suffix},"
                       f"hits={hits},misses={misses},entries={entries}")
         print("UWP_API_STAGE," + name + "," +

@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <psapi.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winstring.h>
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.Management.Deployment.h>
 #include <cstdint>
@@ -71,6 +73,11 @@ int main(int argc, char** argv) {
     return 2;
   bool display = strcmp(argv[1],"display") == 0;
   try {
+    const PCWSTR empty_from_null = WindowsGetStringRawBuffer(nullptr, nullptr);
+    if (empty_from_null == nullptr || empty_from_null[0] != L'\0') {
+      fprintf(stderr, "WINRT_NULL_HSTRING_SEMANTIC_FAILURE\n");
+      return 7;
+    }
     winrt::init_apartment(winrt::apartment_type::single_threaded);
     winrt::Windows::Management::Deployment::PackageManager manager;
     uint32_t packages = 0, errors = 0;

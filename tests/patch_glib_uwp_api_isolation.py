@@ -121,8 +121,10 @@ def patch_packageparser(filename):
 #endif
           display_name = NULL;
         }
-      wcs_display_name = display_name
-        ? LoadedWindowsGetStringRawBuffer (display_name, NULL) : wcs_name;""",
+      /* WinRT HSTRING(NULL) represents the empty string, not Package Name.
+       * Preserve the original GLib semantics even in the CI-only build.
+       */
+      wcs_display_name = LoadedWindowsGetStringRawBuffer (display_name, NULL);""",
         "DisplayName getter-call and immediate-HSTRING-release ablation")
     location = """      hr = IPackage_get_InstalledLocation (ipackage, &package_install_location);
       canned_com_error_handler_pkg_named ("IPackage_get_InstalledLocation()", package_cleanup);"""

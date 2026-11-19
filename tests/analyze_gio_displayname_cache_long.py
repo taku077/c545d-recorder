@@ -22,7 +22,9 @@ def parse_mode(root, mode):
         h0, hs = data["GIO_PROBE"][0][1], data["GIO_PROBE"]["settled"][1]
         dh = hs - h0
         print(f"C545D_CACHE_LONG_HANDLE,{mode},{scope},baseline={h0},settled={hs},delta={dh}")
-        if abs(dh) > 4:
+        # A negative settled delta is handle RELEASE, never a resource leak.
+        # Retain strict +4 ceiling for any positive handle growth.
+        if dh > 4:
             raise ValueError(f"{mode}/{scope}: post-cleanup total handle growth {dh}")
     net = {
         field: (e_slope[field]["last_half"] - c_slope[field]["last_half"])
@@ -43,6 +45,15 @@ def parse_mode(root, mode):
                 raise ValueError("Missing initial entries or unbounded cache")
             if scope == "registry" and hits <= 0:
                 raise ValueError("No actual reuse under 256 registry mutations")
+            if scope == "registry" and misses > entries + 1:
+                raise ValueError("Repeated uncached successful DisplayName getter")
+            null_rows = re.findall(
+                r"^C545D_DISPLAY_CACHE_NULL_HSTRING_RETURNS=(\d+)$",
+                log, re.MULTILINE
+            )
+            if not null_rows:
+                raise ValueError("No numeric empty-HSTRING result census")
+            print(f"C545D_CACHE_NULL_HSTRING,{scope},count={null_rows[-1]}")
     return net, status
 
 

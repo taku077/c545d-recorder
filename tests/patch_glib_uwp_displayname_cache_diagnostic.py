@@ -25,6 +25,7 @@ static GMutex c545d_display_cache_lock;
 static GHashTable *c545d_display_cache;
 static guint c545d_display_cache_hits;
 static guint c545d_display_cache_misses;
+static gint c545d_display_cache_null_hstring_returns;
 
 static gunichar2 *
 c545d_cache_display_lookup (const wchar_t *full_name)
@@ -95,6 +96,8 @@ c545d_cache_display_report (void)
   /* Numeric counters only: no installed package IDs, names or paths. */
   g_print ("C545D_DISPLAY_CACHE,hits=%u,misses=%u,entries=%u\n",
            hits, misses, entries);
+  g_print ("C545D_DISPLAY_CACHE_NULL_HSTRING_RETURNS=%d\n",
+           g_atomic_int_get (&c545d_display_cache_null_hstring_returns));
 }
 
 """
@@ -133,21 +136,26 @@ def main(path):
         {
           hr = IPackage2_get_DisplayName (ipackage2, &display_name);
           canned_com_error_handler_pkg ("IPackage2_get_DisplayName()", package_cleanup);
-          if (display_name != NULL &&
-              g_getenv ("C545D_DIAG_UWP_CACHE_DISPLAYNAME") != NULL)
-            c545d_cache_display_store (
-              LoadedWindowsGetStringRawBuffer (full_name, NULL),
-              LoadedWindowsGetStringRawBuffer (display_name, NULL));
+          /* Cache successful NULL HSTRING as the exact empty string.
+           * WindowsGetStringRawBuffer(NULL) returns a non-NULL L"" buffer.
+           * This prevents the same package being re-fetched every scan.
+           */
+          if (g_getenv ("C545D_DIAG_UWP_CACHE_DISPLAYNAME") != NULL)
+            {
+              if (display_name == NULL)
+                g_atomic_int_inc (&c545d_display_cache_null_hstring_returns);
+              c545d_cache_display_store (
+                LoadedWindowsGetStringRawBuffer (full_name, NULL),
+                LoadedWindowsGetStringRawBuffer (display_name, NULL));
+            }
         }"""
     s = replace_one(s, start, guarded, "getter hit/miss switch")
 
     s = replace_one(
-        s, """      wcs_display_name = display_name
-        ? LoadedWindowsGetStringRawBuffer (display_name, NULL) : wcs_name;""",
+        s, """      wcs_display_name = LoadedWindowsGetStringRawBuffer (display_name, NULL);""",
         """      wcs_display_name = c545d_cached_display_name != NULL
         ? (const wchar_t *) c545d_cached_display_name
-        : (display_name != NULL
-           ? LoadedWindowsGetStringRawBuffer (display_name, NULL) : wcs_name);""",
+        : LoadedWindowsGetStringRawBuffer (display_name, NULL);""",
         "preserve exact displayed text for callbacks")
 
     s = replace_one(
