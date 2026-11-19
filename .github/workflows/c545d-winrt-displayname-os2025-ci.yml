@@ -27,7 +27,7 @@ jobs:
           $version=[System.Environment]::OSVersion.Version
           "C545D_WINRT_OS2025,os_major=$($version.Major),minor=$($version.Minor),build=$($version.Build),revision=$($version.Revision)" |
             Tee-Object -FilePath artifacts/os_build.txt
-          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/winrt_displayname_direct_repro.cpp /Fe:artifacts/winrt_direct.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          & cl.exe /nologo /std:c++17 /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /EHsc /W4 /MD /O2 tests/winrt_displayname_direct_repro.cpp /Fe:artifacts/winrt_direct.exe /link windowsapp.lib runtimeobject.lib psapi.lib
           if ($LASTEXITCODE -ne 0) { throw 'Direct WinRT getter reproducer compile failed' }
       - name: Paired direct getter 128-cycle ID-only control versus DisplayName
         shell: pwsh
