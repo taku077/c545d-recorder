@@ -1,0 +1,51 @@
+name: C545D direct WinRT DisplayName getter-only retention control
+
+on:
+  pull_request:
+    paths:
+      - 'tests/winrt_displayname_direct_repro.cpp'
+      - 'tests/analyze_winrt_displayname_direct.py'
+      - '.github/workflows/c545d-winrt-displayname-direct-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  winrt-only:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build independent C++ WinRT getter probe, no GLib
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/winrt_displayname_direct_repro.cpp /Fe:artifacts/winrt_direct.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Direct WinRT test compiler failure' }
+      - name: Compare direct Windows 128-cycle ID-only vs DisplayName
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path artifacts/winrt_direct.exe).Path
+          & $exe control > artifacts/winrt_control.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Direct WinRT ID-only control failure' }
+          & $exe display > artifacts/winrt_display.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Direct WinRT DisplayName probe failure' }
+          py tests/analyze_winrt_displayname_direct.py
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT direct experiment analyzer failed' }
+          Get-Content artifacts/winrt_direct_comparison.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-direct-retention-aggregate
+          path: |
+            artifacts/winrt_control.txt
+            artifacts/winrt_display.txt
+            artifacts/winrt_direct_comparison.csv
+          retention-days: 7
+          if-no-files-found: warn
