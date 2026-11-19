@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - investigate/c545d-display-cache-invalidation-20261119
+      - investigate/gio-2824-key-handle-lifecycle
     paths:
       - tests/c545d_winrt_event_bridge.h
       - tests/c545d_winrt_event_bridge.cpp
