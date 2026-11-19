@@ -8,7 +8,7 @@ import csv
 import sys
 from pathlib import Path
 
-STAGES = ("default", "noop_callback", "skip_manifest", "skip_path", "skip_location", "skip_displayname", "no_displayname_getter", "call_displayname_discard", "skip_current")
+STAGES = ("default", "noop_callback", "skip_manifest", "skip_path", "skip_location", "skip_displayname", "no_displayname_getter", "call_displayname_discard", "cache_displayname", "skip_current")
 TAGS = {"GIO_PROBE": 6, "GIO_HEAP": 7, "GIO_VM": 8}
 
 
@@ -59,6 +59,23 @@ def main():
         control = parse(root / f"{name}_nochange_16.log")
         changed = parse(root / f"{name}_registry_16.log")
         net = {k: changed[k]-control[k] for k in control}
+        if name == "cache_displayname":
+            import re
+            for suffix in ("nochange", "registry"):
+                log = (root / f"cache_displayname_{suffix}_16.log").read_text(
+                    encoding="utf-8"
+                )
+                rows = re.findall(
+                    r"^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$",
+                    log, re.MULTILINE
+                )
+                if not rows:
+                    raise ValueError("Missing cache counters: " + suffix)
+                hits, misses, entries = map(int, rows[-1])
+                if hits <= 0 or misses <= 0 or not 0 < entries <= 1024:
+                    raise ValueError("Unusable cache census: " + suffix)
+                print(f"C545D_DISPLAY_CACHE_VALIDATED,{suffix},"
+                      f"hits={hits},misses={misses},entries={entries}")
         print("UWP_API_STAGE," + name + "," +
               ",".join(f"{k}={v:+d}" for k, v in net.items()))
         rows.append((name, net))
