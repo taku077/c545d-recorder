@@ -38,7 +38,7 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
   $stdout=Join-Path $WorkRoot ($label+'.stdout')
   $stderr=Join-Path $WorkRoot ($label+'.stderr')
   $arguments=@('-e','-q','audiotestsrc','is-live=true','num-buffers=460','wave=sine',
-    '!','audio/x-raw,rate=48000,channels=1','!','wavenc','!','giosink',("location="+$uri))
+    '!','audioconvert','!','audio/x-raw,format=S16LE,rate=48000,channels=1','!','wavenc','!','giosink',("location="+$uri))
   $script:running=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WorkingDirectory $WorkRoot
   $observed=$false
   $pollErrors=0
@@ -84,7 +84,16 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
       throw "C545D_GIO_LOADER_CI_NOT_OBSERVED,mode=$label,polls=$pollCount,exited=$exited,exit_code=$code,max_modules=$maxSeenModules,output_bytes=$bytes,missing_giosink=$noElement,negotiation_or_element_error=$negotiation,poll_errors=$pollErrors"
     }
     if(-not $script:running.WaitForExit(30000)){throw "C545D_GIO_LOADER_CI_PROCESS_TIMEOUT=$label"}
-    if($script:running.ExitCode -ne 0){throw "C545D_GIO_LOADER_CI_PIPELINE_FAILURE=$label"}
+    if($script:running.ExitCode -ne 0){
+      $text=if(Test-Path -LiteralPath $stderr){Get-Content -LiteralPath $stderr -Raw}else{''}
+      $wavSize=if(Test-Path -LiteralPath $output){(Get-Item -LiteralPath $output).Length}else{0}
+      $missingElement=[int]($text -match '(?i)no element|no such element')
+      $capsError=[int]($text -match '(?i)not-negotiated|could not link|no common format')
+      $gioIOError=[int]($text -match '(?i)giosink|GIO.*error|could not open|no such file|error opening file|file exists')
+      $scannerWarning=[int]($text -match '(?i)gstpython.dll')
+      $exitCode=$script:running.ExitCode
+      throw "C545D_GIO_LOADER_CI_PIPELINE_FAILURE,mode=$label,exit_code=$exitCode,wav_bytes=$wavSize,missing_element=$missingElement,caps_error=$capsError,gio_io_error=$gioIOError,optional_gstpython_warning=$scannerWarning,loaded_gio_verified=1"
+    }
     if((Get-Item -LiteralPath $output).Length -lt 30000){
       throw "C545D_GIO_LOADER_CI_WAV_MISSING=$label"
     }
