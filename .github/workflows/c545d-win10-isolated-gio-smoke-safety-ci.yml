@@ -64,43 +64,12 @@ jobs:
             if($ci){$argv+='-CiRunnerOnly'}
             $lines=@(& $ps @argv)
             if($LASTEXITCODE -ne $expectExit -or $lines.Count -ne 1 -or $lines[0] -cne $expected){
-              # Only the script's sanitized fixed-schema numeric line; never raw paths/stderr.
-              Write-Host "C545D_SMOKE_CI_MISMATCH,label=$($label -replace '[^A-Za-z0-9 ]',''),exit_expected=$expectExit,exit_actual=$LASTEXITCODE,lines=$($lines.Count)"
-              foreach($row in $lines){if(([string]$row) -match '^C545D_GIO_ISOLATED_SMOKE,[A-Za-z0-9_=,]+
-            $lines[0] | Add-Content artifacts/numeric/isolated_smoke_ci_results.txt
-          }
-          Check 'Server rejected without runner-only test flag' $candidate $false 3 $blocked
-          $bad=Join-Path $env:RUNNER_TEMP 'invalid-candidate-copy.dll'
-          Copy-Item $candidate $bad
-          [IO.File]::AppendAllText($bad,'0')
-          Check 'Corrupt candidate refused' $bad $true 3 $blocked
-          $fakePath=Join-Path $env:RUNNER_TEMP 'gst-launch-1.0.exe'
-          Copy-Item (Join-Path $env:SystemRoot 'System32\ping.exe') $fakePath
-          $fake=$null
-          try {
-            $fake=Start-Process $fakePath -ArgumentList @('-n','45','127.0.0.1') -WindowStyle Hidden -PassThru
-            Start-Sleep -Milliseconds 300
-            Check 'Active synthetic recorder refused' $candidate $true 3 $blocked
-            if($fake.HasExited){throw 'Synthetic recorder exited early'}
-          } finally {
-            if($fake){
-              if(-not $fake.HasExited){$fake.Kill();[void]$fake.WaitForExit(5000)}
-              $fake.Dispose()
-            }
-          }
-          Check 'Real app-local camera-free GIO trial and owned rollback' $candidate $true 0 $success
-          if((Get-FileHash $orig -Algorithm SHA256).Hash -ne $before -or (Get-FileHash $candidate -Algorithm SHA256).Hash -ne $beforeCandidate){throw 'Original binaries changed'}
-          if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 4){throw 'Missing numeric results'}
-          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: c545d-win10-future-isolated-smoke-camera-free-CI-only-results
-          path: artifacts/numeric/isolated_smoke_ci_results.txt
-          retention-days: 7
-          if-no-files-found: error
-){Write-Host $row}}
+              Write-Host "C545D_SMOKE_CI_MISMATCH,exit_expected=$expectExit,exit_actual=$LASTEXITCODE,lines=$($lines.Count)"
+              foreach($row in $lines){
+                if(([string]$row).StartsWith('C545D_GIO_ISOLATED_SMOKE,')){
+                  Write-Host $row
+                }
+              }
               throw "Wrong gate or numeric result for $label"
             }
             $lines[0] | Add-Content artifacts/numeric/isolated_smoke_ci_results.txt
