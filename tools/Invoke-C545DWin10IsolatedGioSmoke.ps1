@@ -110,12 +110,20 @@ try {
      (Get-FileHash -LiteralPath $testExe -Algorithm SHA256).Hash -ne
      (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash){throw 'BAD_OVERLAY'}
   $phase='STAGED_BIN_OK'
-  foreach($k in @('PATH','GST_REGISTRY','GST_PLUGIN_SCANNER','GST_PLUGIN_SYSTEM_PATH_1_0')){
+  # GStreamer extra plugin paths take precedence over system plugins.
+  # Clear inherited plugin overrides only for this test child, then restore
+  # the caller's process environment exactly in finally.
+  foreach($k in @('PATH','GST_REGISTRY','GST_PLUGIN_SCANNER',
+                  'GST_PLUGIN_SYSTEM_PATH_1_0','GST_PLUGIN_SYSTEM_PATH',
+                  'GST_PLUGIN_PATH_1_0','GST_PLUGIN_PATH')){
     $prior[$k]=[Environment]::GetEnvironmentVariable($k,'Process')
   }
   $env:PATH="$bin;$GStreamerBin;$($prior['PATH'])"
   $env:GST_REGISTRY=Join-Path $stage 'isolated-registry.bin'
   $env:GST_PLUGIN_SCANNER=$scanner
+  $env:GST_PLUGIN_PATH=''
+  $env:GST_PLUGIN_PATH_1_0=''
+  $env:GST_PLUGIN_SYSTEM_PATH=''
   $env:GST_PLUGIN_SYSTEM_PATH_1_0=$plugins
   if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){
     throw 'RECORDER_BECAME_ACTIVE'
