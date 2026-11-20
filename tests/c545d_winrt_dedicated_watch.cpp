@@ -28,6 +28,10 @@ std::atomic<uint64_t> g_shutdown_errors{0};
 std::mutex g_mta_lock;
 CO_MTA_USAGE_COOKIE g_mta_cookie{};
 unsigned g_mta_references=0;
+// Includes windows where a watch is being constructed or its worker is
+// being joined after the opaque token was retired. Guarded by g_mta_lock.
+unsigned g_pending_opens=0;
+unsigned g_pending_closes=0;
 // A C ABI handle is an ever-increasing opaque token, never a raw object
 // address. The table owns one shared reference; each operation takes a short
 // lease under the mutex before accessing native state. Closing removes the
@@ -46,6 +50,14 @@ struct WatchTable {
 WatchTable& watch_table() {
   static WatchTable* const table=new WatchTable;
   return *table;
+}
+
+// Test-only deterministic scheduler hold. No delay outside an explicitly
+// opted-in disposable CI process; the production-like path is unchanged.
+void ci_lifetime_test_pause(const wchar_t* flag) noexcept {
+  wchar_t enabled[4]{};
+  if(GetEnvironmentVariableW(flag,enabled,4)==1 && enabled[0]==L'1')
+    Sleep(80);
 }
 
 struct WatchState {
@@ -254,8 +266,10 @@ extern "C" void c545d_dedicated_runtime_leave(void) {
   std::lock_guard<std::mutex> guard(g_mta_lock);
   if(g_mta_references==0)return;
   if(g_mta_references==1) {
-    // A mistaken early leave must NOT retire COM while a live watcher
-    // depends on it. Caller still owes leave after its final watch close.
+    // Protect *transitions* too: an opening watch is not yet in the table,
+    // and close removes its token before revocation/join completes.
+    // A concurrent leave cannot retire the last COM MTA usage in either gap.
+    if(g_pending_opens || g_pending_closes)return;
     std::lock_guard<std::mutex> watches(watch_table().lock);
     if(!watch_table().watches.empty())return;
   }
@@ -265,25 +279,34 @@ extern "C" void c545d_dedicated_runtime_leave(void) {
   }
 }
 extern "C" int c545d_dedicated_open(c545d_dedicated_watch** out) {
-  {
-    std::lock_guard<std::mutex> guard(g_mta_lock);
-    if(g_mta_references==0) {
-      if(out)*out=nullptr;
-      return 7; // Explicit lifetime contract: never tear down MTA per watcher.
-    }
-  }
   if(!out)return 2;
   *out=nullptr;
+  {
+    std::lock_guard<std::mutex> guard(g_mta_lock);
+    if(g_mta_references==0)return 7; // Enter COM MTA before opening.
+    ++g_pending_opens; // Reserve before releasing g_mta_lock.
+  }
+  ci_lifetime_test_pause(L"C545D_CI_PAUSE_WATCH_OPEN");
+  int result=3;
   try {
     auto owned=std::make_shared<c545d_dedicated_watch>();
     std::lock_guard<std::mutex> guard(watch_table().lock);
     const auto id=watch_table().next.fetch_add(1,std::memory_order_relaxed);
-    if(id==0)return 3; // fail closed on impossible token counter rollover
-    const auto inserted=watch_table().watches.emplace(id,std::move(owned));
-    if(!inserted.second)return 3;
-    *out=reinterpret_cast<c545d_dedicated_watch*>(id);
-    return 0;
-  } catch(...) {return 3;}
+    if(id!=0) {
+      const auto inserted=watch_table().watches.emplace(id,std::move(owned));
+      if(inserted.second) {
+        *out=reinterpret_cast<c545d_dedicated_watch*>(id);
+        result=0;
+      }
+    }
+  } catch(...) {
+    // Failed construction or registration must release the reservation too.
+  }
+  {
+    std::lock_guard<std::mutex> guard(g_mta_lock);
+    --g_pending_opens;
+  }
+  return result;
 }
 extern "C" int c545d_dedicated_snapshot(
     c545d_dedicated_watch* p,uint64_t* gen,uint64_t* locale) {
@@ -315,16 +338,24 @@ extern "C" void c545d_dedicated_close(c545d_dedicated_watch* p) {
   if(!p)return;
   std::shared_ptr<c545d_dedicated_watch> owned;
   {
-    std::lock_guard<std::mutex> guard(watch_table().lock);
+    // Same lock order as runtime_leave(): MTA first, then watch table.
+    // Mark the closing transition *before* publishing an empty table.
+    std::lock_guard<std::mutex> mta_guard(g_mta_lock);
+    std::lock_guard<std::mutex> table_guard(watch_table().lock);
     const auto it=watch_table().watches.find(reinterpret_cast<uintptr_t>(p));
     if(it==watch_table().watches.end())return;
+    ++g_pending_closes;
     owned=std::move(it->second);
     watch_table().watches.erase(it);
   }
-  // All new calls reject the retired token. Existing readers hold leases
-  // and can safely finish; callbacks are deactivated and revoked before close
-  // returns. Repeated close of an old token is a no-op, no dangling free.
+  ci_lifetime_test_pause(L"C545D_CI_PAUSE_WATCH_CLOSE");
+  // The last MTA usage stays alive until owner-thread callback revocation
+  // and join complete, despite removal of the public token.
   owned->stop_and_join();
+  {
+    std::lock_guard<std::mutex> guard(g_mta_lock);
+    --g_pending_closes;
+  }
 }
 extern "C" int c545d_dedicated_ci_completion_counters(
     c545d_dedicated_watch* p, uint64_t* install_done,
@@ -356,6 +387,20 @@ extern "C" int c545d_dedicated_ci_callback_exception_count(
   if(!watch)return 3;
   *faults=watch->state->ci_callback_exceptions.load(
       std::memory_order_acquire);
+  return 0;
+}
+
+extern "C" int c545d_dedicated_ci_lifetime_counters(
+    uint32_t* references,uint32_t* opening,uint32_t* closing,
+    uint32_t* registered) {
+  if(!references || !opening || !closing || !registered)return 2;
+  // Read the two tables under their established global lock order.
+  std::lock_guard<std::mutex> guard(g_mta_lock);
+  std::lock_guard<std::mutex> table_guard(watch_table().lock);
+  *references=g_mta_references;
+  *opening=g_pending_opens;
+  *closing=g_pending_closes;
+  *registered=static_cast<uint32_t>(watch_table().watches.size());
   return 0;
 }
 
