@@ -13,9 +13,13 @@ param(
   [switch]$ObserveNaturalGioRefresh,
   [switch]$StressConcurrentGio,
   [switch]$InjectParserFailureOnce,
-  [switch]$ObserveAppInfoMonitor
+  [switch]$ObserveAppInfoMonitor,
+  [switch]$SkipCiGioRegistryStimulus
 )
 $ErrorActionPreference='Stop'
+if($SkipCiGioRegistryStimulus -and -not $ObserveAppInfoMonitor) {
+  throw 'C545D_NO_REGISTRY_STIMULUS_REQUIRES_MONITOR_MODE'
+}
 if($ObserveAppInfoMonitor -and (-not $ObserveNaturalGioRefresh -or -not $GioScanDll)) {
   throw 'C545D_APPINFO_MONITOR_REQUIRES_NATURAL_GIO_MODE'
 }
@@ -92,6 +96,12 @@ function Await-Completion([string]$stage) {
 }
 function Scan-Gio([int]$stage) {
   if (-not $GioScanDll) { return }
+  if($SkipCiGioRegistryStimulus -and $stage -ge 1 -and $stage -le 3) {
+    # Do NOT invoke Scan(1..3): it writes synthetic RegisteredApplications
+    # values. This one run measures genuine Windows MSIX events only.
+    "C545D_GIO_NO_CI_REGISTRY_STIMULUS,stage=$stage,write=0"
+    return
+  }
   $result=[C545DGioRealMSIX]::Scan($stage)
   if($result -le 0) {
     throw "C545D_GIO_REAL_PACKAGE_SCAN_FAILED,stage=$stage,status=$result"
