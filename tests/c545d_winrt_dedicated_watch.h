@@ -1,7 +1,11 @@
 /* CI ONLY — Dedicated-thread WinRT PackageCatalog watcher, C interface.
  * There is no dependency on the calling thread's COM apartment.
  * No real package install/update, secrets or recorder state accessed.
- * Concurrent close and snapshot on same watch is outside this prototype API.
+ * Handles are opaque non-reusable tokens, not directly dereferenceable
+ * pointers. Snapshot and synthetic event calls obtain a registry lease before
+ * touching watch state; concurrent close removes its token and joins the
+ * event-owning MTA thread. Calls racing close may return inactive/retry codes.
+ * Do not unload the DLL while native calls are executing.
  */
 #ifndef C545D_WINRT_DEDICATED_WATCH_H
 #define C545D_WINRT_DEDICATED_WATCH_H
