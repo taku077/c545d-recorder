@@ -58,20 +58,20 @@ jobs:
           before="  c545d_bridge_scan_start ();\n\n  /* Synthetic event delivery only."
           assert src.count(before)==1,"GIO worker enum hook anchor changed"
           after=r"""  static gint c545d_ci_worker_locale_scans;
-  const gint c545d_ci_scan = g_atomic_int_add (&c545d_ci_worker_locale_scans, 1) + 1;
-  if (c545d_ci_scan == 5)
-    {
-      ULONG count = 0;
-      const WCHAR ci_languages[] = L"fr-FR\0";
-      if (!SetThreadPreferredUILanguages (MUI_LANGUAGE_NAME, ci_languages, &count) ||
-          count == 0)
-        g_error ("C545D_GIO_WORKER_LOCALE_CHANGE_FAILED");
-      g_print ("C545D_GIO_WORKER_LOCALE_CHANGE,scan=5,count=%lu\n",
-               (unsigned long) count);
-    }
-  c545d_bridge_scan_start ();
-
-  /* Synthetic event delivery only."""
+            const gint c545d_ci_scan = g_atomic_int_add (&c545d_ci_worker_locale_scans, 1) + 1;
+            if (c545d_ci_scan == 5)
+              {
+                ULONG count = 0;
+                const WCHAR ci_languages[] = L"fr-FR\0";
+                if (!SetThreadPreferredUILanguages (MUI_LANGUAGE_NAME, ci_languages, &count) ||
+                    count == 0)
+                  g_error ("C545D_GIO_WORKER_LOCALE_CHANGE_FAILED");
+                g_print ("C545D_GIO_WORKER_LOCALE_CHANGE,scan=5,count=%lu\n",
+                         (unsigned long) count);
+              }
+            c545d_bridge_scan_start ();
+          
+            /* Synthetic event delivery only."""
           p.write_text(src.replace(before,after,1),encoding="utf-8")
           PY
           git -C glib-src diff --check
