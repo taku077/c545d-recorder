@@ -50,10 +50,10 @@ jobs:
             throw "Windows resource-only package operation not qualified: $rc"
           }
           $text=Get-Content artifacts/resource_event_numeric.txt -Raw
-          if($text -notmatch 'C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,synthetic_events=0,CI_only=1') {
+          if($text -notmatch 'C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,install_terminal_delta=\d+,update_terminal_delta=\d+,uninstall_terminal_delta=\d+,synthetic_events=0,CI_only=1') {
             throw 'Missing genuine resource ADD provenance record'
           }
-          if($text -notmatch 'C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,synthetic_events=0,CI_only=1') {
+          if($text -notmatch 'C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,install_terminal_delta=\d+,update_terminal_delta=\d+,uninstall_terminal_delta=\d+,synthetic_events=0,CI_only=1') {
             throw 'Missing genuine resource REMOVE provenance record'
           }
           if($text -notmatch 'C545D_RESOURCE_CI_CLEANUP_EXECUTED=1,runner_only=1'){
