@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a619ed2e151515baf4dbd732b6e998c0ed08424e`
-- **PR updated at (UTC):** `2026-11-20T18:59:47Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a619ed2e151515baf4dbd732b6e998c0ed08424e/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `c2235dedc9e94a7b8807a2ec25dc4c51bb7244ee`
+- **PR updated at (UTC):** `2026-11-20T19:02:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c2235dedc9e94a7b8807a2ec25dc4c51bb7244ee/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D future Win10 app-local GIO smoke safety CI ONLY | in_progress | [#44797970370](https://github.com/taku077/c545d-recorder/actions/runs/44797970370) |
+| C545D active development handoff auto-refresh | in_progress | [#44798447601](https://github.com/taku077/c545d-recorder/actions/runs/44798447601) |
+| C545D future Win10 app-local GIO smoke safety CI ONLY | in_progress | [#44798441259](https://github.com/taku077/c545d-recorder/actions/runs/44798441259) |
 
 ## Current development findings from the active PR
 
