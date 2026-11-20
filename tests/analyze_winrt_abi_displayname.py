@@ -9,11 +9,11 @@ import csv
 import re
 from pathlib import Path
 
-SAMPLE = re.compile(r"^WINRT_ABI,(control|projected|raw|freshcontrol|freshraw),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)$")
-DONE = re.compile(r"^WINRT_ABI_DONE,(control|projected|raw|freshcontrol|freshraw),cycles=128,package_count=(\d+),api_errors=(\d+),checksum=(\d+)$")
+SAMPLE = re.compile(r"^WINRT_ABI,(control|projected|raw|freshcontrol|freshraw|threadcontrol|threadraw),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)$")
+DONE = re.compile(r"^WINRT_ABI_DONE,(control|projected|raw|freshcontrol|freshraw|threadcontrol|threadraw),cycles=128,package_count=(\d+),api_errors=(\d+),checksum=(\d+)$")
 FIELDS = ("private_bytes","heap_busy_bytes","heap_busy_blocks","handles")
 STEPS = (0,32,64,96,128)
-MODES = ("control","projected","raw","freshcontrol","freshraw")
+MODES = ("control","projected","raw","freshcontrol","freshraw","threadcontrol","threadraw")
 
 
 def parse(data: str, mode: str):
@@ -65,6 +65,7 @@ def compare(contents):
             "projected_minus_control":diffs["projected"]-diffs["control"],
             "raw_minus_control":diffs["raw"]-diffs["control"],
             "freshraw_minus_freshcontrol":diffs["freshraw"]-diffs["freshcontrol"],
+            "threadraw_minus_threadcontrol":diffs["threadraw"]-diffs["threadcontrol"],
             "projected_last64_minus_control":
                 (tables["projected"][128][i]-tables["projected"][64][i])-
                 (tables["control"][128][i]-tables["control"][64][i]),
@@ -74,6 +75,9 @@ def compare(contents):
             "freshraw_last64_minus_freshcontrol":
                 (tables["freshraw"][128][i]-tables["freshraw"][64][i])-
                 (tables["freshcontrol"][128][i]-tables["freshcontrol"][64][i]),
+            "threadraw_last64_minus_threadcontrol":
+                (tables["threadraw"][128][i]-tables["threadraw"][64][i])-
+                (tables["threadcontrol"][128][i]-tables["threadcontrol"][64][i]),
         }
         output.append(row)
     return output, counts
@@ -82,7 +86,7 @@ def compare(contents):
 def selftest():
     def fake(mode):
         s=[]
-        factors={"control":0,"projected":2,"raw":2,"freshcontrol":0,"freshraw":2}
+        factors={"control":0,"projected":2,"raw":2,"freshcontrol":0,"freshraw":2,"threadcontrol":0,"threadraw":2}
         for step in STEPS:
             f=factors[mode]*step
             s.append(f"WINRT_ABI,{mode},{step},{100000+f*4096},"
@@ -100,12 +104,13 @@ def selftest():
         {**data,"raw":data["raw"].replace("32,0,0\nWINRT_ABI_DONE","32,0,1\nWINRT_ABI_DONE")},
         {**data,"raw":data["raw"].replace("package_count=32","package_count=2")},
         {**data,"freshraw":data["freshraw"].replace("WINRT_ABI_DONE","BAD_DONE")},
+        {**data,"threadraw":data["threadraw"].replace("WINRT_ABI,threadraw,96,","WINRT_ABI,threadraw,64,")},
     ]
     for broken in invalid:
         try:compare(broken)
         except ValueError: pass
         else: raise AssertionError("corrupt evidence was accepted")
-    print("C545D_WINRT_ABI_ANALYZER_SELFTEST_PASS,valid=1,rejected=5")
+    print("C545D_WINRT_ABI_ANALYZER_SELFTEST_PASS,valid=1,rejected=6")
 
 
 def main():
@@ -130,7 +135,8 @@ def main():
           f"control_packages={counts['control']},"
           f"projected_packages={counts['projected']},raw_packages={counts['raw']},"
           f"freshcontrol_packages={counts['freshcontrol']},freshraw_packages={counts['freshraw']},"
-          "all_hstrings_released=1,NO_GLIB=1,NO_RECORDER=1,"
+          f"threadcontrol_packages={counts['threadcontrol']},threadraw_packages={counts['threadraw']},"
+          "all_hstrings_released=1,disposable_MTA_apartment_per_scan=1,NO_GLIB=1,NO_RECORDER=1,"
           "OS_CAUSALITY_NOT_PROVEN=1")
 
 
