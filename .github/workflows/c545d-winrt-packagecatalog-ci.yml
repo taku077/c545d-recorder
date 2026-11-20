@@ -1,0 +1,46 @@
+name: C545D PackageCatalog invalidation signal feasibility (isolated Windows)
+
+on:
+  push:
+    branches: ['investigate/gio-2824-key-handle-lifecycle', 'investigate/c545d-packagecatalog-invalidation-probe-20261119']
+    paths:
+      - '.github/workflows/c545d-winrt-packagecatalog-ci.yml'
+      - 'tests/winrt_packagecatalog_event_probe.cpp'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/c545d-winrt-packagecatalog-ci.yml'
+      - 'tests/winrt_packagecatalog_event_probe.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-events:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile and run current-user package event subscription and locale getter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/winrt_packagecatalog_event_probe.cpp /Fe:artifacts/winrt_packagecatalog_event_probe.exe /link windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'PackageCatalog current-user WinRT API compile failed' }
+          & artifacts/winrt_packagecatalog_event_probe.exe | Tee-Object -FilePath artifacts/packagecatalog_status.txt
+          if ($LASTEXITCODE -ne 0) { throw 'PackageCatalog subscription/locale probe failed' }
+          if ((Get-Content artifacts/packagecatalog_status.txt -Raw) -notmatch 'C545D_PACKAGECATALOG_EVENT_API_PASS') {
+            throw 'PackageCatalog registration count marker missing'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-packagecatalog-api-numerical-only
+          path: artifacts/packagecatalog_status.txt
+          retention-days: 7
+          if-no-files-found: warn

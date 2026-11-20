@@ -1,0 +1,118 @@
+name: C545D GIO UWP WinRT API versus XML and callback memory isolation
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_uwp_api_isolation.py'
+      - 'tests/patch_glib_uwp_displayname_cache_diagnostic.py'
+      - 'tests/gio_appinfo_displayname_snapshot.c'
+      - 'tests/analyze_gio_uwp_api_isolation.py'
+      - '.github/workflows/c545d-gio-uwp-api-isolation-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c545d-uwp-api-isolation
+  cancel-in-progress: true
+
+jobs:
+  isolate-uwp-residual:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Build isolated GLib with unchanged combined fix and diagnostic UWP boundary guards
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_display_snapshot.exe ../tests/gio_appinfo_displayname_snapshot.c $(pkg-config --cflags --libs gio-2.0)'
+          mkdir -p artifacts
+          git -C glib-src diff -- gio/gwin32appinfo.c gio/gwin32packageparser.c gio/gwin32registrykey.c > artifacts/diagnostic_source.diff
+          echo 'DIAGNOSTIC_ONLY; NOT_PRODUCT_DLL' > artifacts/NOT_FOR_PRODUCTION.txt
+
+      - name: Compare exact GAppInfo display-name hashes with and without diagnostic cache
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          unset C545D_DIAG_UWP_CACHE_DISPLAYNAME || true
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/display_snapshot_uncached.log
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_display_snapshot.exe" > artifacts/display_snapshot_cached.log
+          grep '^C545D_APPINFO_DISPLAY_SNAPSHOT' artifacts/display_snapshot_uncached.log > artifacts/display_snapshot_uncached.txt
+          grep '^C545D_APPINFO_DISPLAY_SNAPSHOT' artifacts/display_snapshot_cached.log > artifacts/display_snapshot_cached.txt
+          python -c 'from pathlib import Path; a=Path("artifacts/display_snapshot_uncached.txt").read_bytes(); b=Path("artifacts/display_snapshot_cached.txt").read_bytes(); assert a == b, "Cache changed GLib AppInfo display-name hash"; print("C545D_DISPLAYNAME_HASH_PARITY_PASS")'
+          grep -q '^C545D_DISPLAY_CACHE,hits=' artifacts/display_snapshot_cached.log
+          unset C545D_DIAG_UWP_CACHE_DISPLAYNAME
+          echo 'C545D_DISPLAY_CACHE_INITIAL_SNAPSHOT_PARITY_PASS; DIAGNOSTIC_ONLY'
+
+      - name: Paired 16-cycle A/B scan including getter-only DisplayName ablation and cached original values
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count
+          unset C545D_HANDLE_EXE || true
+          for stage in default noop_callback skip_manifest skip_path skip_location skip_displayname no_displayname_getter call_displayname_discard cache_displayname skip_current; do
+            unset C545D_DIAG_UWP_NOOP_CALLBACK C545D_DIAG_UWP_SKIP_MANIFEST C545D_DIAG_UWP_SKIP_PATH C545D_DIAG_UWP_SKIP_LOCATION C545D_DIAG_UWP_SKIP_DISPLAYNAME C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER C545D_DIAG_UWP_CALL_DISPLAYNAME_DISCARD C545D_DIAG_UWP_CACHE_DISPLAYNAME C545D_DIAG_UWP_SKIP_CURRENT || true
+            case "$stage" in
+              noop_callback) export C545D_DIAG_UWP_NOOP_CALLBACK=1 ;;
+              skip_manifest) export C545D_DIAG_UWP_SKIP_MANIFEST=1 ;;
+              skip_path) export C545D_DIAG_UWP_SKIP_PATH=1 ;;
+              skip_location) export C545D_DIAG_UWP_SKIP_LOCATION=1 ;;
+              skip_displayname) export C545D_DIAG_UWP_SKIP_DISPLAYNAME=1 ;;
+              no_displayname_getter) export C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER=1 ;;
+              call_displayname_discard) export C545D_DIAG_UWP_CALL_DISPLAYNAME_DISCARD=1 ;;
+              cache_displayname) export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1 ;;
+              skip_current) export C545D_DIAG_UWP_SKIP_CURRENT=1 ;;
+            esac
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=16 --no-registry-change --heap-summary --vm-summary --report-types > "artifacts/$stage"_nochange_16.log
+            grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/$stage"_nochange_16.log
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=16 --heap-summary --vm-summary --report-types > "artifacts/$stage"_registry_16.log
+            grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/$stage"_registry_16.log
+            if [ "$stage" = cache_displayname ]; then
+              grep -q '^C545D_DISPLAY_CACHE,hits=' "artifacts/$stage"_registry_16.log
+              grep -q '^C545D_DISPLAY_CACHE,hits=' "artifacts/$stage"_nochange_16.log
+            fi
+          done
+
+      - name: Analyze WinRT versus XML versus callback with matched controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_uwp_api_isolation.py
+          if ($LASTEXITCODE -ne 0) { throw 'UWP API boundary data invalid/incomplete' }
+          Get-Content artifacts/uwp_api_stage_deltas.csv
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-gio-uwp-api-boundaries
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn

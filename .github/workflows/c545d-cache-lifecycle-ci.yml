@@ -1,0 +1,43 @@
+name: C545D DisplayName cache lifecycle correctness isolated Windows
+
+on:
+  push:
+    branches:
+      - investigate/c545d-display-cache-invalidation-20261119
+    paths:
+      - tests/winrt_displayname_cache_lifecycle_probe.cpp
+      - .github/workflows/c545d-cache-lifecycle-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-lifecycle:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build exact-value owned cache lifecycle and real WinRT package snapshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/winrt_displayname_cache_lifecycle_probe.cpp /Fe:artifacts/winrt_cache_lifecycle.exe /link windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT cache lifecycle compile failed' }
+          & artifacts/winrt_cache_lifecycle.exe | Tee-Object -FilePath artifacts/cache_lifecycle_summary.txt
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT cache lifecycle test failed' }
+          $result=Get-Content artifacts/cache_lifecycle_summary.txt -Raw
+          foreach($mark in @('CACHE_LIFECYCLE_MODEL_PASS', 'CACHE_LIFECYCLE_WINRT_PASS')) {
+            if ($result -notmatch $mark) { throw "Missing expected lifecycle result: $mark" }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-displayname-cache-lifecycle-aggregate
+          path: artifacts/cache_lifecycle_summary.txt
+          retention-days: 7
+          if-no-files-found: warn

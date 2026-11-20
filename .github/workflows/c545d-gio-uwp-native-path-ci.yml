@@ -1,0 +1,87 @@
+name: C545D GIO UWP native package-path semantic and memory A/B
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_uwp_native_path_diagnostic.py'
+      - 'tests/analyze_gio_native_path.py'
+      - '.github/workflows/c545d-gio-uwp-native-path-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c545d-gio-uwp-native-path
+  cancel-in-progress: true
+
+jobs:
+  native-path:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Build unchanged GLib memory fix with CI-only native-path experiment
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_native_path_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+          echo 'DIAGNOSTIC_ONLY; NOT_PRODUCTION_DLL' > artifacts/NOT_FOR_PRODUCTION.txt
+
+      - name: Run paired 16-cycle WinRT versus native API with fail-closed path comparison
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count
+          unset C545D_HANDLE_EXE || true
+          for mode in winrt native compare; do
+            unset C545D_DIAG_UWP_NATIVE_PATH C545D_DIAG_UWP_NATIVE_COMPARE || true
+            case "$mode" in
+              native) export C545D_DIAG_UWP_NATIVE_PATH=1 ;;
+              compare) export C545D_DIAG_UWP_NATIVE_PATH=1 C545D_DIAG_UWP_NATIVE_COMPARE=1 ;;
+            esac
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=16 --no-registry-change --heap-summary --vm-summary --report-types > "artifacts/$mode"_nochange_16.log
+            grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/$mode"_nochange_16.log
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=16 --heap-summary --vm-summary --report-types > "artifacts/$mode"_registry_16.log
+            grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/$mode"_registry_16.log
+          done
+
+      - name: Fail on unequal paths and report independent memory/heap differences
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_native_path.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native path not equivalent or test data invalid' }
+          Get-Content artifacts/native_path_comparison.csv
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-gio-native-package-path
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn

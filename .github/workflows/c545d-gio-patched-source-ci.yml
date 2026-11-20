@@ -1,0 +1,68 @@
+name: GLib 2.82.4 experimental AppInfo rescan isolation
+
+on:
+  pull_request:
+    paths:
+      - 'patches/glib-2.82.4-static-appinfo-experiment.patch'
+      - '.github/workflows/c545d-gio-patched-source-ci.yml'
+      - 'tests/gio_appinfo_key_handle_probe.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-and-compare:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install build tools and verify version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'Meson tools install failed' }
+          py -m mesonbuild.mesonmain --version
+          git --version
+      - name: Obtain exact upstream GLib tag and apply isolated source patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $glib
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch exact GLib source tag' }
+          $hash=(git -C $glib rev-parse HEAD).Trim()
+          Write-Host "GLIB_2824_SOURCE_SHA=$hash"
+          git -C $glib apply --check "$env:GITHUB_WORKSPACE/patches/glib-2.82.4-static-appinfo-experiment.patch"
+          if ($LASTEXITCODE -ne 0) { throw 'Experimental patch does not apply to exact source' }
+          git -C $glib apply "$env:GITHUB_WORKSPACE/patches/glib-2.82.4-static-appinfo-experiment.patch"
+          if ($LASTEXITCODE -ne 0) { throw 'Source patch apply failed' }
+          git -C $glib diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Modified source has whitespace errors' }
+      - name: Configure isolated GLib build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-experiment-build'
+          py -m mesonbuild.mesonmain setup $build $glib --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if ($LASTEXITCODE -ne 0) { throw 'GLib native build configure failed' }
+      - name: Compile experimental GLib DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-experiment-build'
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if ($LASTEXITCODE -ne 0) { throw 'GLib native source build failed' }
+          $gio=@(Get-ChildItem $build -Recurse -Filter 'gio-2.0-0.dll' -File)
+          if ($gio.Count -ne 1) { throw "Expected exactly one patched GIO DLL, got $($gio.Count)" }
+          Write-Host "PATCHED_GIO_DLL_BUILT=$($gio[0].Name)"
+      - name: Report diagnostic-only build status
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host 'SOURCE_BUILD_PASS; no production GIO DLL distributed or deployed'

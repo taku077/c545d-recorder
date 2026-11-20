@@ -1,0 +1,81 @@
+name: C545D GLib original-value cache forced-refresh ownership control
+
+on:
+  push:
+    branches:
+      - investigate/c545d-display-cache-invalidation-20261119
+    paths:
+      - tests/patch_glib_uwp_displayname_cache_diagnostic.py
+      - tests/analyze_gio_cache_refresh.py
+      - .github/workflows/c545d-gio-cache-refresh-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-gio-cache:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Compile isolated GLib 2.82.4 exact-value DisplayName cache with synthetic refresh hook
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+          echo 'CI_ONLY_FAKE_INVALIDATION_NOT_PRODUCTION' > artifacts/NOT_FOR_PRODUCTION.txt
+
+      - name: Compare 16-cycle cache with/without four synthetic invalidations
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          for mode in cache refresh; do
+            unset C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
+            if [ "$mode" = refresh ]; then export C545D_DIAG_UWP_CACHE_REFRESH_EVERY=4; fi
+            for scope in nochange registry; do
+              args=(--cycles=16 --heap-summary --vm-summary --report-types)
+              if [ "$scope" = nochange ]; then args+=(--no-registry-change); fi
+              meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" "${args[@]}" > "artifacts/${mode}_${scope}_16.log"
+              grep -q 'GIO_PROBE_DONE,cycles=16' "artifacts/${mode}_${scope}_16.log"
+            done
+          done
+      - name: Assert owned-cache invalidation and report memory/handles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_cache_refresh.py | Tee-Object -FilePath artifacts/cache_refresh_aggregate.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Actual GLib cache invalidation failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-16-cycle-forced-invalidation
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
