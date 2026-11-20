@@ -15,6 +15,7 @@
 #include <vector>
 #include <stdexcept>
 #include <exception>
+#include <process.h>
 
 struct Snapshot {
   SIZE_T private_usage = 0;
@@ -89,15 +90,64 @@ static uint64_t enumerate(
   return checksum;
 }
 
+/* One disposable MTA thread and COM apartment PER enumeration. This is
+ * deliberately closer to GLib's CoInitializeEx()/CoUninitialize() per scan
+ * than a persistent caller apartment. Never run on the recording host.
+ */
+struct ThreadWork {
+  int mode=0;
+  uint32_t packages=0;
+  uint32_t errors=0;
+  uint64_t checksum=0;
+  int failed=0;
+};
+
+struct ThreadApartment {
+  ThreadApartment() {
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+  }
+  ~ThreadApartment() { winrt::uninit_apartment(); }
+};
+
+static unsigned __stdcall one_thread_scan(void *context) noexcept {
+  auto &w=*reinterpret_cast<ThreadWork*>(context);
+  try {
+    ThreadApartment apartment;
+    winrt::Windows::Management::Deployment::PackageManager fresh;
+    w.checksum=enumerate(fresh,w.mode,w.packages,w.errors);
+  } catch(...) {
+    w.failed=1;
+  }
+  return 0;
+}
+static uint64_t run_on_new_mta_thread(int api_mode, uint32_t &packages,
+                                       uint32_t &errors) {
+  ThreadWork w;
+  w.mode=api_mode;
+  const uintptr_t raw=_beginthreadex(nullptr,0,one_thread_scan,&w,0,nullptr);
+  if(!raw) throw std::runtime_error("Could not start disposable MTA worker");
+  HANDLE h=reinterpret_cast<HANDLE>(raw);
+  const DWORD status=WaitForSingleObject(h,30000);
+  CloseHandle(h);
+  if(status!=WAIT_OBJECT_0 || w.failed)
+    throw std::runtime_error("Disposable MTA enumeration did not finish");
+  packages=w.packages;
+  errors=w.errors;
+  return w.checksum;
+}
+
 int main(int argc, char** argv) {
   if (argc != 2 || (strcmp(argv[1],"control") &&
       strcmp(argv[1],"projected") && strcmp(argv[1],"raw") &&
-      strcmp(argv[1],"freshcontrol") && strcmp(argv[1],"freshraw")))
+      strcmp(argv[1],"freshcontrol") && strcmp(argv[1],"freshraw") &&
+      strcmp(argv[1],"threadcontrol") && strcmp(argv[1],"threadraw")))
     return 2;
   const int mode = strcmp(argv[1],"control") == 0 ? 0 :
                    strcmp(argv[1],"projected") == 0 ? 1 :
                    strcmp(argv[1],"raw") == 0 ? 2 :
-                   strcmp(argv[1],"freshcontrol") == 0 ? 3 : 4;
+                   strcmp(argv[1],"freshcontrol") == 0 ? 3 :
+                   strcmp(argv[1],"freshraw") == 0 ? 4 :
+                   strcmp(argv[1],"threadcontrol") == 0 ? 5 : 6;
   try {
     const PCWSTR empty_from_null = WindowsGetStringRawBuffer(nullptr, nullptr);
     if (empty_from_null == nullptr || empty_from_null[0] != L'\0') {
@@ -114,6 +164,8 @@ int main(int argc, char** argv) {
     if (mode < 3) manager = PackageManager();
     uint32_t packages = 0, errors = 0;
     auto one_pass = [&]() -> uint64_t {
+      if (mode >= 5)
+        return run_on_new_mta_thread(mode==5?0:2,packages,errors);
       if (mode >= 3) {
         PackageManager fresh;
         return enumerate(fresh, mode == 3 ? 0 : 2, packages, errors);
