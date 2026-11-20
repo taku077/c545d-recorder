@@ -45,6 +45,9 @@ jobs:
           [Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors) | Out-Null
           if($errors.Count -gt 0){throw 'Host smoke PowerShell syntax errors'}
           $txt=Get-Content $script -Raw
+          $gatePos=$txt.IndexOf('$phase=''SDK_INPUT_OK''')
+          $compilerPos=$txt.IndexOf('Add-Type -TypeDefinition')
+          if($gatePos -lt 0 -or $compilerPos -le $gatePos){throw 'Helper compilation must follow all no-run safety gates'}
           foreach($forbidden in @('Stop-Process','Set-ItemProperty','Remove-ItemProperty','Set-Content','Invoke-WebRequest','Invoke-RestMethod')){
             if($txt -match ('(?im)^\s*'+[regex]::Escape($forbidden)+'\b')){throw "Host smoke forbidden operation: $forbidden"}
           }
