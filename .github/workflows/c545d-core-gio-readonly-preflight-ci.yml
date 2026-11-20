@@ -89,6 +89,11 @@ jobs:
             throw 'Missing one strict negative control'
           }
           Write-Host 'C545D_READONLY_GIO_PREFLIGHT_CI_PASS,matching_reference=1,tampered_candidate_rejected=1,unknown_installed_reference_rejected=1,win10_not_inferred_from_server=1,host_modified=0'
+          # External Windows PowerShell intentionally exited 3 on the final
+          # negative test. Clear only that expected subprocess status after
+          # every strict assertion passed; do not mask any earlier failure.
+          $global:LASTEXITCODE=0
+          exit 0
       - uses: actions/upload-artifact@v4
         if: success()
         with:
