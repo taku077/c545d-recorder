@@ -50,13 +50,19 @@ try {
   $line=@(& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $check -GStreamerBin $GStreamerBin -ReferenceManifest $ReferenceManifest 2>$null)
   if($LASTEXITCODE -ne 0 -or $line.Count -ne 1){throw 'FINGERPRINT_FAILED'}
   $l=[string]$line[0]
-  if($l -notmatch '^C545D_HOST_GIO_FINGERPRINT,' -or
-     $l -notmatch ',dll_found=6,dll_hash_matched=6,' -or
-     $l -notmatch ',dll_missing=0,pe64_failed=0,' -or
-     $l -notmatch ',recorder_active=0,' -or
-     $l -notmatch ',pinned_sdk_match=1,' -or
-     $l -notmatch ',install_approved=0,live_test_authorized=0,' -or
-     ($l -notmatch ',windows10=1,' -and -not $isCi)){throw 'HOST_NOT_ELIGIBLE'}
+  # Validate the ENTIRE sanitized fingerprint schema, not permissive
+  # fragments. A truncated or inconsistent checker result must not launch.
+  $prefix='C545D_HOST_GIO_FINGERPRINT,manifest_valid=1,runtime_found=1,'+
+          'executables_found=1,dll_found=6,dll_hash_matched=6,'+
+          'gio_match=1,glib_match=1,gobject_match=1,gmodule_match=1,'+
+          'intl_match=1,zlib_match=1,dll_missing=0,pe64_failed=0,'
+  $suffix=',recorder_active=0,pinned_sdk_match=1,install_approved=0,'+
+          'live_test_authorized=0,reason='
+  $verifiedWin10=$prefix+'windows10=1'+$suffix+'PINNED_SDK_HASH_MATCH_READ_ONLY'
+  $verifiedCiServer=$prefix+'windows10=0'+$suffix+'PINNED_SDK_MATCH_NON_WIN10'
+  if($l -cne $verifiedWin10 -and (-not $isCi -or $l -cne $verifiedCiServer)){
+    throw 'HOST_NOT_ELIGIBLE'
+  }
   $phase='FINGERPRINT_OK'
   if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){throw 'RECORDER_ACTIVE'}
   if(-not (Test-Path -LiteralPath $CandidateDll -PathType Leaf) -or
