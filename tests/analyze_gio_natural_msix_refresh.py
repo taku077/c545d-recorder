@@ -70,7 +70,8 @@ def parse(data: str) -> dict[str, int | str]:
     }
 
 
-def validate_parallel(data: str, values: dict[str, int | str]) -> None:
+def validate_parallel(data: str, values: dict[str, int | str],
+                      expect_parser_fault: bool = False) -> None:
     rows = [(int(stage), int(callers), int(apps))
             for stage, callers, apps in PARALLEL.findall(data)]
     if (len(rows) != 3 or {stage for stage, _, _ in rows} != {1, 2, 3}
@@ -80,8 +81,12 @@ def validate_parallel(data: str, values: dict[str, int | str]) -> None:
         if apps != values[f"natural_{('install', 'update', 'uninstall')[stage-1]}_apps"]:
             raise ValueError("parallel GAppInfo callers disagreed with natural count")
     seq = [int(n) for n in QUEUED.findall(data)]
-    if seq != [1, 2, 3]:
+    expected = [1, 2, 3, 4] if expect_parser_fault else [1, 2, 3]
+    if seq != expected:
         raise ValueError(f"duplicate or missing queued GLib generation rebuild: {seq!r}")
+    faults = len(re.findall(r"(?m)^C545D_CI_PACKAGE_PARSE_FAULT,once=1\s*$", data))
+    if faults != int(expect_parser_fault):
+        raise ValueError(f"wrong one-shot parser failure count: {faults}")
 
 def selftest() -> None:
     fixture = "\n".join([
@@ -132,6 +137,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--expect-parallel", action="store_true")
+    ap.add_argument("--expect-parser-fault", action="store_true")
     ap.add_argument("--input", type=Path,
                     default=Path("artifacts/real_msix_natural_output.txt"))
     args = ap.parse_args()
@@ -140,10 +146,13 @@ def main() -> None:
         return
     raw = args.input.read_text(encoding="utf-8-sig", errors="replace")
     values = parse(raw)
+    if args.expect_parser_fault and not args.expect_parallel:
+        raise ValueError('parser fault check requires parallel query evidence')
     if args.expect_parallel:
-        validate_parallel(raw, values)
+        validate_parallel(raw, values, args.expect_parser_fault)
         values["parallel_eight_callers_each_event"] = 1
-        values["lazy_epoch_rebuilds_queued"] = 3
+        values["lazy_epoch_rebuilds_queued"] = 4 if args.expect_parser_fault else 3
+        values["parser_failure_retried"] = int(args.expect_parser_fault)
     fields = ",".join(f"{k}={v}" for k, v in values.items())
     print(f"C545D_NATURAL_MSIX_REFRESH_OBSERVATION,{fields},"
           "window_s=1.3,update_freshness_not_proven=1,"
