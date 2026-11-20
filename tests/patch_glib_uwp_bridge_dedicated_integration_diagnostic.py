@@ -41,9 +41,120 @@ def main():
        "  if (!c545d_bridge_ready ||\n"
        "      c545d_bridge_snapshot_func (c545d_bridge_watch, &generation, &locale) != 0)",
        "thread-independent read")
+    # Both PackageCatalog generation and effective UI locale are part of
+    # the cache lifetime. A locale change without package event MUST invalidate.
+    s=replace_once(s,
+      r"""static guint64
+c545d_bridge_read_generation (void)
+{
+  guint64 generation;
+  if (!c545d_bridge_poll ())
+    return G_MAXUINT64;
+  g_mutex_lock (&c545d_bridge_lock);
+  generation = c545d_bridge_generation;
+  g_mutex_unlock (&c545d_bridge_lock);
+  return generation;
+}
+
+/* True on no-bridge old diagnostics; in bridge mode both successful
+ * pre-getter epoch and current post-getter epoch must be identical.
+ */
+static gboolean
+c545d_bridge_allow_store (guint64 pre_getter)
+{
+  if (!c545d_bridge_mode ())
+    return TRUE;
+  if (pre_getter == G_MAXUINT64 || !c545d_bridge_poll ())
+    return FALSE;
+  g_mutex_lock (&c545d_bridge_lock);
+  gboolean current = c545d_bridge_generation == pre_getter;
+  g_mutex_unlock (&c545d_bridge_lock);
+  return current;
+}""",
+      r"""static C545DBridgeEpoch
+c545d_bridge_read_epoch (void)
+{
+  C545DBridgeEpoch epoch = { 0, 0, FALSE };
+  if (!c545d_bridge_poll ())
+    return epoch;
+  g_mutex_lock (&c545d_bridge_lock);
+  epoch.generation = c545d_bridge_generation;
+  epoch.locale = c545d_bridge_locale;
+  epoch.valid = TRUE;
+  g_mutex_unlock (&c545d_bridge_lock);
+  return epoch;
+}
+
+/* Reject an in-flight package or locale change. A failed snapshot is a
+ * cache miss, never a reason to return a previously cached string.
+ */
+static gboolean
+c545d_bridge_epoch_still_valid (C545DBridgeEpoch previous)
+{
+  if (!previous.valid || !c545d_bridge_poll ())
+    return FALSE;
+  g_mutex_lock (&c545d_bridge_lock);
+  const gboolean unchanged =
+    (previous.generation == c545d_bridge_generation &&
+     previous.locale == c545d_bridge_locale);
+  g_mutex_unlock (&c545d_bridge_lock);
+  return unchanged;
+}
+
+static gboolean
+c545d_bridge_allow_store (C545DBridgeEpoch pre_getter)
+{
+  return !c545d_bridge_mode () ||
+         c545d_bridge_epoch_still_valid (pre_getter);
+}""",
+      "complete package/locale cache epoch")
+
     original.BRIDGE=s
-    original.main(Path(sys.argv[1]))
-    print("C545D_GLIB_DEDICATED_MTA_WATCH_CI_ONLY_PATCHED")
+    source=Path(sys.argv[1])
+    original.main(source)
+    raw=source.read_bytes()
+    newline="\r\n" if b"\r\n" in raw else "\n"
+    code=raw.decode("utf-8").replace("\r\n","\n")
+    code=replace_once(code,
+      "static gboolean c545d_bridge_poll (void);",
+      """typedef struct {
+  guint64 generation;
+  guint64 locale;
+  gboolean valid;
+} C545DBridgeEpoch;
+static gboolean c545d_bridge_poll (void);
+static C545DBridgeEpoch c545d_bridge_read_epoch (void);
+static gboolean c545d_bridge_epoch_still_valid (C545DBridgeEpoch epoch);""",
+      "epoch forward declaration before lookup")
+    code=replace_once(code,
+      """  if (!c545d_bridge_poll ())
+    return NULL; /* fail closed to original getter */
+  gchar *key = g_utf16_to_utf8""",
+      """  C545DBridgeEpoch before = c545d_bridge_read_epoch ();
+  if (!before.valid)
+    return NULL; /* fail closed to original getter */
+  gchar *key = g_utf16_to_utf8""",
+      "capture pre-lookup epoch")
+    code=replace_once(code,
+      """  if (result != NULL && !c545d_bridge_poll ())
+    g_clear_pointer (&result, g_free);""",
+      """  if (result != NULL && !c545d_bridge_epoch_still_valid (before))
+    g_clear_pointer (&result, g_free);""",
+      "reject in-flight lookup invalidation")
+    code=replace_once(code,
+      "guint64 c545d_before_getter_generation = 0;",
+      "C545DBridgeEpoch c545d_before_getter_epoch = { 0, 0, FALSE };",
+      "full pre-getter epoch storage")
+    code=replace_once(code,
+      "c545d_before_getter_generation = c545d_bridge_read_generation ();",
+      "c545d_before_getter_epoch = c545d_bridge_read_epoch ();",
+      "capture pre-getter package/locale")
+    code=replace_once(code,
+      "c545d_bridge_allow_store (c545d_before_getter_generation)",
+      "c545d_bridge_allow_store (c545d_before_getter_epoch)",
+      "reject outdated getter cache store")
+    source.write_bytes(code.replace("\n",newline).encode("utf-8"))
+    print("C545D_GLIB_DEDICATED_MTA_COMPLETE_EPOCH_CI_ONLY_PATCHED")
 
 if __name__=="__main__":
     main()
