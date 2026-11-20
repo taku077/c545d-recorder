@@ -38,13 +38,13 @@ def main():
     # in flight. The OS releases the module when the process ends. Keep
     # FreeLibrary for *failed initialization* (no subscribed callbacks).
     s=replace_once(s,
-      "  if (c545d_bridge_module != NULL)\\n"
-      "    FreeLibrary (c545d_bridge_module);\\n"
-      "  c545d_bridge_module = NULL;\\n"
+      "  if (c545d_bridge_module != NULL)\n"
+      "    FreeLibrary (c545d_bridge_module);\n"
+      "  c545d_bridge_module = NULL;\n"
       "  c545d_bridge_ready = FALSE;",
-      "  /* CI ONLY: process-exit cleanup must not unload WinRT DLL while\\n"
-      "   * asynchronous callbacks/static destructors might still run. */\\n"
-      "  c545d_bridge_module = NULL;\\n"
+      "  /* CI ONLY: process-exit cleanup must not unload WinRT DLL while\n"
+      "   * asynchronous callbacks/static destructors might still run. */\n"
+      "  c545d_bridge_module = NULL;\n"
       "  c545d_bridge_ready = FALSE;",
       "skip hazardous watcher DLL unload from process-exit atexit")
     s=replace_once(s, "static DWORD c545d_bridge_owner;\n","", "old owner-thread variable")
