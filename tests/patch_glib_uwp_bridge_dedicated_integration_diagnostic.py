@@ -32,6 +32,21 @@ def main():
         ("c545d_watch_inject_synthetic","c545d_dedicated_synthetic_event"),
     ):
         s=replace_once(s,f'"{old}"',f'"{new}"',"C ABI symbol "+old)
+    # The only cleanup registration is a process-exit atexit handler.
+    # Do NOT force-unload a C++/WinRT event DLL at that point: late
+    # asynchronous COM callbacks and C++ static destructors can still be
+    # in flight. The OS releases the module when the process ends. Keep
+    # FreeLibrary for *failed initialization* (no subscribed callbacks).
+    s=replace_once(s,
+      "  if (c545d_bridge_module != NULL)\\n"
+      "    FreeLibrary (c545d_bridge_module);\\n"
+      "  c545d_bridge_module = NULL;\\n"
+      "  c545d_bridge_ready = FALSE;",
+      "  /* CI ONLY: process-exit cleanup must not unload WinRT DLL while\\n"
+      "   * asynchronous callbacks/static destructors might still run. */\\n"
+      "  c545d_bridge_module = NULL;\\n"
+      "  c545d_bridge_ready = FALSE;",
+      "skip hazardous watcher DLL unload from process-exit atexit")
     s=replace_once(s, "static DWORD c545d_bridge_owner;\n","", "old owner-thread variable")
     s=replace_once(s, "  c545d_bridge_owner = GetCurrentThreadId ();\n","",
                    "old owner-thread binding")
