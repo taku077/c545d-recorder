@@ -110,12 +110,13 @@ try {
 }
 
 $eligible=if($compatible -eq 1 -and $activeRecorder -eq 0 -and $win10 -eq 1){1}else{0}
-Write-Output ("C545D_CORE_GIO_PREFLIGHT,inputs={0},candidate_sha={1},reference_sha={2},"+
-              "pe_x64={3},runtime_exes={4},active_recorder={5},windows10={6},"+
-              "compatible={7},read_only_eligibility={8},install_approved=0,reason={9}") -f @(
-                  $hasFiles,$candidateShaOk,$referenceShaOk,$pe64Ok,$runtimeExeOk,
-                  $activeRecorder,$win10,$compatible,$eligible,$reason
-              )
+$result=("C545D_CORE_GIO_PREFLIGHT,inputs={0},candidate_sha={1},reference_sha={2},"+
+         "pe_x64={3},runtime_exes={4},active_recorder={5},windows10={6},"+
+         "compatible={7},read_only_eligibility={8},install_approved=0,reason={9}") -f @(
+         $hasFiles,$candidateShaOk,$referenceShaOk,$pe64Ok,$runtimeExeOk,
+         $activeRecorder,$win10,$compatible,$eligible,$reason
+     )
+Write-Output $result
 # Never install anything. Even eligible=1 is only a green light for a
 # separately controlled smoke test with explicit user approval.
 if($eligible -eq 1){exit 0}
