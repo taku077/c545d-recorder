@@ -1,4 +1,5 @@
 name: C545D lazy GIO package-generation MSVC SDK dual video and MP4 EOS (CI ONLY)
+# Source regression checkpoint: single-flight GAppInfo and successful-parse epoch commit.
 
 on:
   push:
