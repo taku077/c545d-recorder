@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <wchar.h>
 #include <stdint.h>
+#include <string.h>
 
 /* CI ONLY: GAppInfoMonitor contract/observability probe. Creates one monitor
  * in the same GLib default main context as the PowerShell host's GIO caller.
@@ -86,6 +87,32 @@ static int enumerate_and_release(void)
   }
   g_list_free_full(list, g_object_unref);
   return count;
+}
+
+/* Synthetic disposable-package freshness test. Only numeric booleans
+ * leave this process; names are fixed static CI fixture literals, never
+ * user-installed package identifiers or raw AppInfo enumeration output.
+ */
+__declspec(dllexport) int __cdecl
+c545d_ci_scan_fixture_display_name(int stage)
+{
+  if(stage<1 || stage>3)return -60;
+  GList *list=g_app_info_get_all();
+  int original=0, updated=0;
+  for(GList *p=list;p;p=p->next) {
+    const char *name=g_app_info_get_display_name(G_APP_INFO(p->data));
+    if(name && strcmp(name,"C545D CI Event Probe")==0)original++;
+    if(name && strcmp(name,"C545D CI Event Probe Upgraded")==0)updated++;
+  }
+  g_list_free_full(list,g_object_unref);
+  gboolean fresh=(stage==1 ? original==1 && updated==0 :
+                  stage==2 ? original==0 && updated==1 :
+                             original==0 && updated==0);
+  printf("C545D_GIO_FIXTURE_DISPLAY_VERSION,stage=%d,fresh=%d,"
+         "old_count=%d,new_count=%d,CI_only=1\n",
+         stage,fresh?1:0,original,updated);
+  fflush(stdout);
+  return fresh?1:-61;
 }
 
 /* CI only: let eight callers compete for one *genuine* pending package
