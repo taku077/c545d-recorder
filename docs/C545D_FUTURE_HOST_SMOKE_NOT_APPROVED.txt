@@ -1,0 +1,35 @@
+C545D FUTURE ISOLATED GIO SMOKE — NOT AN INSTALLER
+DEVELOPMENT / CI ARTIFACT ONLY. NOT APPROVED FOR HOST EXECUTION.
+
+This bundle is prepared solely to avoid repeated manual setup if the project
+later authorizes a supervised camera-free Windows 10 experiment. Do not run now.
+It is not a recorder update, a production DLL replacement, or approval to
+test Tapo RTSP or hourly MP4. Production candidate remains HOLD.
+
+Contents:
+- The exact previously qualified core-only candidate gio-2.0-0.dll;
+- The pinned official GStreamer 1.28.8 six-core reference manifest;
+- The existing candidate provenance manifest;
+- Two PowerShell 5.1 scripts for pinned read-only SDK checks and a short
+  private app-local synthetic WAV/loaded-module/rollback test;
+- A guarded CMD launcher that asks for an explicit approval acknowledgement.
+
+When authorized at a natural safe recording stop, the script refuses active
+known recorder processes, unknown SDK hashes, an altered candidate or
+manifest, non-Windows10 hosts, or a missing scanner/plugin directory. It
+runs NO camera connection and never writes into the installed SDK. It creates
+only a uniquely owned disposable test directory under TEMP and restores
+per-process GST_ environment values. It does not update Windows registry.
+It emits one numeric status line with no local paths or SHA values.
+
+Do NOT copy gio-2.0-0.dll into installed GStreamer bin or overwrite DLLs.
+Do NOT run during recording, restart a recorder for this package, or treat
+a successful synthetic test as permission for a live Tapo trial.
+Do NOT upload screenshots of local paths, process command lines, RTSP
+credentials, private videos, full logs, or diagnostics to public GitHub.
+
+Important boundary: CI has exercised the exact application-local mechanism
+on Windows Server 2022, not on the actual Windows 10 recorder. Even a future
+Windows10 result cannot prove actual dual RTSP sync, 1-hour MP4 continuity,
+24x365 stability, or zero remaining PrivateUsage/Key handle growth. Any real
+dual-stream validation requires separately approved, consolidated testing.
