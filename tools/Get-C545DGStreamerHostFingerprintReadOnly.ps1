@@ -112,12 +112,13 @@ try {
 }
 $match=[int]($runtimeExe -eq 1 -and $filesFound -eq 6 -and $matched -eq 6 -and
              $missing -eq 0 -and $notPe64 -eq 0 -and $manifestValid -eq 1)
-Write-Output ("C545D_HOST_GIO_FINGERPRINT,manifest_valid={0},runtime_found={1},"+
-              "executables_found={2},dll_found={3},dll_hash_matched={4},"+
-              "dll_missing={5},pe64_failed={6},windows10={7},recorder_active={8},"+
-              "pinned_sdk_match={9},install_approved=0,live_test_authorized=0,reason={10}") -f @(
-                $manifestValid,$runtimeFound,$runtimeExe,$filesFound,$matched,$missing,
-                $notPe64,$os10,$recordingActive,$match,$reason)
+$line=("C545D_HOST_GIO_FINGERPRINT,manifest_valid={0},runtime_found={1},"+
+       "executables_found={2},dll_found={3},dll_hash_matched={4},"+
+       "dll_missing={5},pe64_failed={6},windows10={7},recorder_active={8},"+
+       "pinned_sdk_match={9},install_approved=0,live_test_authorized=0,reason={10}") -f @(
+        $manifestValid,$runtimeFound,$runtimeExe,$filesFound,$matched,$missing,
+        $notPe64,$os10,$recordingActive,$match,$reason)
+Write-Output $line
 # A DIFFERENT runtime is information, not authorization to change it.
 if($match -eq 1){exit 0}
 exit 3
