@@ -1,10 +1,5 @@
 name: C545D lazy generation-triggered AppInfo rebuild with genuine MSIX (CI ONLY)
 on:
-  push:
-    branches: ['investigate/c545d-mta-transition-guard-20261120']
-    paths:
-      - '.github/workflows/c545d-gio-lazy-package-rescan-ci.yml'
-      - 'tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py'
   workflow_dispatch:
 
 permissions:
@@ -94,7 +89,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          py tests/analyze_gio_natural_msix_refresh.py | Tee-Object -FilePath artifacts/real_msix_lazy_analysis.txt
+          py tests/analyze_gio_natural_msix_refresh.py --input artifacts/real_msix_lazy_output.txt | Tee-Object -FilePath artifacts/real_msix_lazy_analysis.txt
           if($LASTEXITCODE -ne 0) {throw 'Real MSIX -> GIO cache invalidation path did not pass'}
           $summary=Get-Content artifacts/real_msix_lazy_analysis.txt -Raw
           if($summary -notmatch 'natural_install_refreshed=1,natural_uninstall_refreshed=1') {
