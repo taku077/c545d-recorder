@@ -1,5 +1,5 @@
 {
-  "active_pr_number": 57,
+  "active_pr_number": 62,
   "archive_heading_marker": "## CURRENT 2026-11-18 JST — ETL自動オフライン解析ツール完成、実機レポート待ち",
-  "required_evidence": "PR #57"
+  "required_evidence": "core-only MSVC 64-cycle A/B measured"
 }
