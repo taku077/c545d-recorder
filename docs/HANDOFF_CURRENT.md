@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — PR62 synthetic runtime watcher failure isolation (NEW, CI-running)
+
+- **Newest draft [PR62](https://github.com/taku077/c545d-recorder/pull/62)** branch `investigate/c545d-status-only-monitor-20261120`. Previous real signed MSIX, official MSVC ABI/AV 2047 exports+dual RTP H264/AAC MP4/EOS, and startup missing-DLL/missing-sink fail-closed tests remain SUCCESS; do not re-run. No user's Windows10/Tapo host changes.
+- New [`tests/patch_c545d_winrt_runtime_drop_ci.py`](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/patch_c545d_winrt_runtime_drop_ci.py) CI **only** applied after PR61+PR62 native patches. Fault is opt-in `C545D_CI_FORCE_RUNTIME_UNAVAILABLE=1` and triggers only at native snapshot AFTER successful watcher init: atomically deactivates watcher and wakes **existing** owner MTA thread, which performs ordinary COM revocation. Returns failure **without producing a cacheable generation/locale epoch**. Does not modify real OS PackageStatus, no new worker or timer, no forced handle closes.
+- [`tests/c545d_winrt_runtime_drop_ci.cpp`](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/c545d_winrt_runtime_drop_ci.cpp) asserts initial snapshot succeeds, simulated unavailable snapshot fails without modifying outputs, four subscriptions get owner-MTA revoked, errors0, MTA refs/pending opens/closes/live watchers all0. [`tests/c545d_gio_runtime_drop_ci.c`](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/c545d_gio_runtime_drop_ci.c) compares sorted GAppInfo ID+DisplayName hash in the SAME process before and after fault and one automatic GLib registry-watcher refresh caused by a disposable CI-runner HKCU value; the synthetic key is deleted before test exit. The latter tests GIO fallback, not a true spontaneous Windows PackageCatalog failure.
+- [**New full Windows CI #44746347604**](https://github.com/taku077/c545d-recorder/actions/runs/44746347604), tested source `67988731443e9e586d4d655fdec53a547e990ac7`: **IN PROGRESS at the latest update**, native watcher compile/run step completed and GLib build step ongoing; do not call this a complete PASS until final logs and sanitized artifact are checked. On failure inspect specific stage, fix narrow CI or source issue and rerun; no user manual experiments.
+- **Next AI only:** inspect final #44746347604; if pass validate numeric native and GIO evidence and then source-level same-fullname locale/resource refresh plus release-candidate qualification. If test reveals failure, troubleshoot source and targeted CI. The real user Tapo/Windows10 CPU, memory and handle zero-growth remain unverified. Recording stream layout, fps, codec, AAC, MP4 splitmux/EOS, sync and filenames remain unchanged.
+
+
+
 ### UPDATE 2026-11-20 JST — newest PR62 fail-closed watcher-availability gate PASSED
 
 - Current draft [PR62](https://github.com/taku077/c545d-recorder/pull/62) remains CI-only (base PR61→PR60→PR59→PR57), with no changes to the user's Windows10/Tapo recorder and no production DLL release.
