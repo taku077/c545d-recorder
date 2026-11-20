@@ -27,6 +27,63 @@ static int enumerate_and_release(void)
   return count;
 }
 
+/* CI only: let eight callers compete for one *genuine* pending package
+ * generation. Every thread queries public GAppInfo; no synthetic events
+ * and no registry writes occur until the existing positive control later.
+ */
+enum { C545D_PARALLEL_CALLERS=8 };
+typedef struct {
+  volatile LONG ready;
+  volatile LONG go;
+  volatile LONG faults;
+  volatile LONG app_count;
+} C545DParallel;
+
+static DWORD WINAPI c545d_parallel_reader(void *ctx)
+{
+  C545DParallel *p=(C545DParallel *)ctx;
+  InterlockedIncrement(&p->ready);
+  while(InterlockedCompareExchange(&p->go,0,0)==0)Sleep(0);
+  int n=enumerate_and_release();
+  if(n<=0)InterlockedIncrement(&p->faults);
+  else {
+    LONG first=InterlockedCompareExchange(&p->app_count,n,0);
+    if(first!=0 && first!=n)InterlockedIncrement(&p->faults);
+  }
+  return 0;
+}
+
+__declspec(dllexport) int __cdecl c545d_ci_scan_parallel_stage(int stage)
+{
+  if(stage<1 || stage>3)return -30;
+  Sleep(1300); /* Match the earlier single-caller observation interval. */
+  C545DParallel p={0};
+  HANDLE threads[C545D_PARALLEL_CALLERS]={0};
+  for(int i=0;i<C545D_PARALLEL_CALLERS;i++) {
+    threads[i]=CreateThread(NULL,0,c545d_parallel_reader,&p,0,NULL);
+    if(!threads[i]) {
+      InterlockedIncrement(&p.faults);
+      for(int k=0;k<i;k++)CloseHandle(threads[k]);
+      return -31;
+    }
+  }
+  for(int attempts=0;attempts<5000 &&
+        InterlockedCompareExchange(&p.ready,0,0)!=C545D_PARALLEL_CALLERS;
+      attempts++)Sleep(1);
+  if(InterlockedCompareExchange(&p.ready,0,0)!=C545D_PARALLEL_CALLERS)
+    return -32;
+  InterlockedExchange(&p.go,1);
+  DWORD waited=WaitForMultipleObjects(C545D_PARALLEL_CALLERS,threads,TRUE,30000);
+  for(int i=0;i<C545D_PARALLEL_CALLERS;i++)CloseHandle(threads[i]);
+  if(waited!=WAIT_OBJECT_0)return -33;
+  if(p.faults!=0 || p.app_count<=0)return -34;
+  printf("C545D_GIO_PARALLEL_QUERY_PASS,stage=%d,callers=%d,"
+         "apps=%ld,failures=0,real_os_package_event=1\n",
+         stage,C545D_PARALLEL_CALLERS,(long)p.app_count);
+  fflush(stdout);
+  return (int)p.app_count;
+}
+
 __declspec(dllexport) int __cdecl c545d_ci_scan_real_msix_stage(int stage)
 {
   LONG rc;
