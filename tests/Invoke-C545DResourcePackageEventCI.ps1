@@ -51,6 +51,12 @@ function Status {
   if($ret -ne 0){throw "C545D_RESOURCE_CI_STATUS_FAILED=$ret"}
   return $events
 }
+function Completion {
+  [UInt64]$inst=0;[UInt64]$upd=0;[UInt64]$uninst=0
+  $ret=[C545DResourceWatch]::Completion($script:watch,[ref]$inst,[ref]$upd,[ref]$uninst)
+  if($ret -ne 0){throw "C545D_RESOURCE_CI_COMPLETION_FAILED=$ret"}
+  return @{inst=$inst;upd=$upd;uninst=$uninst}
+}
 try {
   if(@(Get-AppxPackage -Name $name -ErrorAction Stop).Count){
     throw 'C545D_RESOURCE_CI_PREEXISTING_TEST_IDENTITY'
@@ -135,6 +141,8 @@ public static class C545DResourceWatch {
   public static extern int Snapshot(IntPtr watch,out UInt64 gen,out UInt64 locale);
   [DllImport(@"__DLL__",EntryPoint="c545d_dedicated_ci_status_event_count",CallingConvention=CallingConvention.Cdecl)]
   public static extern int StatusCount(IntPtr watch,out UInt64 count);
+  [DllImport(@"__DLL__",EntryPoint="c545d_dedicated_ci_completion_counters",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Completion(IntPtr watch,out UInt64 inst,out UInt64 upd,out UInt64 uninst);
   [DllImport(@"__DLL__",EntryPoint="c545d_dedicated_global_counters",CallingConvention=CallingConvention.Cdecl)]
   public static extern void Counters(out UInt64 registered,out UInt64 revoked,out UInt64 errors);
 }
@@ -154,6 +162,7 @@ public static class C545DResourceWatch {
   [UInt64]$g1=Await $g0
   if($g1 -le $g0){throw 'C545D_RESOURCE_CI_MAIN_EVENT_MISSING'}
   [UInt64]$s1=Status
+  $c1=Completion
   Add-AppxPackage -Path $resMsix -ErrorAction Stop
   $same=@(Get-AppxPackage -Name $name -PackageTypeFilter Main -ErrorAction Stop)
   if($same.Count -ne 1 -or $same[0].PackageFullName -ne $installedParent){
@@ -165,12 +174,14 @@ public static class C545DResourceWatch {
   $resourceFullName=$resource[0].PackageFullName
   [UInt64]$g2=Await $g1
   [UInt64]$s2=Status
-  "C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=$($g2-$g1),genuine_status_callbacks_delta=$($s2-$s1),synthetic_events=0,CI_only=1"
+  $c2=Completion
+  "C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=$($g2-$g1),genuine_status_callbacks_delta=$($s2-$s1),install_terminal_delta=$($c2.inst-$c1.inst),update_terminal_delta=$($c2.upd-$c1.upd),uninstall_terminal_delta=$($c2.uninst-$c1.uninst),synthetic_events=0,CI_only=1"
   Remove-AppxPackage -Package $resourceFullName -ErrorAction Stop
   $resourceFullName=$null
   [UInt64]$g3=Await $g2
   [UInt64]$s3=Status
-  "C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=$($g3-$g2),genuine_status_callbacks_delta=$($s3-$s2),synthetic_events=0,CI_only=1"
+  $c3=Completion
+  "C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=$($g3-$g2),genuine_status_callbacks_delta=$($s3-$s2),install_terminal_delta=$($c3.inst-$c2.inst),update_terminal_delta=$($c3.upd-$c2.upd),uninstall_terminal_delta=$($c3.uninst-$c2.uninst),synthetic_events=0,CI_only=1"
   'C545D_RESOURCE_PACKAGE_PROBE_COMPLETE,parent_fullname_stable=1,resource_add_remove=1,runner_only=1'
 } finally {
   if($watch -ne [IntPtr]::Zero){[C545DResourceWatch]::Close($watch)}
