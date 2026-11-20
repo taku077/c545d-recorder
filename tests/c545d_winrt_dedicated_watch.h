@@ -44,6 +44,12 @@ C545D_API int c545d_dedicated_ci_arm_callback_exception(
     c545d_dedicated_watch *watch);
 C545D_API int c545d_dedicated_ci_callback_exception_count(
     c545d_dedicated_watch *watch, uint64_t *count);
+/* CI-only counters for deterministic MTA open/close transition tests.
+ * Values are numeric-only; no OS package identity or handle paths.
+ */
+C545D_API int c545d_dedicated_ci_lifetime_counters(
+    uint32_t *references, uint32_t *opening,
+    uint32_t *closing, uint32_t *registered);
 C545D_API void c545d_dedicated_global_counters(uint64_t *registered,
                                                     uint64_t *revoked,
                                                     uint64_t *shutdown_errors);

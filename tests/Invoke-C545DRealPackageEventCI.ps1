@@ -9,9 +9,21 @@ param(
   [Parameter(Mandatory=$true)][string]$WatchDll,
   [Parameter(Mandatory=$true)][string]$StubExe,
   [string]$GioScanDll='',
-  [switch]$InjectCallbackException
+  [switch]$InjectCallbackException,
+  [switch]$ObserveNaturalGioRefresh,
+  [switch]$StressConcurrentGio,
+  [switch]$InjectParserFailureOnce
 )
 $ErrorActionPreference='Stop'
+if($InjectParserFailureOnce -and -not $StressConcurrentGio) {
+  throw 'C545D_PACKAGE_PARSE_FAILURE_REQUIRES_CONCURRENT_GIO_MODE'
+}
+if($StressConcurrentGio -and -not $ObserveNaturalGioRefresh) {
+  throw 'C545D_CONCURRENT_GIO_REQUIRES_NATURAL_REFRESH_MODE'
+}
+if($ObserveNaturalGioRefresh -and -not $GioScanDll) {
+  throw 'C545D_NATURAL_GIO_OBSERVATION_REQUIRES_GIO_SCANNER'
+}
 $name='C545D.CI.PackageEvents'
 $root=Join-Path $env:RUNNER_TEMP ('c545d_event_'+[guid]::NewGuid().ToString('N'))
 $watch=[IntPtr]::Zero
@@ -80,6 +92,25 @@ function Scan-Gio([int]$stage) {
     throw "C545D_GIO_REAL_PACKAGE_SCAN_FAILED,stage=$stage,status=$result"
   }
   "C545D_GIO_REAL_MSIX_STEP_OK,stage=$stage,apps=$result"
+}
+function Scan-NaturalGio([int]$stage) {
+  if(-not $ObserveNaturalGioRefresh) { return }
+  # Same process and same event subscriber, but no synthetic RegisteredApplications
+  # mutation yet. Native scan stages 5..7 only wait and enumerate current GIO.
+  if($InjectParserFailureOnce -and $stage -eq 1) {
+    # Change environment only after initial GIO baseline build. The native
+    # parser converts exactly one subsequent successful result to a failure.
+    $env:C545D_CI_PACKAGE_PARSE_FAIL_ONCE='1'
+  }
+  $result=if($StressConcurrentGio) {
+    [C545DGioRealMSIX]::ScanConcurrent($stage)
+  } else {
+    [C545DGioRealMSIX]::Scan(4+$stage)
+  }
+  if($result -le 0) {
+    throw "C545D_NATURAL_GIO_SCAN_FAILED,stage=$stage,status=$result"
+  }
+  "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=$stage,apps=$result"
 }
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
@@ -158,6 +189,8 @@ using System.Runtime.InteropServices;
 public static class C545DGioRealMSIX {
   [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_real_msix_stage", CallingConvention=CallingConvention.Cdecl)]
   public static extern int Scan(int stage);
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_parallel_stage", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int ScanConcurrent(int stage);
 }
 '@
     Add-Type -TypeDefinition $gio.Replace('__DLL__',$GioScanDll.Replace('"','""')) -ErrorAction Stop
@@ -187,6 +220,7 @@ public static class C545DGioRealMSIX {
     # projected-accessor exception. Subscription continues normally.
     "C545D_WINRT_CALLBACK_EXCEPTION_FAILCLOSED_PASS,count=$faults,install_delta=$($g1-$g0),install_complete=$doneInstall,CI_only=true"
   }
+  Scan-NaturalGio 1
   Scan-Gio 1
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
@@ -196,6 +230,7 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g2=Await-Event $g1 'update'
   [UInt64]$doneUpdate=Await-Completion 'update'
+  Scan-NaturalGio 2
   Scan-Gio 2
 
   Remove-AppxPackage -Package $installed[0].PackageFullName -ErrorAction Stop
@@ -204,6 +239,7 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
   [UInt64]$doneUninstall=Await-Completion 'uninstall'
+  Scan-NaturalGio 3
   Scan-Gio 3
   "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,gio_same_process=$([bool]$GioScanDll),CI_only=true"
 }
@@ -232,6 +268,7 @@ finally {
       Remove-Item -LiteralPath ($store+'\'+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
     }
   }
+  Remove-Item Env:C545D_CI_PACKAGE_PARSE_FAIL_ONCE -ErrorAction SilentlyContinue
   Remove-Item Env:C545D_CI_EVENT_PACKAGE_NAME -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
   "C545D_REAL_APPX_CLEANUP_EXECUTED=true,runner_only=true"

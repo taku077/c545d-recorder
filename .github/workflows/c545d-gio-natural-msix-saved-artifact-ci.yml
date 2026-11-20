@@ -1,0 +1,40 @@
+name: C545D saved real-MSIX GIO natural-refresh reanalysis (NO WINDOWS RERUN)
+on:
+  push:
+    branches: ['investigate/c545d-mta-transition-guard-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-natural-msix-saved-artifact-ci.yml'
+      - 'tests/analyze_gio_natural_msix_refresh.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  reuse-numeric-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-glib-msix-natural-refresh-numeric-only
+          run-id: 44702509612
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: artifacts
+      - name: Selftest strict stage counts, then inspect existing Windows 2022 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_gio_natural_msix_refresh.py --selftest
+          python tests/analyze_gio_natural_msix_refresh.py --input artifacts/real_msix_natural_output.txt | tee artifacts/natural_msix_reanalysis.txt
+          grep -q 'natural_install_refreshed=0' artifacts/natural_msix_reanalysis.txt
+          grep -q 'natural_uninstall_refreshed=0' artifacts/natural_msix_reanalysis.txt
+          grep -q 'real_events=18' artifacts/natural_msix_reanalysis.txt
+          grep -q 'windows_ci_only=1,host_not_certified=1' artifacts/natural_msix_reanalysis.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-natural-msix-saved-reanalysis-numeric-only
+          path: artifacts/natural_msix_reanalysis.txt
+          retention-days: 7
+          if-no-files-found: warn

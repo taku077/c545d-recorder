@@ -1,7 +1,7 @@
 name: C545D concurrent WinRT watcher close/snapshot lifetime (CI ONLY)
 on:
   push:
-    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120', 'investigate/c545d-mta-transition-guard-20261120']
     paths:
       - 'tests/c545d_winrt_concurrent_close_probe.c'
       - '.github/workflows/c545d-winrt-concurrent-close-ci.yml'
