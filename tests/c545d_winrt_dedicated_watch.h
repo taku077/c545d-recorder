@@ -35,6 +35,15 @@ C545D_API void c545d_dedicated_close(c545d_dedicated_watch *watch);
 C545D_API int c545d_dedicated_ci_completion_counters(
     c545d_dedicated_watch *watch, uint64_t *install_done,
     uint64_t *update_done, uint64_t *uninstall_done);
+/* CI ONLY: deliberately raise one exception inside the NEXT matching real
+ * PackageCatalog callback; ensure the noexcept event handler safely absorbs
+ * it, counts it and invalidates the cache generation. Does nothing unless
+ * the test explicitly calls the arm function. No user package mutation.
+ */
+C545D_API int c545d_dedicated_ci_arm_callback_exception(
+    c545d_dedicated_watch *watch);
+C545D_API int c545d_dedicated_ci_callback_exception_count(
+    c545d_dedicated_watch *watch, uint64_t *count);
 C545D_API void c545d_dedicated_global_counters(uint64_t *registered,
                                                     uint64_t *revoked,
                                                     uint64_t *shutdown_errors);
