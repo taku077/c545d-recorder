@@ -2,6 +2,16 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — newest PR62 fail-closed watcher-availability gate PASSED
+
+- Current draft [PR62](https://github.com/taku077/c545d-recorder/pull/62) remains CI-only (base PR61→PR60→PR59→PR57), with no changes to the user's Windows10/Tapo recorder and no production DLL release.
+- **NEW source commit [b403388](https://github.com/taku077/c545d-recorder/commit/b403388741331f01a716b0bd36040287afe3a6fa)** adds `.github/workflows/c545d-status-only-watcher-failclosed-ci.yml` only. It creates a *separate isolated full GLib 2.82.4 combination* with all WinRT native monitor/cache/generation patches, and validates four independent process modes: baseline, native watcher healthy, nonexistent DLL path and genuine watcher DLL with required monitor-sink export deliberately absent. Uses SHA-256 of sorted GAppInfo ID+exact DisplayName pairs, no raw package names, no registry mutations and no camera.
+- **[Windows CI #44743671021 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44743671021)** tested source `b403388741331f01a716b0bd36040287afe3a6fa`. Raw artifact **14632466308** independently inspected: all four modes enumerate **39** installed applications and produce **identical SHA-256**; healthy watcher `scans=1, errors=0, ready=1`; missing native DLL `scans=0, errors=65, ready=0`; watcher with missing monitor-sink symbol `scans=0, errors=65, ready=0` and exact native sink-registration failure diagnostic. CI strict test output `C545D_WATCHER_FAILCLOSED_CI_PASS,modes=4,hash_parity=1,missing_dll_ready0=1,missing_sink_ready0=1,original_display_getter_fallback=1,synthetic_registry_mutations=0,CI_only=1`. Existing MSVC ABI/AV gate [#44740017458 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44740017458) remains valid; do not redundantly repeat it for this CI-workflow-only commit.
+- **Boundary**: missing DLL / missing sink startup paths **ARE verified** under latest combined code. They do not prove every watcher *runtime* failure/permission denial or automatic recovery; no actual Windows10/Tapo resource plateau or 24×365 stability demonstrated. No host actions requested.
+- **Next AI-only:** source audit/short CI for a watcher that becomes unavailable *after* successful initialization, and resource/locale freshness for the same package full name. Keep safety-first fallbacks, terminal notification coalescing, AV/sync/EOS/settings unchanged. Separately remove CI-only flags/instrumentation and make a release candidate only after explicit safety+ABI gates. Reuse old long-run memory data and require at most one consolidated host validation once candidate qualified.
+
+
+
 ### UPDATE 2026-11-20 JST — PR62 OS-vs-synthetic event provenance now strictly verified
 
 - **Current newest child [draft PR62](https://github.com/taku077/c545d-recorder/pull/62)**, based on PR61→PR60→PR59→PR57. All source diagnostics remain CI ONLY and not installed on user's Windows10/Tapo recorder.
