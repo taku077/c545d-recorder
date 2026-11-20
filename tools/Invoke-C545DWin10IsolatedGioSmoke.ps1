@@ -14,6 +14,7 @@ $sdk='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
 $started=0;$observed=0;$wav=0;$cleanExit=0;$cleanup=0;$originals=0;$reason='BLOCKED'
 $owned=$false;$stage=$null;$child=$null;$childExited=$true;$handle=[IntPtr]::Zero
 $prior=@{}
+$phase='BEGIN'
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -56,16 +57,19 @@ try {
      $l -notmatch ',pinned_sdk_match=1,' -or
      $l -notmatch ',install_approved=0,live_test_authorized=0,' -or
      ($l -notmatch ',windows10=1,' -and -not $isCi)){throw 'HOST_NOT_ELIGIBLE'}
+  $phase='FINGERPRINT_OK'
   if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){throw 'RECORDER_ACTIVE'}
   if(-not (Test-Path -LiteralPath $CandidateDll -PathType Leaf) -or
      -not (Test-Path -LiteralPath $CandidateManifest -PathType Leaf) -or
      (Get-FileHash -LiteralPath $CandidateDll -Algorithm SHA256).Hash -ne $rc){throw 'CANDIDATE_BAD'}
+  $phase='CANDIDATE_OK'
   $manifest=[IO.File]::ReadAllText((Resolve-Path -LiteralPath $CandidateManifest).Path)
   if($manifest -notmatch ('(?m)^CANDIDATE_GIO_SHA256='+$rc+'\r?$') -or
      $manifest -notmatch ('(?m)^REFERENCE_GIO_SHA256='+$sdk+'\r?$') -or
      $manifest -notmatch '(?m)^C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST\r?$'){
     throw 'MANIFEST_BAD'
   }
+  $phase='MANIFEST_OK'
   $original=Join-Path $GStreamerBin 'gio-2.0-0.dll'
   $exe=Join-Path $GStreamerBin 'gst-launch-1.0.exe'
   $root=Split-Path -Parent $GStreamerBin
@@ -73,17 +77,20 @@ try {
   $plugins=Join-Path $root 'lib\gstreamer-1.0'
   if(-not (Test-Path -LiteralPath $scanner -PathType Leaf) -or
      -not (Test-Path -LiteralPath $plugins -PathType Container)){throw 'SDK_INCOMPLETE'}
+  $phase='SDK_INPUT_OK'
   $before1=(Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash
   $before2=(Get-FileHash -LiteralPath $CandidateDll -Algorithm SHA256).Hash
   $temp=if($isCi){$env:RUNNER_TEMP}else{$env:TEMP}
   $temp=[IO.Path]::GetFullPath($temp).TrimEnd('\')
   $t=Get-Item -LiteralPath $temp -Force
   if(-not $t.PSIsContainer -or ($t.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'BAD_TEMP'}
+  $phase='TEMP_ROOT_OK'
   $stage=Join-Path $temp ('c545d-private-gio-'+[guid]::NewGuid().ToString('N'))
   if(Test-Path -LiteralPath $stage){throw 'STAGE_EXISTS'}
   New-Item -ItemType Directory -Path $stage | Out-Null
   [IO.File]::WriteAllText((Join-Path $stage '.c545d-owned'),'C545D_ISOLATED_GIO_SMOKE')
   $owned=$true
+  $phase='STAGE_OWNED'
   $bin=Join-Path $stage 'bin'
   New-Item -ItemType Directory -Path $bin | Out-Null
   $testExe=Join-Path $bin 'gst-launch-1.0.exe'
@@ -93,6 +100,7 @@ try {
   if((Get-FileHash -LiteralPath $testGio -Algorithm SHA256).Hash -ne $rc -or
      (Get-FileHash -LiteralPath $testExe -Algorithm SHA256).Hash -ne
      (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash){throw 'BAD_OVERLAY'}
+  $phase='STAGED_BIN_OK'
   foreach($k in @('PATH','GST_REGISTRY','GST_PLUGIN_SCANNER','GST_PLUGIN_SYSTEM_PATH_1_0')){
     $prior[$k]=[Environment]::GetEnvironmentVariable($k,'Process')
   }
@@ -110,6 +118,7 @@ try {
     '!','wavenc','!','giosink',('location='+$uri))
   $child=Start-Process -FilePath $testExe -ArgumentList $args -PassThru -WorkingDirectory $stage -RedirectStandardOutput (Join-Path $stage 'stdout') -RedirectStandardError (Join-Path $stage 'stderr')
   $started=1;$childExited=$false
+  $phase='TEST_CHILD_STARTED'
   $handle=[C545DHostGioSmokeQuery]::OpenProcess([uint32]0x1000,$false,$child.Id)
   if($handle -eq [IntPtr]::Zero){throw 'NO_CHILD_QUERY_HANDLE'}
   for($i=0;$i -lt 300;$i++){
@@ -149,7 +158,9 @@ try {
     'RECORDER_BECAME_ACTIVE','NO_CHILD_QUERY_HANDLE','WRONG_DLL',
     'MODULE_NOT_OBSERVED','CHILD_TIMEOUT','CHILD_FAILED','NO_WAV',
     'INPUT_CHANGED')
-  if($code -in $known){$reason=$code}else{$reason='BLOCKED'}
+  if($code -in $known){$reason=$code}
+  elseif($env:GITHUB_ACTIONS -eq 'true' -and $CiRunnerOnly){$reason='CI_UNKNOWN_PHASE_'+$phase}
+  else{$reason='BLOCKED'}
 } finally {
   if($handle -ne [IntPtr]::Zero){[void][C545DHostGioSmokeQuery]::CloseHandle($handle)}
   if($child){
