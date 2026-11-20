@@ -1,0 +1,61 @@
+name: C545D raw IPackage2 HSTRING vs CppWinRT projection retained memory (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-abi-displayname-20261120']
+    paths:
+      - 'tests/winrt_displayname_abi_vs_projection.cpp'
+      - 'tests/analyze_winrt_abi_displayname.py'
+      - '.github/workflows/c545d-winrt-abi-displayname-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  abi-vs-projection:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile raw Windows IPackage2 ABI and CppWinRT in one binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++20 /EHsc /W4 /MD /O2 tests/winrt_displayname_abi_vs_projection.cpp /Fe:artifacts/winrt_abi.exe /link windowsapp.lib runtimeobject.lib psapi.lib
+          if($LASTEXITCODE -ne 0) {throw 'Raw WinRT ABI comparison compile/link failed'}
+      - name: Matched process triplet and strict numeric classification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_winrt_abi_displayname.py --selftest
+          if($LASTEXITCODE -ne 0) {throw 'Numeric analyst selftest failed'}
+          $exe=(Resolve-Path artifacts/winrt_abi.exe).Path
+          foreach($mode in @('control','projected','raw','freshcontrol','freshraw','threadcontrol','threadraw')) {
+            & $exe $mode > "artifacts/winrt_abi_$mode.txt"
+            if($LASTEXITCODE -ne 0) {throw "WinRT mode $mode failed"}
+          }
+          py tests/analyze_winrt_abi_displayname.py --directory artifacts | Tee-Object -FilePath artifacts/winrt_abi_summary.txt
+          if($LASTEXITCODE -ne 0) {throw 'Missing strict Windows API comparison evidence'}
+          Get-Content artifacts/winrt_abi_comparison.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-abi-projection-${{ matrix.os }}-numeric-only
+          path: |
+            artifacts/winrt_abi_control.txt
+            artifacts/winrt_abi_projected.txt
+            artifacts/winrt_abi_raw.txt
+            artifacts/winrt_abi_freshcontrol.txt
+            artifacts/winrt_abi_freshraw.txt
+            artifacts/winrt_abi_threadcontrol.txt
+            artifacts/winrt_abi_threadraw.txt
+            artifacts/winrt_abi_comparison.csv
+            artifacts/winrt_abi_summary.txt
+          retention-days: 7
+          if-no-files-found: warn
