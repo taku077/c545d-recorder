@@ -2,6 +2,14 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — first runtime-failure CI exposed probe coverage gap, corrected CI underway
+
+- Active draft [PR62](https://github.com/taku077/c545d-recorder/pull/62) after prior startup-failclosed #44743671021 success. [Initial post-init watcher failure CI #44746347604 FAILED](https://github.com/taku077/c545d-recorder/actions/runs/44746347604) at `67988731443e9e586d4d655fdec53a547e990ac7`, numeric artifact **14633511753** downloaded/analyzed. **Native stage passed**: snapshot1 success, faulted snapshot rejected with output args preserved, COM registered4/revoked4, no refs/opens/closes/live watches, no shutdown errors. In actual GIO process, AppInfo count/hash remained39/identical and native revocation4 BUT **only one initial GLib package scan ran**; original regression probe had no `GAppInfoMonitor`/main context and synthetic HKCU registry stimulus did **not** force a second worker scan. Strict analyzer therefore **correctly FAILED** `watcher runtime failure not observed during actual worker rescan`; do not misreport as successful cache fallback. Source functionality still not proven wrong; first test harness was insufficient.
+- [**Fix commit 09a8570**](https://github.com/taku077/c545d-recorder/commit/09a85704fe70a0325715e0c1da024478236c5464) amends only disposable CI `tests/c545d_gio_runtime_drop_ci.c`: subscribe to `GAppInfoMonitor::changed`, run GLib default main context and demand an ACTUAL registry-watcher signal before comparing AppInfo after fault. This mimics old already-verified 16-cycle test event pumping, no Tapo PC changes. [**Next short Windows CI #44747324582**](https://github.com/taku077/c545d-recorder/actions/runs/44747324582) was **IN PROGRESS** at time of update. Verify final logs/artifact before any PASS; if monitor never fires, isolate and fail closed rather than silently claiming fallback.
+- **Release state unchanged**: CI-only fault injection and synthetic runner-only HKCU key, no production source or recorder settings modified, no user-side measurement. Status-only REAL OS PackageCatalog event and live Windows10/Tapo memory/handles plateau remain unverified. Next: resolve newest targeted CI and proceed to locale/resource freshness and release candidate separation without repeating prior long Windows tests.
+
+
+
 ### UPDATE 2026-11-20 JST — PR62 synthetic runtime watcher failure isolation (NEW, CI-running)
 
 - **Newest draft [PR62](https://github.com/taku077/c545d-recorder/pull/62)** branch `investigate/c545d-status-only-monitor-20261120`. Previous real signed MSIX, official MSVC ABI/AV 2047 exports+dual RTP H264/AAC MP4/EOS, and startup missing-DLL/missing-sink fail-closed tests remain SUCCESS; do not re-run. No user's Windows10/Tapo host changes.
