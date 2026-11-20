@@ -42,12 +42,20 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
   $script:running=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WorkingDirectory $WorkRoot
   $observed=$false
   $pollErrors=0
+  $pollCount=0
+  $maxSeenModules=0
   try {
-    for($n=0;$n -lt 100;$n++){
+    # Plug-in loader initialization on Windows hosted runners can require
+    # more than 10 seconds (particularly when the optional Python plug-in
+    # fails discovery). Observe the live *actual process*, not a timeout guess.
+    for($n=0;$n -lt 260;$n++){
+      $pollCount=$n+1
       Start-Sleep -Milliseconds 100
       try {
         $live=Get-Process -Id $script:running.Id -ErrorAction Stop
-        $matches=@($live.Modules | Where-Object {$_.ModuleName -ieq 'gio-2.0-0.dll'})
+        $allModules=@($live.Modules)
+        if($allModules.Count -gt $maxSeenModules){$maxSeenModules=$allModules.Count}
+        $matches=@($allModules | Where-Object {$_.ModuleName -ieq 'gio-2.0-0.dll'})
         if($matches.Count -gt 1){throw 'Unexpected duplicate GIO modules'}
         if($matches.Count -eq 1){
           $actual=[IO.Path]::GetFullPath($matches[0].FileName).TrimEnd('\')
@@ -65,7 +73,16 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
       }
       if($script:running.HasExited){break}
     }
-    if(-not $observed){throw "C545D_GIO_LOADER_CI_NOT_OBSERVED=$label;poll_errors=$pollErrors"}
+    if(-not $observed){
+      $exited=[int]$script:running.HasExited
+      $code=if($exited){$script:running.ExitCode}else{-999}
+      $bytes=if(Test-Path -LiteralPath $output){(Get-Item -LiteralPath $output).Length}else{0}
+      $rawError=if(Test-Path -LiteralPath $stderr){Get-Content -LiteralPath $stderr -Raw}else{''}
+      $noElement=[int]($rawError -match '(?i)no element.*giosink|no such element.*giosink')
+      $negotiation=[int]($rawError -match '(?i)not-negotiated|could not link|error from element')
+      # Only fixed numeric fields appear in CI; raw stderr/paths never uploaded.
+      throw "C545D_GIO_LOADER_CI_NOT_OBSERVED,mode=$label,polls=$pollCount,exited=$exited,exit_code=$code,max_modules=$maxSeenModules,output_bytes=$bytes,missing_giosink=$noElement,negotiation_or_element_error=$negotiation,poll_errors=$pollErrors"
+    }
     if(-not $script:running.WaitForExit(30000)){throw "C545D_GIO_LOADER_CI_PROCESS_TIMEOUT=$label"}
     if($script:running.ExitCode -ne 0){throw "C545D_GIO_LOADER_CI_PIPELINE_FAILURE=$label"}
     if((Get-Item -LiteralPath $output).Length -lt 30000){
