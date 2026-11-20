@@ -12,9 +12,13 @@ param(
   [switch]$InjectCallbackException,
   [switch]$ObserveNaturalGioRefresh,
   [switch]$StressConcurrentGio,
-  [switch]$InjectParserFailureOnce
+  [switch]$InjectParserFailureOnce,
+  [switch]$ObserveAppInfoMonitor
 )
 $ErrorActionPreference='Stop'
+if($ObserveAppInfoMonitor -and (-not $ObserveNaturalGioRefresh -or -not $GioScanDll)) {
+  throw 'C545D_APPINFO_MONITOR_REQUIRES_NATURAL_GIO_MODE'
+}
 if($InjectParserFailureOnce -and -not $StressConcurrentGio) {
   throw 'C545D_PACKAGE_PARSE_FAILURE_REQUIRES_CONCURRENT_GIO_MODE'
 }
@@ -29,6 +33,7 @@ $root=Join-Path $env:RUNNER_TEMP ('c545d_event_'+[guid]::NewGuid().ToString('N')
 $watch=[IntPtr]::Zero
 $runtime=$false
 $gioReady=$false
+$monitorActive=$false
 $cert=$null
 $trusted=$false
 $secret=[guid]::NewGuid().ToString('N')
@@ -92,6 +97,11 @@ function Scan-Gio([int]$stage) {
     throw "C545D_GIO_REAL_PACKAGE_SCAN_FAILED,stage=$stage,status=$result"
   }
   "C545D_GIO_REAL_MSIX_STEP_OK,stage=$stage,apps=$result"
+}
+function Observe-Monitor([int]$stage) {
+  if(-not $ObserveAppInfoMonitor) { return }
+  $count=[C545DGioRealMSIX]::MonitorObserve($stage)
+  if($count -lt 0) { throw "C545D_APPINFO_MONITOR_READ_FAILED,stage=$stage,count=$count" }
 }
 function Scan-NaturalGio([int]$stage) {
   if(-not $ObserveNaturalGioRefresh) { return }
@@ -191,11 +201,22 @@ public static class C545DGioRealMSIX {
   public static extern int Scan(int stage);
   [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_parallel_stage", CallingConvention=CallingConvention.Cdecl)]
   public static extern int ScanConcurrent(int stage);
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_monitor_start", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int MonitorStart();
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_monitor_observe", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int MonitorObserve(int stage);
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_monitor_stop", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int MonitorStop();
 }
 '@
     Add-Type -TypeDefinition $gio.Replace('__DLL__',$GioScanDll.Replace('"','""')) -ErrorAction Stop
     Scan-Gio 0
     $gioReady=$true
+    if($ObserveAppInfoMonitor) {
+      $rc=[C545DGioRealMSIX]::MonitorStart()
+      if($rc -ne 0) {throw "C545D_APPINFO_MONITOR_START_FAILED,status=$rc"}
+      $monitorActive=$true
+    }
   }
   [UInt64]$g0=Read-Epoch
   if($InjectCallbackException) {
@@ -220,7 +241,9 @@ public static class C545DGioRealMSIX {
     # projected-accessor exception. Subscription continues normally.
     "C545D_WINRT_CALLBACK_EXCEPTION_FAILCLOSED_PASS,count=$faults,install_delta=$($g1-$g0),install_complete=$doneInstall,CI_only=true"
   }
+  Observe-Monitor 11
   Scan-NaturalGio 1
+  Observe-Monitor 21
   Scan-Gio 1
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
@@ -230,7 +253,9 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g2=Await-Event $g1 'update'
   [UInt64]$doneUpdate=Await-Completion 'update'
+  Observe-Monitor 12
   Scan-NaturalGio 2
+  Observe-Monitor 22
   Scan-Gio 2
 
   Remove-AppxPackage -Package $installed[0].PackageFullName -ErrorAction Stop
@@ -239,11 +264,19 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
   [UInt64]$doneUninstall=Await-Completion 'uninstall'
+  Observe-Monitor 13
   Scan-NaturalGio 3
+  Observe-Monitor 23
   Scan-Gio 3
   "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,gio_same_process=$([bool]$GioScanDll),CI_only=true"
 }
 finally {
+  if($monitorActive) {
+    try {
+      $count=[C545DGioRealMSIX]::MonitorStop()
+      if($count -lt 0) { "C545D_APPINFO_MONITOR_STOP_ERROR=true" }
+    } catch { "C545D_APPINFO_MONITOR_STOP_ERROR=true" }
+  }
   if($gioReady) {
     try { Scan-Gio 4 } catch {
       "C545D_GIO_REAL_PACKAGE_CLEANUP_WARNING=true"
