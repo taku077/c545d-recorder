@@ -1,0 +1,58 @@
+name: C545D saved 256-cycle cache residual epochs, no Windows rerun
+on:
+  push:
+    branches: ['investigate/c545d-winrt-abi-displayname-20261120']
+    paths:
+      - 'tests/analyze_gio_cached_residual_epochs.py'
+      - '.github/workflows/c545d-cache-saved-residual-epochs-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline-saved-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download saved, numeric-only Windows 2022 #44533452892
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44533452892
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44533452892
+      - name: Download saved, numeric-only Windows 2022 #44537371920
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44537371920
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44537371920
+      - name: Download saved, numeric-only Windows 2022 #44545844200
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44545844200
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44545844200
+      - name: Check exact old Windows numeric records and output sanitized 64-cycle bins
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_gio_cached_residual_epochs.py --selftest
+          python tests/analyze_gio_cached_residual_epochs.py --root saved \
+            --output artifacts/c545d_saved_3run_per64_aggregate.csv | tee artifacts/c545d_saved_3run_status.txt
+          grep -q 'late64_private_bytes=57344;8192;0' artifacts/c545d_saved_3run_status.txt
+          grep -q 'seven_GObject_type_counters_no_last128_net_growth=3of3' artifacts/c545d_saved_3run_status.txt
+          grep -q 'plateau_unproven=true' artifacts/c545d_saved_3run_status.txt
+          echo 'C545D_SAVED_RESIDUAL_OFFLINE_CI_PASS,old_windows_runs=3,new_windows_runs=0'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-saved-residual-epoch-numeric-aggregate
+          path: |
+            artifacts/c545d_saved_3run_per64_aggregate.csv
+            artifacts/c545d_saved_3run_status.txt
+          if-no-files-found: warn
+          retention-days: 7
