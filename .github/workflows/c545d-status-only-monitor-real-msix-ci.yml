@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/c545d-status-only-monitor-real-msix-ci.yml'
       - 'tests/patch_c545d_winrt_spontaneous_listener_ci.py'
+      - 'tests/patch_c545d_winrt_status_only_listener_ci.py'
       - 'tests/patch_glib_appinfo_native_spontaneous_diagnostic.py'
       - 'tests/analyze_gio_native_spontaneous_msix.py'
       - 'tests/Invoke-C545DRealPackageEventCI.ps1'
@@ -103,7 +104,7 @@ jobs:
           # meson devenv starts in glib-build; switch back to checkout so
           # PowerShell resolves tests/ and artifact paths exactly as validated
           # by the standalone successful MSIX lifecycle workflow.
-          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" -ObserveNaturalGioRefresh -ObserveAppInfoMonitor -SkipCiGioRegistryStimulus' > artifacts/real_msix_monitor_noreg_output.txt
+          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" -ObserveNaturalGioRefresh -ObserveAppInfoMonitor -SkipCiGioRegistryStimulus -ObserveStatusEventProvenance' > artifacts/real_msix_monitor_noreg_output.txt
           grep -q 'C545D_REAL_APPX_CLEANUP_EXECUTED=true' artifacts/real_msix_monitor_noreg_output.txt
       - name: Classify observed GIO update behavior and fail on missing positive controls
         shell: pwsh
@@ -111,6 +112,10 @@ jobs:
           $ErrorActionPreference='Stop'
           py tests/analyze_gio_native_spontaneous_msix.py --input artifacts/real_msix_monitor_noreg_output.txt | Tee-Object -FilePath artifacts/real_msix_monitor_noreg_analysis.txt
           if($LASTEXITCODE -ne 0) {throw 'Real MSIX -> GIO cache invalidation path did not pass'}
+          $raw=Get-Content artifacts/real_msix_monitor_noreg_output.txt -Raw
+          if($raw -notmatch 'C545D_REAL_STATUS_EVENT_PROVENANCE,real_OS_PackageStatusChanged_callbacks=\d+,synthetic_force_calls=0,disposable_MSIX_only=true,CI_only=1') {
+            throw 'Genuine status-only event provenance counter missing or malformed'
+          }
           $summary=Get-Content artifacts/real_msix_monitor_noreg_analysis.txt -Raw
           if($summary -notmatch 'C545D_APPINFO_NATIVE_SPONTANEOUS_CI_PASS,real_package_operations=3') {
             throw 'PackageCatalog generation failed to request AppInfo rebuild on public GIO query'
