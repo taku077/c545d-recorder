@@ -1,0 +1,34 @@
+name: C545D saved GIO dedicated watcher 16-cycle strict reanalysis (NO REBUILD)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-watch-saved-artifact-reanalysis-ci.yml'
+      - 'tests/analyze_gio_winrt_bridge_integration.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze-saved-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-glib-winrt-dedicated-mta-numeric-only
+          run-id: 44693332873
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Check previously captured real Windows numeric evidence without rebuilding
+        run: |
+          python3 tests/analyze_gio_winrt_bridge_integration.py | tee artifacts/saved_bridge_analysis.txt
+          grep -q 'C545D_GLIB_WINRT_C_ABI_CONNECTED_PASS' artifacts/saved_bridge_analysis.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-saved-gio-bridge-analysis-summary-only
+          path: artifacts/saved_bridge_analysis.txt
+          retention-days: 7
+          if-no-files-found: warn
