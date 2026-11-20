@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Read-only capability probe; never change package, setting, certificate or registry
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $os=[System.Environment]::OSVersion.Version
