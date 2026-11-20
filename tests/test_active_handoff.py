@@ -49,5 +49,23 @@ class TestHandoff(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Newest UPDATE section"):
             module.extract_current(huge, BOUNDARY, "96.29%")
 
+    def test_guard_from_older_current_section_survives_excerpt_rotation(self):
+        # New updates are allowed to displace older proved experiments from
+        # the 18K summary, but the exact-SHA source already confirmed their
+        # presence. Keep the guard referent instead of freezing main forever.
+        guard = "CORE_ONLY_MSVC_64_AB_VERIFIED"
+        latest = ("### UPDATE 2026-11-21 newest\n"
+                  + "current safe host plan and CI state.\n" * 490)
+        older = ("### UPDATE 2026-11-20 older verified\n"
+                 + guard + "\n"
+                 + "historical details already verified.\n" * 310)
+        sample = ("<!-- CURRENT_HANDOFF_START: current -->\n"
+                  + latest + older + "\n" + BOUNDARY)
+        result = module.extract_current(sample, BOUNDARY, guard)
+        self.assertIn("### UPDATE 2026-11-21 newest", result)
+        self.assertIn("Protected evidence exists in the exact-commit full", result)
+        self.assertIn(guard, result)
+        self.assertNotIn("historical details already verified.", result)
+
 if __name__ == "__main__":
     unittest.main()
