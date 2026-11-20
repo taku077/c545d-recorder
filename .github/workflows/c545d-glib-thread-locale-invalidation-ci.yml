@@ -1,4 +1,4 @@
-name: C545D GLib real caller-thread locale invalidation (CI ONLY)
+name: C545D GLib AppInfo pool-thread locale cache invalidation (CI ONLY)
 on:
   push:
     branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
@@ -47,32 +47,36 @@ jobs:
           python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
           python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
           python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          # Test-only instrumentation runs on the actual GIO AppInfo pool
+          # thread, not the probe main thread, and changes no user settings.
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("glib-src/gio/gwin32packageparser.c")
+          src=p.read_text(encoding="utf-8")
+          before="  c545d_bridge_scan_start ();\n\n  /* Synthetic event delivery only."
+          assert src.count(before)==1,"GIO worker enum hook anchor changed"
+          after=r"""  static gint c545d_ci_worker_locale_scans;
+  const gint c545d_ci_scan = g_atomic_int_add (&c545d_ci_worker_locale_scans, 1) + 1;
+  if (c545d_ci_scan == 5)
+    {
+      ULONG count = 0;
+      const WCHAR ci_languages[] = L"fr-FR\0";
+      if (!SetThreadPreferredUILanguages (MUI_LANGUAGE_NAME, ci_languages, &count) ||
+          count == 0)
+        g_error ("C545D_GIO_WORKER_LOCALE_CHANGE_FAILED");
+      g_print ("C545D_GIO_WORKER_LOCALE_CHANGE,scan=5,count=%lu\n",
+               (unsigned long) count);
+    }
+  c545d_bridge_scan_start ();
+
+  /* Synthetic event delivery only."""
+          p.write_text(src.replace(before,after,1),encoding="utf-8")
+          PY
           git -C glib-src diff --check
           meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
           meson compile -C glib-build
-          python - <<'PY'
-          from pathlib import Path
-          source=Path("tests/gio_appinfo_key_handle_probe.c").read_text(encoding="utf-8")
-          before="    for (i = 1; i <= cycle_count; i++) {"
-          assert source.count(before)==1, "probe loop anchor not unique"
-          after=r"""    for (i = 1; i <= cycle_count; i++) {
-                  if (i == 5) {
-                    ULONG language_count=0;
-                    const WCHAR test_language[] = L"fr-FR\0";
-                    if (!SetThreadPreferredUILanguages(MUI_LANGUAGE_NAME,
-                            test_language, &language_count) || language_count == 0) {
-                      fprintf(stderr,"C545D_THREAD_LOCALE_CHANGE_ERROR\n");
-                      return 15;
-                    }
-                    printf("C545D_THREAD_LOCALE_CHANGE,cycle=5,count=%lu\n",
-                           (unsigned long)language_count);
-                    fflush(stdout);
-                  }"""
-          Path("glib-build/gio_appinfo_locale_probe.c").write_text(
-              source.replace(before,after,1),encoding="utf-8")
-          PY
-          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_locale_probe.exe gio_appinfo_locale_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
-      - name: Compare unchanged package generation, changed real thread locale, and cache refill
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_locale_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+      - name: Compare unchanged package generation and true AppInfo worker locale flip
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -86,7 +90,7 @@ jobs:
             meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_locale_probe.exe" --cycles=16 > "$outfile"
             grep -q 'GIO_PROBE_DONE,cycles=16' "$outfile"
           done
-      - name: Strict numeric cache parity and real locale eviction analyzer
+      - name: Validate real GIO AppInfo worker locale cache eviction and controls
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
