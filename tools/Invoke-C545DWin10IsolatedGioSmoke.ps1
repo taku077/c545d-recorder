@@ -15,15 +15,6 @@ $started=0;$observed=0;$wav=0;$cleanExit=0;$cleanup=0;$originals=0;$reason='BLOC
 $owned=$false;$stage=$null;$child=$null;$childExited=$true;$handle=[IntPtr]::Zero
 $prior=@{}
 $phase='BEGIN'
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class C545DHostGioSmokeQuery {
-  [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr OpenProcess(uint a,bool i,int p);
-  [DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
-  [DllImport("kernel32.dll",SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
-}
-'@
 try {
   $scriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
   if(-not $CandidateDll){$CandidateDll=Join-Path $scriptDir 'gio-2.0-0.dll'}
@@ -84,6 +75,19 @@ try {
   if(-not (Test-Path -LiteralPath $scanner -PathType Leaf) -or
      -not (Test-Path -LiteralPath $plugins -PathType Container)){throw 'SDK_INCOMPLETE'}
   $phase='SDK_INPUT_OK'
+  # Avoid compiling a helper assembly before all read-only/active-recorder,
+  # candidate and SDK safety gates have passed. Compilation failures are
+  # now covered by the sanitized catch path before any test child starts.
+  Add-Type -TypeDefinition @'
+  using System;
+  using System.Runtime.InteropServices;
+  public static class C545DHostGioSmokeQuery {
+    [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr OpenProcess(uint a,bool i,int p);
+    [DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
+    [DllImport("kernel32.dll",SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+  }
+  '@
+  
   $before1=(Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash
   $before2=(Get-FileHash -LiteralPath $CandidateDll -Algorithm SHA256).Hash
   $temp=if($isCi){$env:RUNNER_TEMP}else{$env:TEMP}
