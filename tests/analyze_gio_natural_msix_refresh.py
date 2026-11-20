@@ -19,6 +19,8 @@ EVENT = re.compile(
     r"uninstall_complete=(\d+),.*?only_ci_package_events_counted=true"
 )
 CLEANUP = "C545D_REAL_APPX_CLEANUP_EXECUTED=true"
+PARALLEL = re.compile(r"(?m)^C545D_GIO_PARALLEL_QUERY_PASS,stage=(\d+),callers=(\d+),apps=(\d+),failures=0,real_os_package_event=1\\s*$")
+QUEUED = re.compile(r"(?m)^C545D_CI_LAZY_RESCAN_QUEUED,seq=(\d+)\\s*$")
 
 
 def parse(data: str) -> dict[str, int | str]:
@@ -68,6 +70,19 @@ def parse(data: str) -> dict[str, int | str]:
     }
 
 
+def validate_parallel(data: str, values: dict[str, int | str]) -> None:
+    rows = [(int(stage), int(callers), int(apps))
+            for stage, callers, apps in PARALLEL.findall(data)]
+    if (len(rows) != 3 or {stage for stage, _, _ in rows} != {1, 2, 3}
+            or any(callers != 8 for _, callers, _ in rows)):
+        raise ValueError("missing/duplicate or failed 8-way Windows GAppInfo query")
+    for stage, _, apps in rows:
+        if apps != values[f"natural_{('install', 'update', 'uninstall')[stage-1]}_apps"]:
+            raise ValueError("parallel GAppInfo callers disagreed with natural count")
+    seq = [int(n) for n in QUEUED.findall(data)]
+    if seq != [1, 2, 3]:
+        raise ValueError(f"duplicate or missing queued GLib generation rebuild: {seq!r}")
+
 def selftest() -> None:
     fixture = "\n".join([
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=0,apps=39",
@@ -116,6 +131,7 @@ def selftest() -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--expect-parallel", action="store_true")
     ap.add_argument("--input", type=Path,
                     default=Path("artifacts/real_msix_natural_output.txt"))
     args = ap.parse_args()
@@ -124,6 +140,10 @@ def main() -> None:
         return
     raw = args.input.read_text(encoding="utf-8-sig", errors="replace")
     values = parse(raw)
+    if args.expect_parallel:
+        validate_parallel(raw, values)
+        values["parallel_eight_callers_each_event"] = 1
+        values["lazy_epoch_rebuilds_queued"] = 3
     fields = ",".join(f"{k}={v}" for k, v in values.items())
     print(f"C545D_NATURAL_MSIX_REFRESH_OBSERVATION,{fields},"
           "window_s=1.3,update_freshness_not_proven=1,"
