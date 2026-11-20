@@ -5,6 +5,9 @@ on:
     branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
     paths:
       - '.github/workflows/c545d-glib-dedicated-epoch-msvc-ci.yml'
+      - 'tests/c545d_winrt_dedicated_watch.cpp'
+      - 'tests/c545d_winrt_dedicated_watch.h'
+      - 'tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py'
   workflow_dispatch:
 
 permissions:
