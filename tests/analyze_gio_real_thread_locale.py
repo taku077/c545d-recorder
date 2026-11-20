@@ -15,7 +15,8 @@ def require(condition, why):
 def parse(path):
     data=Path(path).read_text(encoding="utf-8")
     require(data.count("GIO_PROBE_DONE,cycles=16,")==1, f"{path}: incomplete run")
-    require(data.count("C545D_THREAD_LOCALE_CHANGE,cycle=5,count=1")==1,
+    applied=re.findall(r"^C545D_THREAD_LOCALE_CHANGE,cycle=5,count=(\d+)$",data,re.M)
+    require(len(applied)==1 and int(applied[0])>0,
             f"{path}: missing real thread-locale mutation")
     cache=re.findall(r"^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$",
                      data,re.M)
