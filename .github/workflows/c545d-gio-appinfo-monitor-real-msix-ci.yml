@@ -1,4 +1,4 @@
-name: C545D real MSIX AppInfoMonitor post-query vs spontaneous observation (CI ONLY)
+name: C545D real MSIX AppInfoMonitor worker notification vs PackageCatalog-only gap (CI ONLY)
 on:
   push:
     branches: ['investigate/c545d-appinfo-monitor-msix-20261120']
@@ -65,7 +65,7 @@ jobs:
           python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
           python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
           python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
-          python tests/patch_glib_appinfo_monitor_after_lazy_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
           git -C glib-src diff --check
           meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
           meson compile -C glib-build
@@ -78,7 +78,7 @@ jobs:
           export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
           export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
           export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
-          export C545D_DIAG_APPINFO_MONITOR_POST_QUERY=1
+          export C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE=1
           export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
           unset C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
           WATCH="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
