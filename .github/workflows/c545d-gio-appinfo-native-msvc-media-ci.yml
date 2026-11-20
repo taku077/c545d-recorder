@@ -6,6 +6,8 @@ on:
     branches: ['investigate/c545d-winrt-monitor-spontaneous-20261120']
     paths:
       - '.github/workflows/c545d-gio-appinfo-native-msvc-media-ci.yml'
+      - 'tests/patch_c545d_winrt_spontaneous_listener_ci.py'
+      - 'tests/patch_glib_appinfo_native_spontaneous_diagnostic.py'
   workflow_dispatch:
 
 permissions:
