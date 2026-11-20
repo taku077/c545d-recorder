@@ -19,8 +19,8 @@ EVENT = re.compile(
     r"uninstall_complete=(\d+),.*?only_ci_package_events_counted=true"
 )
 CLEANUP = "C545D_REAL_APPX_CLEANUP_EXECUTED=true"
-PARALLEL = re.compile(r"(?m)^C545D_GIO_PARALLEL_QUERY_PASS,stage=(\d+),callers=(\d+),apps=(\d+),failures=0,real_os_package_event=1\\s*$")
-QUEUED = re.compile(r"(?m)^C545D_CI_LAZY_RESCAN_QUEUED,seq=(\d+)\\s*$")
+PARALLEL = re.compile(r"(?m)^C545D_GIO_PARALLEL_QUERY_PASS,stage=(\d+),callers=(\d+),apps=(\d+),failures=0,real_os_package_event=1\s*$")
+QUEUED = re.compile(r"(?m)^C545D_CI_LAZY_RESCAN_QUEUED,seq=(\d+)\s*$")
 
 
 def parse(data: str) -> dict[str, int | str]:
