@@ -40,6 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p artifacts
           python tests/analyze_gio_cached_residual_epochs.py --selftest
           python tests/analyze_gio_cached_residual_epochs.py --root saved \
             --output artifacts/c545d_saved_3run_per64_aggregate.csv | tee artifacts/c545d_saved_3run_status.txt
