@@ -55,7 +55,7 @@ class TestHandoff(unittest.TestCase):
         # presence. Keep the guard referent instead of freezing main forever.
         guard = "CORE_ONLY_MSVC_64_AB_VERIFIED"
         latest = ("### UPDATE 2026-11-21 newest\n"
-                  + "current safe host plan and CI state.\n" * 490)
+                  + "current safe host plan and CI state.\n" * 390)
         older = ("### UPDATE 2026-11-20 older verified\n"
                  + guard + "\n"
                  + "historical details already verified.\n" * 310)
