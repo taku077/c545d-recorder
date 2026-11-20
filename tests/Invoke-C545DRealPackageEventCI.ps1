@@ -9,9 +9,13 @@ param(
   [Parameter(Mandatory=$true)][string]$WatchDll,
   [Parameter(Mandatory=$true)][string]$StubExe,
   [string]$GioScanDll='',
-  [switch]$InjectCallbackException
+  [switch]$InjectCallbackException,
+  [switch]$ObserveNaturalGioRefresh
 )
 $ErrorActionPreference='Stop'
+if($ObserveNaturalGioRefresh -and -not $GioScanDll) {
+  throw 'C545D_NATURAL_GIO_OBSERVATION_REQUIRES_GIO_SCANNER'
+}
 $name='C545D.CI.PackageEvents'
 $root=Join-Path $env:RUNNER_TEMP ('c545d_event_'+[guid]::NewGuid().ToString('N'))
 $watch=[IntPtr]::Zero
@@ -80,6 +84,16 @@ function Scan-Gio([int]$stage) {
     throw "C545D_GIO_REAL_PACKAGE_SCAN_FAILED,stage=$stage,status=$result"
   }
   "C545D_GIO_REAL_MSIX_STEP_OK,stage=$stage,apps=$result"
+}
+function Scan-NaturalGio([int]$stage) {
+  if(-not $ObserveNaturalGioRefresh) { return }
+  # Same process and same event subscriber, but no synthetic RegisteredApplications
+  # mutation yet. Native scan stages 5..7 only wait and enumerate current GIO.
+  $result=[C545DGioRealMSIX]::Scan(4+$stage)
+  if($result -le 0) {
+    throw "C545D_NATURAL_GIO_SCAN_FAILED,stage=$stage,status=$result"
+  }
+  "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=$stage,apps=$result"
 }
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
@@ -187,6 +201,7 @@ public static class C545DGioRealMSIX {
     # projected-accessor exception. Subscription continues normally.
     "C545D_WINRT_CALLBACK_EXCEPTION_FAILCLOSED_PASS,count=$faults,install_delta=$($g1-$g0),install_complete=$doneInstall,CI_only=true"
   }
+  Scan-NaturalGio 1
   Scan-Gio 1
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
@@ -196,6 +211,7 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g2=Await-Event $g1 'update'
   [UInt64]$doneUpdate=Await-Completion 'update'
+  Scan-NaturalGio 2
   Scan-Gio 2
 
   Remove-AppxPackage -Package $installed[0].PackageFullName -ErrorAction Stop
@@ -204,6 +220,7 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
   [UInt64]$doneUninstall=Await-Completion 'uninstall'
+  Scan-NaturalGio 3
   Scan-Gio 3
   "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,gio_same_process=$([bool]$GioScanDll),CI_only=true"
 }
