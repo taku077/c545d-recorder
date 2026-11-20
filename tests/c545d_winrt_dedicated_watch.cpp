@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -27,6 +28,14 @@ std::atomic<uint64_t> g_shutdown_errors{0};
 std::mutex g_mta_lock;
 CO_MTA_USAGE_COOKIE g_mta_cookie{};
 unsigned g_mta_references=0;
+// A C ABI handle is an ever-increasing opaque token, never a raw object
+// address. The table owns one shared reference; each operation takes a short
+// lease under the mutex before accessing native state. Closing removes the
+// token first, so concurrent calls fail closed rather than dereference freed
+// memory. Tokens cannot suffer allocator address-reuse ABA after close.
+std::mutex g_watch_table_lock;
+std::unordered_map<uintptr_t,std::shared_ptr<c545d_dedicated_watch>> g_watch_table;
+std::atomic<uintptr_t> g_next_watch_token{1};
 
 struct WatchState {
   std::atomic<uint64_t> generation{1};
@@ -65,6 +74,7 @@ struct c545d_dedicated_watch {
   std::shared_ptr<WatchState> state=std::make_shared<WatchState>();
   std::thread worker;
   std::mutex lock;
+  std::mutex join_lock;
   std::condition_variable cv;
   bool started=false, ready=false, stop=false;
 
@@ -181,16 +191,33 @@ struct c545d_dedicated_watch {
     if(!initialized)state->active.store(false,std::memory_order_release);
   }
 
-  ~c545d_dedicated_watch() noexcept {
+  void stop_and_join() noexcept {
+    // Publishing inactive prevents newly entering callbacks from touching
+    // native state even if an asynchronous notification is still in-flight.
     state->active.store(false,std::memory_order_release);
     {
       std::lock_guard<std::mutex> guard(lock);
       stop=true;
     }
     cv.notify_all();
+    // Close must wait for MTA handler revocation regardless of outstanding
+    // snapshot leases; destructor may call this again after the last reader.
+    std::lock_guard<std::mutex> join_guard(join_lock);
     if(worker.joinable())worker.join();
   }
+
+  ~c545d_dedicated_watch() noexcept {
+    stop_and_join();
+  }
 };
+
+static std::shared_ptr<c545d_dedicated_watch>
+c545d_watch_lease(c545d_dedicated_watch* token) {
+  if(!token)return {};
+  std::lock_guard<std::mutex> guard(g_watch_table_lock);
+  const auto it=g_watch_table.find(reinterpret_cast<uintptr_t>(token));
+  return it==g_watch_table.end()?std::shared_ptr<c545d_dedicated_watch>{}:it->second;
+}
 
 extern "C" int c545d_dedicated_runtime_enter(void) {
   std::lock_guard<std::mutex> guard(g_mta_lock);
@@ -203,7 +230,14 @@ extern "C" int c545d_dedicated_runtime_enter(void) {
 }
 extern "C" void c545d_dedicated_runtime_leave(void) {
   std::lock_guard<std::mutex> guard(g_mta_lock);
-  if(g_mta_references>0 && --g_mta_references==0) {
+  if(g_mta_references==0)return;
+  if(g_mta_references==1) {
+    // A mistaken early leave must NOT retire COM while a live watcher
+    // depends on it. Caller still owes leave after its final watch close.
+    std::lock_guard<std::mutex> watches(g_watch_table_lock);
+    if(!g_watch_table.empty())return;
+  }
+  if(--g_mta_references==0) {
     CoDecrementMTAUsage(g_mta_cookie);
     g_mta_cookie=CO_MTA_USAGE_COOKIE{};
   }
@@ -219,7 +253,13 @@ extern "C" int c545d_dedicated_open(c545d_dedicated_watch** out) {
   if(!out)return 2;
   *out=nullptr;
   try {
-    *out=new c545d_dedicated_watch;
+    auto owned=std::make_shared<c545d_dedicated_watch>();
+    std::lock_guard<std::mutex> guard(g_watch_table_lock);
+    const auto id=g_next_watch_token.fetch_add(1,std::memory_order_relaxed);
+    if(id==0)return 3; // fail closed on impossible token counter rollover
+    const auto inserted=g_watch_table.emplace(id,std::move(owned));
+    if(!inserted.second)return 3;
+    *out=reinterpret_cast<c545d_dedicated_watch*>(id);
     return 0;
   } catch(...) {return 3;}
 }
@@ -227,7 +267,9 @@ extern "C" int c545d_dedicated_snapshot(
     c545d_dedicated_watch* p,uint64_t* gen,uint64_t* locale) {
   if(!p || !gen || !locale)return 2;
   try {
-    auto state=p->state;
+    auto watch=c545d_watch_lease(p);
+    if(!watch)return 3;
+    auto state=watch->state;
     if(!state->active.load(std::memory_order_acquire))return 3;
     const auto before=state->generation.load(std::memory_order_acquire);
     uint64_t hash=14695981039346656037ULL;
@@ -242,18 +284,33 @@ extern "C" int c545d_dedicated_snapshot(
   }catch(...) {return 6;}
 }
 extern "C" int c545d_dedicated_synthetic_event(c545d_dedicated_watch* p) {
-  if(!p || !p->state->active.load(std::memory_order_acquire))return 2;
-  p->state->generation.fetch_add(1,std::memory_order_acq_rel);
+  auto watch=c545d_watch_lease(p);
+  if(!watch || !watch->state->active.load(std::memory_order_acquire))return 2;
+  watch->state->generation.fetch_add(1,std::memory_order_acq_rel);
   return 0;
 }
 extern "C" void c545d_dedicated_close(c545d_dedicated_watch* p) {
-  delete p;
+  if(!p)return;
+  std::shared_ptr<c545d_dedicated_watch> owned;
+  {
+    std::lock_guard<std::mutex> guard(g_watch_table_lock);
+    const auto it=g_watch_table.find(reinterpret_cast<uintptr_t>(p));
+    if(it==g_watch_table.end())return;
+    owned=std::move(it->second);
+    g_watch_table.erase(it);
+  }
+  // All new calls reject the retired token. Existing readers hold leases
+  // and can safely finish; callbacks are deactivated and revoked before close
+  // returns. Repeated close of an old token is a no-op, no dangling free.
+  owned->stop_and_join();
 }
 extern "C" int c545d_dedicated_ci_completion_counters(
     c545d_dedicated_watch* p, uint64_t* install_done,
     uint64_t* update_done, uint64_t* uninstall_done) {
   if(!p || !install_done || !update_done || !uninstall_done) return 2;
-  auto state=p->state;
+  auto watch=c545d_watch_lease(p);
+  if(!watch)return 3;
+  auto state=watch->state;
   *install_done=state->ci_install_complete.load(std::memory_order_acquire);
   *update_done=state->ci_update_complete.load(std::memory_order_acquire);
   *uninstall_done=state->ci_uninstall_complete.load(std::memory_order_acquire);
