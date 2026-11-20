@@ -1,0 +1,104 @@
+name: C545D GLib real caller-thread locale invalidation (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths: ['.github/workflows/c545d-glib-thread-locale-invalidation-ci.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  glib-locale:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build separate WinRT watcher C ABI DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_winrt_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_winrt_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build dedicated watcher' }
+      - name: Build throwaway GLib and source-instrumented 16-cycle test
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          python - <<'PY'
+          from pathlib import Path
+          source=Path("tests/gio_appinfo_key_handle_probe.c").read_text(encoding="utf-8")
+          before="    for (i = 1; i <= cycle_count; i++) {"
+          assert source.count(before)==1, "probe loop anchor not unique"
+          after=r"""    for (i = 1; i <= cycle_count; i++) {
+                  if (i == 5) {
+                    ULONG language_count=0;
+                    const WCHAR test_language[] = L"fr-FR\0";
+                    if (!SetThreadPreferredUILanguages(MUI_LANGUAGE_NAME,
+                            test_language, &language_count) || language_count == 0) {
+                      fprintf(stderr,"C545D_THREAD_LOCALE_CHANGE_ERROR\n");
+                      return 15;
+                    }
+                    printf("C545D_THREAD_LOCALE_CHANGE,cycle=5,count=%lu\n",
+                           (unsigned long)language_count);
+                    fflush(stdout);
+                  }"""
+          Path("glib-build/gio_appinfo_locale_probe.c").write_text(
+              source.replace(before,after,1),encoding="utf-8")
+          PY
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_locale_probe.exe gio_appinfo_locale_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+      - name: Compare unchanged package generation, changed real thread locale, and cache refill
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_winrt_dedicated_watch.dll")"
+          unset C545D_HANDLE_EXE C545D_DIAG_UWP_CACHE_REFRESH_EVERY C545D_DIAG_UWP_BRIDGE_INJECT_SCAN || true
+          for mode in plain bridge; do
+            unset C545D_DIAG_UWP_CACHE_EVENT_BRIDGE || true
+            if [ "$mode" = bridge ]; then export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1; fi
+            outfile="artifacts/locale_"$mode"_16.log"
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_locale_probe.exe" --cycles=16 > "$outfile"
+            grep -q 'GIO_PROBE_DONE,cycles=16' "$outfile"
+          done
+      - name: Strict numeric cache parity and real locale eviction analyzer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_real_thread_locale.py | Tee-Object -FilePath artifacts/locale_analysis.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Real caller thread locale invalidation failure' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-real-thread-locale-16-numeric-only
+          path: |
+            artifacts/locale_analysis.txt
+            artifacts/locale_plain_16.log
+            artifacts/locale_bridge_16.log
+          retention-days: 7
+          if-no-files-found: warn
