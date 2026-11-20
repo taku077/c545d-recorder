@@ -1,4 +1,5 @@
 name: C545D real MSIX GIO failed-parser generation retry with 8 readers (CI ONLY)
+# Retry valid error propagation: injected failure must set GError, never bare FALSE.
 on:
   push:
     branches: ['investigate/c545d-mta-transition-guard-20261120']
