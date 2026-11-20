@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `41a37c7a968ecfe526f0c440054a5d1636ecac4c`
-- **PR updated at (UTC):** `2026-11-20T16:57:56Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/41a37c7a968ecfe526f0c440054a5d1636ecac4c/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `87abeee67a120728f2a587458ef6faf7ff9f55f3`
+- **PR updated at (UTC):** `2026-11-20T17:00:33Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/87abeee67a120728f2a587458ef6faf7ff9f55f3/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44778607088](https://github.com/taku077/c545d-recorder/actions/runs/44778607088) |
-| C545D production 2xRTSP hourly MP4 configuration invariants (STATIC ONLY) | in_progress | [#44778599620](https://github.com/taku077/c545d-recorder/actions/runs/44778599620) |
+| C545D active development handoff auto-refresh | in_progress | [#44779034874](https://github.com/taku077/c545d-recorder/actions/runs/44779034874) |
 
 ## Current development findings from the active PR
 
