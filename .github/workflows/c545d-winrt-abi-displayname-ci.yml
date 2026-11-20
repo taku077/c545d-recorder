@@ -36,7 +36,7 @@ jobs:
           py tests/analyze_winrt_abi_displayname.py --selftest
           if($LASTEXITCODE -ne 0) {throw 'Numeric analyst selftest failed'}
           $exe=(Resolve-Path artifacts/winrt_abi.exe).Path
-          foreach($mode in @('control','projected','raw')) {
+          foreach($mode in @('control','projected','raw','freshcontrol','freshraw')) {
             & $exe $mode > "artifacts/winrt_abi_$mode.txt"
             if($LASTEXITCODE -ne 0) {throw "WinRT mode $mode failed"}
           }
@@ -51,6 +51,8 @@ jobs:
             artifacts/winrt_abi_control.txt
             artifacts/winrt_abi_projected.txt
             artifacts/winrt_abi_raw.txt
+            artifacts/winrt_abi_freshcontrol.txt
+            artifacts/winrt_abi_freshraw.txt
             artifacts/winrt_abi_comparison.csv
             artifacts/winrt_abi_summary.txt
           retention-days: 7
