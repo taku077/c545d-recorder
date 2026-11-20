@@ -77,7 +77,7 @@ try {
   Checked 'main_pack'
   Push-Location $resDir
   try {
-    & $make pack /o /r /m (Join-Path $resDir 'AppxManifest.xml') /f (Join-Path $resDir 'mapping.txt') /p $resMsix
+    & $make pack /o /r /m (Join-Path $mainDir 'AppxManifest.xml') /f (Join-Path $resDir 'mapping.txt') /p $resMsix
     Checked 'resource_pack'
   } finally {Pop-Location}
   & $sign sign /fd SHA256 /f $pfx /p $secret $mainMsix *> $null
