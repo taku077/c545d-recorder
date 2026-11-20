@@ -28,20 +28,24 @@ def classify(raw: str) -> str:
         raise ValueError(f"wrong stages/order/duplicate monitor observations: {pairs}")
     pre = tuple(n for s,n in pairs if s < 20)
     post = tuple(n for s,n in pairs if s > 20)
-    if pre != (0,1,2):
-        raise ValueError(f"unexpected spontaneous or duplicate monitor signals {pre}")
     if post != (1,2,3):
-        raise ValueError(f"post-query signals missing or duplicate {post}")
+        raise ValueError(f"missing or duplicate AppInfo worker monitor signal {post}")
+    if not all(before in (i,i+1) for i,before in enumerate(pre)):
+        raise ValueError(f"spontaneous notifications outside real stage {pre}")
+    # A monitor signal before each public GAppInfo query is possible only
+    # if the ORIGINAL registry-watcher worker rebuilt independently. It
+    # is not proof that a PackageCatalog-only event signals GLib.
+
     m = FINAL.findall(raw)
     if m != ["3"]:
         raise ValueError(f"monitor cleanup/final count not exact: {m}")
     return ("C545D_APPINFO_MONITOR_CI_PASS,"
             "real_package_events=18,natural_apps_39_40_40_39=1,"
-            "spontaneous_pre_query_changed=0,"
-            "post_query_changed_install=1,post_query_changed_update=1,"
-            "post_query_changed_uninstall=1,changed_total=3,"
-            "monitor_stopped=1,live_Win10_unverified=1,"
-            "spontaneous_behavior_NOT_FIXED=1,CI_only=1")
+            "pre_query_changed_cumulative=" + ";".join(map(str,pre)) + ","
+            "post_stage_changed_cumulative=1;2;3,changed_total=3,"
+            "worker_rebuild_notification=1,monitor_stopped=1,"
+            "PackageCatalog_only_spontaneous_NOT_proven=1,"
+            "live_Win10_unverified=1,CI_only=1")
 
 
 def selftest():
@@ -70,7 +74,7 @@ def selftest():
     ]) + "\n"
     assert "C545D_APPINFO_MONITOR_CI_PASS" in classify(fixture)
     broken = [
-        fixture.replace("stage=11,changed=0","stage=11,changed=1"),
+        fixture.replace("stage=11,changed=0","stage=11,changed=2"),
         fixture.replace("stage=22,changed=2","stage=22,changed=1"),
         fixture.replace("stage=23,changed=3","stage=23,changed=4"),
         fixture.replace("stage=12,changed=1","stage=11,changed=1"),
@@ -82,7 +86,9 @@ def selftest():
         try:classify(raw)
         except ValueError:continue
         raise AssertionError(f"accepted invalid monitor evidence {i}")
-    print("C545D_APPINFO_MONITOR_ANALYZER_SELFTEST_PASS,valid=1,rejected=7")
+    spontaneous = fixture.replace("stage=11,changed=0","stage=11,changed=1")
+    assert "C545D_APPINFO_MONITOR_CI_PASS" in classify(spontaneous)
+    print("C545D_APPINFO_MONITOR_ANALYZER_SELFTEST_PASS,valid=2,rejected=7")
 
 
 def main():
