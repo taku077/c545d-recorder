@@ -3,15 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `51515f5dc3850695debf5d661da54cbb10cf3cb5`
-- **PR updated at (UTC):** `2026-11-20T15:47:00Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/51515f5dc3850695debf5d661da54cbb10cf3cb5/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a9ecfae6fd4301b5f61f00d99390f99adf59f453`
+- **PR updated at (UTC):** `2026-11-20T15:47:33Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a9ecfae6fd4301b5f61f00d99390f99adf59f453/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | queued | [#44766735621](https://github.com/taku077/c545d-recorder/actions/runs/44766735621) |
+| C545D actual gst-launch app-local GIO loader proof (CI only) | in_progress | [#44766819276](https://github.com/taku077/c545d-recorder/actions/runs/44766819276) |
 
 ## Current development findings from the active PR
 
