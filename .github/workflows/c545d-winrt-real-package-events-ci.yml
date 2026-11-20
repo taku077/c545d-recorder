@@ -6,6 +6,7 @@ on:
       - '.github/workflows/c545d-winrt-real-package-events-ci.yml'
       - 'tests/Invoke-C545DRealPackageEventCI.ps1'
       - 'tests/make_c545d_ci_package_fixture.py'
+      - 'tests/c545d_winrt_dedicated_watch.cpp'
   workflow_dispatch:
 permissions:
   contents: read
