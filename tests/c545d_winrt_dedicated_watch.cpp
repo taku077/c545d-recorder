@@ -31,6 +31,11 @@ unsigned g_mta_references=0;
 struct WatchState {
   std::atomic<uint64_t> generation{1};
   std::atomic<bool> active{true};
+  // Diagnostics only. These counters do not control the cache or alter
+  // notification behavior. The real OS can deliver several progress events.
+  std::atomic<uint64_t> ci_install_complete{0};
+  std::atomic<uint64_t> ci_update_complete{0};
+  std::atomic<uint64_t> ci_uninstall_complete{0};
 };
 
 bool hash_language_list(bool user, uint64_t& digest) {
@@ -116,6 +121,24 @@ struct c545d_dedicated_watch {
             } catch(...) {
               return; // Never attribute an unknown package to our CI fixture.
             }
+          }
+          // Record real terminal notifications separately from mere progress.
+          // Keep invalidating on every event so any concurrent cache use can
+          // discard stale epochs immediately. Completion provides a second
+          // chance to invalidate once package deployment has finished.
+          using ArgsType=std::decay_t<decltype(args)>;
+          if constexpr(std::is_same_v<
+              ArgsType,winrt::Windows::ApplicationModel::PackageInstallingEventArgs>) {
+            if(args.IsComplete())
+              p->ci_install_complete.fetch_add(1,std::memory_order_relaxed);
+          } else if constexpr(std::is_same_v<
+              ArgsType,winrt::Windows::ApplicationModel::PackageUpdatingEventArgs>) {
+            if(args.IsComplete())
+              p->ci_update_complete.fetch_add(1,std::memory_order_relaxed);
+          } else if constexpr(std::is_same_v<
+              ArgsType,winrt::Windows::ApplicationModel::PackageUninstallingEventArgs>) {
+            if(args.IsComplete())
+              p->ci_uninstall_complete.fetch_add(1,std::memory_order_relaxed);
           }
           p->generation.fetch_add(1,std::memory_order_acq_rel);
         }
@@ -226,6 +249,17 @@ extern "C" int c545d_dedicated_synthetic_event(c545d_dedicated_watch* p) {
 extern "C" void c545d_dedicated_close(c545d_dedicated_watch* p) {
   delete p;
 }
+extern "C" int c545d_dedicated_ci_completion_counters(
+    c545d_dedicated_watch* p, uint64_t* install_done,
+    uint64_t* update_done, uint64_t* uninstall_done) {
+  if(!p || !install_done || !update_done || !uninstall_done) return 2;
+  auto state=p->state;
+  *install_done=state->ci_install_complete.load(std::memory_order_acquire);
+  *update_done=state->ci_update_complete.load(std::memory_order_acquire);
+  *uninstall_done=state->ci_uninstall_complete.load(std::memory_order_acquire);
+  return 0;
+}
+
 extern "C" void c545d_dedicated_global_counters(
     uint64_t* registered,uint64_t* revoked,uint64_t* shutdown_errors) {
   if(registered)*registered=g_registration_count.load(std::memory_order_acquire);
