@@ -45,6 +45,23 @@ jobs:
           [Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors) | Out-Null
           if($errors.Count -gt 0){throw 'Host smoke PowerShell syntax errors'}
           $txt=Get-Content $script -Raw
+          # Exercise the actual read-only cleanup gate function on disposable
+          # Windows fixtures. Never recurse into or delete a junction target.
+          $ast=[Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path,[ref]$tokens,[ref]$errors)
+          $nodes=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-C545DStageHasNoReparse'},$true))
+          if($nodes.Count -ne 1 -or -not $txt.Contains('(Test-C545DStageHasNoReparse -Root $stage)')){throw 'Test-owned cleanup guard missing'}
+          . ([scriptblock]::Create($nodes[0].Extent.Text))
+          $ownedFixture=Join-Path $env:RUNNER_TEMP 'c545d-cleanup-owned-fixture'
+          $externalFixture=Join-Path $env:RUNNER_TEMP 'c545d-cleanup-external-sentinel'
+          New-Item -ItemType Directory -Path $ownedFixture,$externalFixture -Force | Out-Null
+          $sentinel=Join-Path $externalFixture 'DO_NOT_DELETE_THIS.txt'
+          Set-Content -LiteralPath $sentinel -Value 'external file must survive' -Encoding ascii
+          if(-not (Test-C545DStageHasNoReparse -Root $ownedFixture)){throw 'Ordinary owned tree unexpectedly rejected'}
+          $junction=Join-Path $ownedFixture 'unexpected-junction'
+          New-Item -ItemType Junction -Path $junction -Target $externalFixture -ErrorAction Stop | Out-Null
+          if(Test-C545DStageHasNoReparse -Root $ownedFixture){throw 'Junction in owned tree was not rejected'}
+          if(-not (Test-Path -LiteralPath $sentinel -PathType Leaf)){throw 'Outside sentinel changed'}
+          Write-Host 'C545D_REPARSE_CLEANUP_GUARD_CI_PASS,normal_tree_allowed=1,junction_rejected=1,external_sentinel_unchanged=1'
           $gatePos=$txt.IndexOf('$phase=''SDK_INPUT_OK''')
           $compilerPos=$txt.IndexOf('Add-Type -TypeDefinition')
           if($gatePos -lt 0 -or $compilerPos -le $gatePos){throw 'Helper compilation must follow all no-run safety gates'}
