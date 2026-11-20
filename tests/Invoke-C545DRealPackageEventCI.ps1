@@ -51,7 +51,7 @@ function Await-Event([UInt64]$epoch,[string]$stage) {
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
   $msix=Join-Path $root ("package_"+$v+".msix")
-  & py tests/make_c545d_ci_package_fixture.py --out $layout --stub $StubExe --version $v
+  & py tests/make_c545d_ci_package_fixture.py --out $layout --stub $StubExe --version $v | Out-Host
   Require-Exit 'C545D_REAL_APPX_FIXTURE_CREATION_FAILED'
   & $make pack /o /d $layout /p $msix *> $null
   Require-Exit 'C545D_REAL_APPX_PACK_FAILED'
