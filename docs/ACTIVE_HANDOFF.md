@@ -3,17 +3,26 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#57](https://github.com/taku077/c545d-recorder/pull/57) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-mta-transition-guard-20261120` / `c576e7aa7fd4762481428ad7942ce29c51626d1c`
-- **PR updated at (UTC):** `2026-11-20T11:22:51Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c576e7aa7fd4762481428ad7942ce29c51626d1c/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-mta-transition-guard-20261120` / `aba6286098d9204325147762bfa45839bbb3e73a`
+- **PR updated at (UTC):** `2026-11-20T11:53:28Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/aba6286098d9204325147762bfa45839bbb3e73a/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | success | [#44727134068](https://github.com/taku077/c545d-recorder/actions/runs/44727134068) |
+| C545D active development handoff auto-refresh | pending | [#44731259499](https://github.com/taku077/c545d-recorder/actions/runs/44731259499) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-20 JST — newer child PR #60 real MSIX monitor-worker success; spontaneous signal still blocked
+
+- Newest functional validation: **draft child [PR #60](https://github.com/taku077/c545d-recorder/pull/60)** `investigate/c545d-appinfo-monitor-msix-20261120`, based on PR59 (itself child of PR57). **Must inspect PR60 HEAD and Windows CI**, not stop at older main PR57/PR59/PR54. The full independently updated child `docs/HANDOFF_CURRENT.md` records source/CI and is authoritative for monitor changes. No diagnostic source deployed to Windows10/Tapo recorder.
+- Source audit: upstream GLib 2.82.4 Windows `gio/gwin32appinfo.c` rebuild worker did NOT emit `g_app_info_monitor_fire()`. Original post-GAppInfo-query-only candidate [#44728883123 FAILED](https://github.com/taku077/c545d-recorder/actions/runs/44728883123): genuine signed MSIX install updated app inventory from39 to40 but GAppInfoMonitor signal stayed0. Stored old artifact was independently rejected in [Linux replay #44730097403 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44730097403).
+- Diagnostic worker-completion candidate emits monitor changed **after releasing Win32 AppInfo worker mutex** and suppresses initial build. **[Windows real signed MSIX no synthetic registry changes #44730379869 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44730379869)**: 18 true filtered PackageCatalog callbacks, app list39→40→40→39, exactly3 changed signals after three public GAppInfo queries, cumulative PRE-query0/1/2 and POST-query1/2/3, clean monitor unref/package and cert removal. Artifact14626426256. **Does NOT generate spontaneous PackageCatalog-only notification without any GAppInfo query**; GLib public monitor contract still not fully release-qualified.
+- Existing registry-stimulus positive-control run #44729908943 had **6 expected** worker notifications (3 natural +3 synthetic registry), not 3; strict initial expectation was wrong and produced a CI FAIL although worker paths succeeded. The original numeric artifact was REUSED, and **[Linux strict six-signal replay #44730738888 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44730738888)**. Parser now reports synthetic registry effects separately; no Windows rerun necessary for parser fix. 
+- **[Full official MSVC GStreamer 1.28.8 SDK, 2047 export, two synthetic H264/AAC splitmux MP4/EOS verification #44730978299](https://github.com/taku077/c545d-recorder/actions/runs/44730978299) is PENDING** for the new worker hook as of this checkpoint; do not assume success until final status/artifact reviewed. Earlier parent PR57 full media SUCCESS is an older code snapshot.
+- Next AI-only: inspect final #44730978299, then investigate a **safe native WinRT event→GLib context signal** with strict teardown and no background polling, before any release candidate/Win10 host test. No user manual long measurement or recorder/DLL/registry changes at this time. Remaining CPU/PrivateUsage/handles=0 over real 24×365 is still **UNPROVEN**.
 
 ### UPDATE 2026-11-20 JST — NEW latest child PR #59 saved-cache residual per64 analysis CI PASSED
 
