@@ -7,13 +7,15 @@ The no-op packaged executable is NEVER launched.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$WatchDll,
-  [Parameter(Mandatory=$true)][string]$StubExe
+  [Parameter(Mandatory=$true)][string]$StubExe,
+  [string]$GioScanDll=''
 )
 $ErrorActionPreference='Stop'
 $name='C545D.CI.PackageEvents'
 $root=Join-Path $env:RUNNER_TEMP ('c545d_event_'+[guid]::NewGuid().ToString('N'))
 $watch=[IntPtr]::Zero
 $runtime=$false
+$gioReady=$false
 $cert=$null
 $trusted=$false
 $secret=[guid]::NewGuid().ToString('N')
@@ -69,6 +71,14 @@ function Await-Completion([string]$stage) {
     Start-Sleep -Milliseconds 100
   }
   throw "C545D_REAL_APPX_COMPLETION_MISSING,stage=$stage"
+}
+function Scan-Gio([int]$stage) {
+  if (-not $GioScanDll) { return }
+  $result=[C545DGioRealMSIX]::Scan($stage)
+  if($result -le 0) {
+    throw "C545D_GIO_REAL_PACKAGE_SCAN_FAILED,stage=$stage,status=$result"
+  }
+  "C545D_GIO_REAL_MSIX_STEP_OK,stage=$stage,apps=$result"
 }
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
@@ -136,6 +146,19 @@ public static class C545DWatchInterop {
   $runtime=$true
   $ret=[C545DWatchInterop]::Open([ref]$watch)
   if($ret -ne 0 -or $watch -eq [IntPtr]::Zero) { throw "C545D_REAL_APPX_WATCH_OPEN_FAILED,status=$ret" }
+  if($GioScanDll) {
+    $gio=@'
+using System;
+using System.Runtime.InteropServices;
+public static class C545DGioRealMSIX {
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_real_msix_stage", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Scan(int stage);
+}
+'@
+    Add-Type -TypeDefinition $gio.Replace('__DLL__',$GioScanDll.Replace('"','""')) -ErrorAction Stop
+    Scan-Gio 0
+    $gioReady=$true
+  }
   [UInt64]$g0=Read-Epoch
 
   Add-AppxPackage -Path $v1 -ErrorAction Stop
@@ -145,6 +168,7 @@ public static class C545DWatchInterop {
   }
   [UInt64]$g1=Await-Event $g0 'install'
   [UInt64]$doneInstall=Await-Completion 'install'
+  Scan-Gio 1
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
   $installed=@(Get-AppxPackage -Name $name -ErrorAction Stop)
@@ -153,6 +177,7 @@ public static class C545DWatchInterop {
   }
   [UInt64]$g2=Await-Event $g1 'update'
   [UInt64]$doneUpdate=Await-Completion 'update'
+  Scan-Gio 2
 
   Remove-AppxPackage -Package $installed[0].PackageFullName -ErrorAction Stop
   if(@(Get-AppxPackage -Name $name -ErrorAction Stop).Count -ne 0) {
@@ -160,9 +185,15 @@ public static class C545DWatchInterop {
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
   [UInt64]$doneUninstall=Await-Completion 'uninstall'
-  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,CI_only=true"
+  Scan-Gio 3
+  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,gio_same_process=$([bool]$GioScanDll),CI_only=true"
 }
 finally {
+  if($gioReady) {
+    try { Scan-Gio 4 } catch {
+      "C545D_GIO_REAL_PACKAGE_CLEANUP_WARNING=true"
+    }
+  }
   if($watch -ne [IntPtr]::Zero) {
     [C545DWatchInterop]::Close($watch)
     $watch=[IntPtr]::Zero
