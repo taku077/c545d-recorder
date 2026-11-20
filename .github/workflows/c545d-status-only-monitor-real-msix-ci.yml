@@ -1,0 +1,126 @@
+name: C545D status-only notifier genuine MSIX event regression CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-status-only-monitor-real-msix-ci.yml'
+      - 'tests/patch_c545d_winrt_spontaneous_listener_ci.py'
+      - 'tests/patch_glib_appinfo_native_spontaneous_diagnostic.py'
+      - 'tests/analyze_gio_native_spontaneous_msix.py'
+      - 'tests/Invoke-C545DRealPackageEventCI.ps1'
+      - 'tests/c545d_gio_real_msix_cache_scan.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+jobs:
+  real-event-gio-cache:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Validate paired MSIX/GIO natural-refresh analyzer before native build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_natural_msix_refresh.py --selftest
+          py tests/analyze_gio_monitor_msix.py --selftest
+          py tests/analyze_gio_native_spontaneous_msix.py --selftest
+          if ($LASTEXITCODE -ne 0) {throw 'E2E numeric evidence analyzer selftest failure'}
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DRealPackageEventCI.ps1).Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0) {throw 'MSIX event orchestrator parse errors'}
+      - name: Build no-op signed-MSiX host payload and dedicated WinRT watcher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /W4 /MD /O2 tests/c545d_ci_package_noop.c /Fe:artifacts/c545d_ci_noop.exe /link /SUBSYSTEM:WINDOWS
+          if($LASTEXITCODE -ne 0) {throw 'CI no-op package executable build failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0) {throw 'WinRT native signal sink source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0) {throw 'Status-only notification source patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0) {throw 'Dedicated MTA watcher build failed'}
+      - name: Build disposable GLib 2.82.4 combined fix plus real package event bridge
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_native_spontaneous_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -shared -o ../artifacts/c545d_gio_real_msix_cache_scan.dll ../tests/c545d_gio_real_msix_cache_scan.c $(pkg-config --cflags --libs gio-2.0) -ladvapi32'
+          test -f artifacts/c545d_gio_real_msix_cache_scan.dll
+      - name: Compare no-registry native GIO observations with same-run registry positive controls
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
+          export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
+          # Disable worker fire: only true WinRT terminal signals may notify.
+          unset C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE || true
+          export C545D_DIAG_APPINFO_MONITOR_UNSOLICITED=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
+          unset C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
+          WATCH="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
+          NOOP="$(cygpath -w "$PWD/artifacts/c545d_ci_noop.exe")"
+          SCAN="$(cygpath -w "$PWD/artifacts/c545d_gio_real_msix_cache_scan.dll")"
+          # Native printf / atexit stats bypass the PS object pipeline; capture
+          # this entire PowerShell process stdout in one sanitized artifact.
+          export WATCH NOOP SCAN
+          # meson devenv starts in glib-build; switch back to checkout so
+          # PowerShell resolves tests/ and artifact paths exactly as validated
+          # by the standalone successful MSIX lifecycle workflow.
+          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" -ObserveNaturalGioRefresh -ObserveAppInfoMonitor -SkipCiGioRegistryStimulus' > artifacts/real_msix_monitor_noreg_output.txt
+          grep -q 'C545D_REAL_APPX_CLEANUP_EXECUTED=true' artifacts/real_msix_monitor_noreg_output.txt
+      - name: Classify observed GIO update behavior and fail on missing positive controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_native_spontaneous_msix.py --input artifacts/real_msix_monitor_noreg_output.txt | Tee-Object -FilePath artifacts/real_msix_monitor_noreg_analysis.txt
+          if($LASTEXITCODE -ne 0) {throw 'Real MSIX -> GIO cache invalidation path did not pass'}
+          $summary=Get-Content artifacts/real_msix_monitor_noreg_analysis.txt -Raw
+          if($summary -notmatch 'C545D_APPINFO_NATIVE_SPONTANEOUS_CI_PASS,real_package_operations=3') {
+            throw 'PackageCatalog generation failed to request AppInfo rebuild on public GIO query'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-status-only-genuine-MSIX-regression-numeric-only
+          path: |
+            artifacts/real_msix_monitor_noreg_output.txt
+            artifacts/real_msix_monitor_noreg_analysis.txt
+          retention-days: 7
+          if-no-files-found: warn
