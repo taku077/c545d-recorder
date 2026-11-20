@@ -1,0 +1,47 @@
+name: C545D WinRT native unsolicited sink unregister and close race Windows CI
+on:
+  push:
+    branches: ['investigate/c545d-winrt-monitor-spontaneous-20261120']
+    paths:
+      - '.github/workflows/c545d-native-monitor-sink-lifetime-ci.yml'
+      - 'tests/c545d_spontaneous_native_sink_lifetime.cpp'
+      - 'tests/patch_c545d_winrt_spontaneous_listener_ci.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-mta-sink-lifetime:
+    runs-on: windows-2022
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build opt-in native watcher with terminal-only notification sink
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'Native sink watcher MSVC x64 failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/c545d_spontaneous_native_sink_lifetime.cpp /Fe:artifacts/c545d_native_sink_lifetime.exe
+          if($LASTEXITCODE -ne 0){throw 'Native lifetime test compile failed'}
+      - name: Short deterministic callback unregister/close races and handle census
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./artifacts/c545d_native_sink_lifetime.exe (Resolve-Path artifacts/c545d_dedicated_watch.dll).Path | Tee-Object -FilePath artifacts/native_sink_lifetime_summary.txt
+          if($LASTEXITCODE -ne 0){throw 'Native callback unload or handle regression'}
+          if((Get-Content artifacts/native_sink_lifetime_summary.txt -Raw) -notmatch 'C545D_NATIVE_SINK_LIFETIME_PASS,scans=26,inflight_detach_waits=1,inflight_close_waits=1'){
+            throw 'Strict native sink lifecycle result missing'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-native-monitor-sink-lifetime-numeric-only
+          path: artifacts/native_sink_lifetime_summary.txt
+          retention-days: 7
+          if-no-files-found: warn

@@ -14,9 +14,13 @@ param(
   [switch]$StressConcurrentGio,
   [switch]$InjectParserFailureOnce,
   [switch]$ObserveAppInfoMonitor,
-  [switch]$SkipCiGioRegistryStimulus
+  [switch]$SkipCiGioRegistryStimulus,
+  [switch]$AssertVersionedFixtureDisplayName
 )
 $ErrorActionPreference='Stop'
+if($AssertVersionedFixtureDisplayName -and (-not $SkipCiGioRegistryStimulus -or -not $ObserveNaturalGioRefresh)) {
+  throw 'C545D_VERSIONED_FIXTURE_REQUIRES_GENUINE_MSIX_NO_REGISTRY_MODE'
+}
 if($SkipCiGioRegistryStimulus -and -not $ObserveAppInfoMonitor) {
   throw 'C545D_NO_REGISTRY_STIMULUS_REQUIRES_MONITOR_MODE'
 }
@@ -131,11 +135,20 @@ function Scan-NaturalGio([int]$stage) {
     throw "C545D_NATURAL_GIO_SCAN_FAILED,stage=$stage,status=$result"
   }
   "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=$stage,apps=$result"
+  if($AssertVersionedFixtureDisplayName) {
+    $fresh=[C545DGioRealMSIX]::CheckDisplay($stage)
+    if($fresh -ne 1) {
+      throw "C545D_GIO_VERSIONED_FIXTURE_DISPLAY_STALE,stage=$stage,status=$fresh"
+    }
+    "C545D_GIO_FIXTURE_DISPLAY_VERSION_PASS,stage=$stage,fresh=1"
+  }
 }
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
   $msix=Join-Path $root ("package_"+$v+".msix")
-  & py tests/make_c545d_ci_package_fixture.py --out $layout --stub $StubExe --version $v | Out-Host
+  $fixtureArgs=@('tests/make_c545d_ci_package_fixture.py','--out',$layout,'--stub',$StubExe,'--version',$v)
+  if($AssertVersionedFixtureDisplayName) { $fixtureArgs+='--versioned-display-name' }
+  & py @fixtureArgs | Out-Host
   Require-Exit 'C545D_REAL_APPX_FIXTURE_CREATION_FAILED'
   & $make pack /o /d $layout /p $msix *> $null
   Require-Exit 'C545D_REAL_APPX_PACK_FAILED'
@@ -217,6 +230,8 @@ public static class C545DGioRealMSIX {
   public static extern int MonitorObserve(int stage);
   [DllImport(@"__DLL__", EntryPoint="c545d_ci_monitor_stop", CallingConvention=CallingConvention.Cdecl)]
   public static extern int MonitorStop();
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_fixture_display_name", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int CheckDisplay(int stage);
 }
 '@
     Add-Type -TypeDefinition $gio.Replace('__DLL__',$GioScanDll.Replace('"','""')) -ErrorAction Stop
