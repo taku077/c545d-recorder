@@ -3,6 +3,21 @@
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
 
+### UPDATE 2026-11-21 JST — **four-case future Win10 isolated smoke safety CI PASS**; 6/6 actual host read-only baseline retained
+
+- Last user's actual Windows10 report remains **read-only**: GStreamer official pinned 1.28.8 SDK six core DLL SHA 6/6, PE64 errors0, `windows10=1`, `recorder_active=1`, tool exit0. The running recorder's **loaded** DLL identity was not checked, and no candidate was installed or executed on Win10.
+- Completed **[Windows Server2022 isolated future-host smoke CI #44796343310 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44796343310)** at functional source [`12488b6`](https://github.com/taku077/c545d-recorder/commit/12488b62df15f40a2fa34bfd6aba3fbe667f4095), job **136496751191**. Strict numeric artifact **14659746268** downloaded and independently inspected; it contains exactly `isolated_smoke_ci_results.txt` with four sanitized records:
+  1. WindowsServer without CI override: exit3, `reason=HOST_NOT_ELIGIBLE`, `started=0`.
+  2. Tampered candidate DLL copy: exit3, `reason=CANDIDATE_BAD`, `started=0`.
+  3. Synthetic running recorder `gst-launch-1.0`: exit3, `reason=HOST_NOT_ELIGIBLE`, `started=0`, fake process not stopped by the tested tool.
+  4. Official exact SDK + existing pinned candidate under isolated app-local process: exit0, **`started=1,loaded_expected=1,wav_ok=1,exit_ok=1,rollback_ok=1,originals_unchanged=1,reason=CI_SYNTHETIC_PASS`**.
+  The job's summary confirmed `server_refused=1,tamper_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0`. **No camera, RTSP secret, host PC change, installed DLL exchange, registry edit, or production recorder interruption.**
+- Latest source: [`tools/Invoke-C545DWin10IsolatedGioSmoke.ps1`](../tools/Invoke-C545DWin10IsolatedGioSmoke.ps1) and [`.github/workflows/c545d-win10-isolated-gio-smoke-safety-ci.yml`](../.github/workflows/c545d-win10-isolated-gio-smoke-safety-ci.yml). Prior failed CI runs were **new tooling/harness issues**, including an invalid YAML edit and the Windows PowerShell `$HOME` reserved-variable collision, plus inadvertently masking the diagnostic reason at the end of a failing test. These were corrected in the commits listed in the immediately preceding development note; previous failures must not be mistaken for candidate GIO runtime defects, and must not be discarded.
+- **Safety/interpretation**: This proves a restricted, **camera-free** SDK process and test-owned rollback on disposable **Windows Server2022**, not on Win10. The source is **development only**, no user bundle packaged or approved, and current active `recorder_active=1` Win10 would fail the test gate. `install_approved=0,live_tapo_authorized=0` stay enforced. Real 2×Tapo RTSP synchronization, hour-boundary MP4, Windows10 startup and long-term PrivateUsage/Key/CPU slopes remain **unverified**. Existing CI 98.2414% PrivateUsage-effect reduction and corrected Key effect +2 vs official +20932 are unchanged, not evidence of absolute leak zero.
+- **Next AI-only**: audit the standalone isolated smoke source against the existing CI-owned overlay implementation, ensure a genuinely one-click future host package plus safety/deletion/codec/OS gate checks before any distribution, then plan one consolidated, expressly approved short test after natural safe recording stop. Do not run this source on user machine now, overwrite DLLs, request WPR/UMDH/4-hour repeated monitoring, or claim production readiness.
+
+
+
 ### UPDATE 2026-11-21 JST — experimental camera-free isolated Win10 GIO smoke source/CI added; **not qualified / HOLD**
 
 - The user's actual Win10 sanitized read-only baseline **6/6 core exact SDK SHA matches**, `windows10=1`, `recorder_active=1`, read-only exit0 is recorded in the preceding handoff entry. No further user-host actions, live RTSP connections, DLL modifications or camera/credentials were involved. This confirms the default installed SDK core files, **not** the already-running recorder's loaded module path.
