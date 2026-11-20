@@ -48,6 +48,28 @@ function Await-Event([UInt64]$epoch,[string]$stage) {
   }
   throw "C545D_REAL_APPX_EVENT_MISSING,stage=$stage,package_action_succeeded=true"
 }
+function Await-Completion([string]$stage) {
+  # IsComplete is a separate terminal signal, not inferred from the first
+  # progress callback or from Add-AppxPackage returning successfully.
+  for($attempt=0;$attempt -lt 150;$attempt++) {
+    [UInt64]$installDone=0
+    [UInt64]$updateDone=0
+    [UInt64]$uninstallDone=0
+    $status=[C545DWatchInterop]::Completion($script:watch,[ref]$installDone,
+                                             [ref]$updateDone,[ref]$uninstallDone)
+    if($status -ne 0) { throw "C545D_REAL_APPX_COMPLETION_READ_FAILED,status=$status" }
+    [UInt64]$count=0
+    switch($stage) {
+      install { $count=$installDone }
+      update { $count=$updateDone }
+      uninstall { $count=$uninstallDone }
+      default { throw "C545D_REAL_APPX_UNKNOWN_STAGE=$stage" }
+    }
+    if($count -gt 0) { return $count }
+    Start-Sleep -Milliseconds 100
+  }
+  throw "C545D_REAL_APPX_COMPLETION_MISSING,stage=$stage"
+}
 function Pack-Fixture([string]$v,[string]$make,[string]$sign,[string]$pfx) {
   $layout=Join-Path $root ("layout_"+$v)
   $msix=Join-Path $root ("package_"+$v+".msix")
@@ -98,6 +120,9 @@ public static class C545DWatchInterop {
   public static extern int Snapshot(IntPtr watch, out UInt64 generation, out UInt64 locale);
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_close", CallingConvention=CallingConvention.Cdecl)]
   public static extern void Close(IntPtr watch);
+  [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_completion_counters", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Completion(IntPtr watch, out UInt64 installing,
+                                      out UInt64 updating, out UInt64 uninstalling);
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_global_counters", CallingConvention=CallingConvention.Cdecl)]
   public static extern void Counters(out UInt64 registered, out UInt64 revoked, out UInt64 errors);
 }
@@ -119,6 +144,7 @@ public static class C545DWatchInterop {
     throw 'C545D_REAL_APPX_INSTALL_STATE_WRONG'
   }
   [UInt64]$g1=Await-Event $g0 'install'
+  [UInt64]$doneInstall=Await-Completion 'install'
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
   $installed=@(Get-AppxPackage -Name $name -ErrorAction Stop)
@@ -126,13 +152,15 @@ public static class C545DWatchInterop {
     throw 'C545D_REAL_APPX_UPDATE_STATE_WRONG'
   }
   [UInt64]$g2=Await-Event $g1 'update'
+  [UInt64]$doneUpdate=Await-Completion 'update'
 
   Remove-AppxPackage -Package $installed[0].PackageFullName -ErrorAction Stop
   if(@(Get-AppxPackage -Name $name -ErrorAction Stop).Count -ne 0) {
     throw 'C545D_REAL_APPX_UNINSTALL_STATE_WRONG'
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
-  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),no_synthetic_notifications=true,only_ci_package_events_counted=true,CI_only=true"
+  [UInt64]$doneUninstall=Await-Completion 'uninstall'
+  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,CI_only=true"
 }
 finally {
   if($watch -ne [IntPtr]::Zero) {
