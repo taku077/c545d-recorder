@@ -1,0 +1,56 @@
+name: C545D dedicated MTA open-close transition safety (CI ONLY)
+
+on:
+  push:
+    branches: ['investigate/c545d-mta-transition-guard-20261120']
+    paths:
+      - 'tests/c545d_winrt_dedicated_watch.cpp'
+      - 'tests/c545d_winrt_dedicated_watch.h'
+      - 'tests/c545d_winrt_mta_transition_probe.c'
+      - '.github/workflows/c545d-winrt-mta-transition-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mta-transition:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile WinRT watcher and deterministic C-only MTA leave probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0) {throw 'C++/WinRT watcher build failed'}
+          & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_winrt_mta_transition_probe.c /Fe:artifacts/c545d_winrt_mta_transition_probe.exe /link artifacts/c545d_dedicated_watch.lib
+          if($LASTEXITCODE -ne 0) {throw 'MTA transition probe build failed'}
+      - name: Force pending-open and pending-close MTA leave interleavings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & artifacts/c545d_winrt_mta_transition_probe.exe 1> artifacts/mta_transition_numeric.txt 2> artifacts/mta_transition_error.txt
+          if($LASTEXITCODE -ne 0) {
+            Get-Content artifacts/mta_transition_error.txt
+            throw "MTA ownership interleaving regression exit $LASTEXITCODE"
+          }
+          $s=Get-Content artifacts/mta_transition_numeric.txt -Raw
+          if($s -notmatch 'C545D_MTA_TRANSITION_PASS,open_reserved=1,close_reserved=1,early_leave_blocked_both=1,post_join_leave=1,stale_token_rejected=1,CI_only=true') {
+            throw 'Missing all expected independent safety invariants'
+          }
+          Get-Content artifacts/mta_transition_numeric.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-mta-transition-safety-numeric-only
+          path: |
+            artifacts/mta_transition_numeric.txt
+            artifacts/mta_transition_error.txt
+          retention-days: 7
+          if-no-files-found: warn
