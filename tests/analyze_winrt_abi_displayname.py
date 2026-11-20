@@ -9,10 +9,11 @@ import csv
 import re
 from pathlib import Path
 
-SAMPLE = re.compile(r"^WINRT_ABI,(control|projected|raw),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)$")
-DONE = re.compile(r"^WINRT_ABI_DONE,(control|projected|raw),cycles=128,package_count=(\d+),api_errors=(\d+),checksum=(\d+)$")
+SAMPLE = re.compile(r"^WINRT_ABI,(control|projected|raw|freshcontrol|freshraw),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)$")
+DONE = re.compile(r"^WINRT_ABI_DONE,(control|projected|raw|freshcontrol|freshraw),cycles=128,package_count=(\d+),api_errors=(\d+),checksum=(\d+)$")
 FIELDS = ("private_bytes","heap_busy_bytes","heap_busy_blocks","handles")
 STEPS = (0,32,64,96,128)
+MODES = ("control","projected","raw","freshcontrol","freshraw")
 
 
 def parse(data: str, mode: str):
@@ -49,7 +50,7 @@ def parse(data: str, mode: str):
 def compare(contents):
     tables = {}
     counts = {}
-    for mode in ("control","projected","raw"):
+    for mode in MODES:
         tables[mode], counts[mode] = parse(contents[mode],mode)
     if max(counts.values()) - min(counts.values()) > 2:
         raise ValueError("noncomparable package counts")
@@ -63,12 +64,16 @@ def compare(contents):
             "raw_growth":diffs["raw"],
             "projected_minus_control":diffs["projected"]-diffs["control"],
             "raw_minus_control":diffs["raw"]-diffs["control"],
+            "freshraw_minus_freshcontrol":diffs["freshraw"]-diffs["freshcontrol"],
             "projected_last64_minus_control":
                 (tables["projected"][128][i]-tables["projected"][64][i])-
                 (tables["control"][128][i]-tables["control"][64][i]),
             "raw_last64_minus_control":
                 (tables["raw"][128][i]-tables["raw"][64][i])-
                 (tables["control"][128][i]-tables["control"][64][i]),
+            "freshraw_last64_minus_freshcontrol":
+                (tables["freshraw"][128][i]-tables["freshraw"][64][i])-
+                (tables["freshcontrol"][128][i]-tables["freshcontrol"][64][i]),
         }
         output.append(row)
     return output, counts
@@ -77,7 +82,7 @@ def compare(contents):
 def selftest():
     def fake(mode):
         s=[]
-        factors={"control":0,"projected":2,"raw":2}
+        factors={"control":0,"projected":2,"raw":2,"freshcontrol":0,"freshraw":2}
         for step in STEPS:
             f=factors[mode]*step
             s.append(f"WINRT_ABI,{mode},{step},{100000+f*4096},"
@@ -85,7 +90,7 @@ def selftest():
         s.append(f"WINRT_ABI_DONE,{mode},cycles=128,package_count=32,"
                  "api_errors=0,checksum=123")
         return "\n".join(s)
-    data={mode:fake(mode) for mode in ("control","projected","raw")}
+    data={mode:fake(mode) for mode in MODES}
     good, counts=compare(data)
     assert counts == {mode:32 for mode in data}
     assert next(row for row in good if row["metric"]=="heap_busy_blocks")["raw_minus_control"] == 256
@@ -94,12 +99,13 @@ def selftest():
         {**data,"projected":data["projected"].replace("api_errors=0","api_errors=1")},
         {**data,"raw":data["raw"].replace("32,0,0\nWINRT_ABI_DONE","32,0,1\nWINRT_ABI_DONE")},
         {**data,"raw":data["raw"].replace("package_count=32","package_count=2")},
+        {**data,"freshraw":data["freshraw"].replace("WINRT_ABI_DONE","BAD_DONE")},
     ]
     for broken in invalid:
         try:compare(broken)
         except ValueError: pass
         else: raise AssertionError("corrupt evidence was accepted")
-    print("C545D_WINRT_ABI_ANALYZER_SELFTEST_PASS,valid=1,rejected=4")
+    print("C545D_WINRT_ABI_ANALYZER_SELFTEST_PASS,valid=1,rejected=5")
 
 
 def main():
@@ -111,7 +117,7 @@ def main():
         selftest()
         return
     files={mode:(args.directory/f"winrt_abi_{mode}.txt").read_text(encoding="utf-8-sig")
-           for mode in ("control","projected","raw")}
+           for mode in MODES}
     rows,counts=compare(files)
     with (args.directory/"winrt_abi_comparison.csv").open("w",newline="",encoding="utf-8") as f:
         w=csv.DictWriter(f,fieldnames=rows[0].keys())
@@ -123,6 +129,7 @@ def main():
     print(f"C545D_WINRT_ABI_EXPERIMENT_PASS,cycles=128,"
           f"control_packages={counts['control']},"
           f"projected_packages={counts['projected']},raw_packages={counts['raw']},"
+          f"freshcontrol_packages={counts['freshcontrol']},freshraw_packages={counts['freshraw']},"
           "all_hstrings_released=1,NO_GLIB=1,NO_RECORDER=1,"
           "OS_CAUSALITY_NOT_PROVEN=1")
 
