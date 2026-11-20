@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 CI ONLY: Disposable self-signed MSIX fixture install/update/uninstall.
 Runs exclusively on GitHub-hosted Windows; never run on the recorder.
