@@ -11,6 +11,17 @@ param(
   [Parameter(Mandatory=$true)][string]$WorkRoot
 )
 $ErrorActionPreference='Stop'
+# Windows PowerShell 5.1 Start-Process -PassThru sometimes exposes a null
+# .ExitCode after WaitForExit even though the child successfully completed.
+# Read the actual native exit status from its retained process HANDLE.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class C545DRunnerExitCode {
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool GetExitCodeProcess(IntPtr handle,out UInt32 exitCode);
+}
+'@
 $official=Join-Path $SdkRoot 'bin\gio-2.0-0.dll'
 $installedLauncher=Join-Path $SdkRoot 'bin\gst-launch-1.0.exe'
 $installedInspector=Join-Path $SdkRoot 'bin\gst-inspect-1.0.exe'
@@ -84,14 +95,18 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
       throw "C545D_GIO_LOADER_CI_NOT_OBSERVED,mode=$label,polls=$pollCount,exited=$exited,exit_code=$code,max_modules=$maxSeenModules,output_bytes=$bytes,missing_giosink=$noElement,negotiation_or_element_error=$negotiation,poll_errors=$pollErrors"
     }
     if(-not $script:running.WaitForExit(30000)){throw "C545D_GIO_LOADER_CI_PROCESS_TIMEOUT=$label"}
-    if($script:running.ExitCode -ne 0){
+    [UInt32]$nativeExit=259
+    if(-not [C545DRunnerExitCode]::GetExitCodeProcess($script:running.Handle,[ref]$nativeExit)){
+      throw "C545D_GIO_LOADER_CI_NATIVE_EXIT_QUERY_FAILED=$label"
+    }
+    if($nativeExit -ne 0){
       $text=if(Test-Path -LiteralPath $stderr){Get-Content -LiteralPath $stderr -Raw}else{''}
       $wavSize=if(Test-Path -LiteralPath $output){(Get-Item -LiteralPath $output).Length}else{0}
       $missingElement=[int]($text -match '(?i)no element|no such element')
       $capsError=[int]($text -match '(?i)not-negotiated|could not link|no common format')
       $gioIOError=[int]($text -match '(?i)giosink|GIO.*error|could not open|no such file|error opening file|file exists')
       $scannerWarning=[int]($text -match '(?i)gstpython.dll')
-      $exitCode=$script:running.ExitCode
+      $exitCode=$nativeExit
       throw "C545D_GIO_LOADER_CI_PIPELINE_FAILURE,mode=$label,exit_code=$exitCode,wav_bytes=$wavSize,missing_element=$missingElement,caps_error=$capsError,gio_io_error=$gioIOError,optional_gstpython_warning=$scannerWarning,loaded_gio_verified=1"
     }
     if((Get-Item -LiteralPath $output).Length -lt 30000){
