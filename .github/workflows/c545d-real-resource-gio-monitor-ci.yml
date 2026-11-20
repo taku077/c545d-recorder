@@ -1,0 +1,117 @@
+name: C545D real resource-only MSIX GAppInfoMonitor pre-query regression CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-real-resource-gio-monitor-ci.yml'
+      - 'tests/Invoke-C545DResourcePackageEventCI.ps1'
+      - 'tests/make_c545d_ci_resource_package_fixture.py'
+      - 'tests/patch_c545d_winrt_spontaneous_listener_ci.py'
+      - 'tests/patch_c545d_winrt_status_only_listener_ci.py'
+      - 'tests/c545d_gio_real_msix_cache_scan.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+jobs:
+  real-event-gio-cache:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Check resource-only MSIX PowerShell CI syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DResourcePackageEventCI.ps1).Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0){throw 'PowerShell CI source does not parse'}
+      - name: Build no-op signed-MSiX host payload and dedicated WinRT watcher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /W4 /MD /O2 tests/c545d_ci_package_noop.c /Fe:artifacts/c545d_ci_noop.exe /link /SUBSYSTEM:WINDOWS
+          if($LASTEXITCODE -ne 0) {throw 'CI no-op package executable build failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0) {throw 'WinRT native signal sink source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native status-event provenance patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0) {throw 'Dedicated MTA watcher build failed'}
+      - name: Build disposable GLib 2.82.4 combined fix plus real package event bridge
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_native_spontaneous_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -shared -o ../artifacts/c545d_gio_real_msix_cache_scan.dll ../tests/c545d_gio_real_msix_cache_scan.c $(pkg-config --cflags --libs gio-2.0) -ladvapi32'
+          test -f artifacts/c545d_gio_real_msix_cache_scan.dll
+      - name: Assert unsolicited GAppInfoMonitor for real resource-only signed MSIX add/remove
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
+          export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
+          export C545D_DIAG_APPINFO_MONITOR_UNSOLICITED=1
+          unset C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY || true
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
+          WATCH="$(cygpath -w "$PWD/artifacts/c545d_dedicated_watch.dll")"
+          NOOP="$(cygpath -w "$PWD/artifacts/c545d_ci_noop.exe")"
+          SCAN="$(cygpath -w "$PWD/artifacts/c545d_gio_real_msix_cache_scan.dll")"
+          export WATCH NOOP SCAN
+          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DResourcePackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN"' > artifacts/resource_gio_run.txt
+          grep -q 'C545D_RESOURCE_CI_CLEANUP_EXECUTED=1' artifacts/resource_gio_run.txt
+          grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_)' artifacts/resource_gio_run.txt > artifacts/resource_gio_numeric.txt
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text=Path("artifacts/resource_gio_numeric.txt").read_text(encoding="utf-8",errors="replace")
+          rows=re.findall(r'^C545D_RESOURCE_GIO_PREQUERY,stage=(main_add|resource_add|resource_remove),changed=(\d+),CI_only=1$',text,re.M)
+          assert len(rows)==3,('wrong number of actual resource-only monitor observations',rows)
+          counts=dict((name,int(n)) for name,n in rows)
+          print("C545D_REAL_RESOURCE_GIO_PREQUERY_OBSERVED,main=%d,resource_add=%d,resource_remove=%d,CI_only=1"%(counts["main_add"],counts["resource_add"],counts["resource_remove"]))
+          assert [counts[n] for n in ("main_add","resource_add","resource_remove")]==[1,2,3],('real resource PackageCatalog events did not trigger exactly one unsolicited changed signal each',counts)
+          assert re.search(r'C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=\d+,genuine_status_callbacks_delta=0,install_terminal_delta=1,update_terminal_delta=0,uninstall_terminal_delta=0,synthetic_events=0,CI_only=1',text),'resource install OS provenance missing'
+          assert re.search(r'C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=\d+,genuine_status_callbacks_delta=0,install_terminal_delta=0,update_terminal_delta=0,uninstall_terminal_delta=1,synthetic_events=0,CI_only=1',text),'resource remove OS provenance missing'
+          print('C545D_REAL_RESOURCE_GIO_PREQUERY_PASS,main=1,resource_add=2,resource_remove=3,no_registry_stimulus=1,real_OS_events_only=1,CI_only=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-real-resource-msix-gio-prequery-numeric-only
+          path: artifacts/resource_gio_numeric.txt
+          retention-days: 7
+          if-no-files-found: warn
