@@ -47,6 +47,27 @@ def main():
       "  c545d_bridge_module = NULL;\n"
       "  c545d_bridge_ready = FALSE;",
       "skip hazardous watcher DLL unload from process-exit atexit")
+    # CI-only low-level teardown diagnostics to classify unexpected exit
+    # faults. Emit only stage names, never WinRT names/paths/addresses.
+    s=replace_once(s,
+      """  g_mutex_lock (&c545d_bridge_lock);
+  if (c545d_bridge_watch != NULL)
+    c545d_bridge_close (c545d_bridge_watch);
+  c545d_bridge_watch = NULL;
+  if (c545d_bridge_leave != NULL)
+    c545d_bridge_leave ();""",
+      """  fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_bridge_lock\n"); fflush (stderr);
+  g_mutex_lock (&c545d_bridge_lock);
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_watch_close\n"); fflush (stderr);
+  if (c545d_bridge_watch != NULL)
+    c545d_bridge_close (c545d_bridge_watch);
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=after_watch_close\n"); fflush (stderr);
+  c545d_bridge_watch = NULL;
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_mta_leave\n"); fflush (stderr);
+  if (c545d_bridge_leave != NULL)
+    c545d_bridge_leave ();
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=after_mta_leave\n"); fflush (stderr);""",
+      "trace process-exit teardown boundary")
     s=replace_once(s, "static DWORD c545d_bridge_owner;\n","", "old owner-thread variable")
     s=replace_once(s, "  c545d_bridge_owner = GetCurrentThreadId ();\n","",
                    "old owner-thread binding")
