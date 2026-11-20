@@ -36,9 +36,11 @@ jobs:
           $wantSdk='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
           if((Get-FileHash -LiteralPath $cand -Algorithm SHA256).Hash -cne $wantCandidate){throw 'Candidate SHA changed'}
           $m=[IO.File]::ReadAllText($manifest)
-          foreach($tag in @('CANDIDATE_GIO_SHA256='+$wantCandidate,'REFERENCE_GIO_SHA256='+$wantSdk,'C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST')){
-            if($m -notmatch ('(?m)^'+[regex]::Escape($tag)+'\r?$')){throw 'Candidate provenance manifest differs'}
-          }
+          # Match the exact three signed manifest fields with the same
+          # PowerShell 5.1-compatible patterns as the qualified smoke runner.
+          if($m -notmatch ('(?m)^CANDIDATE_GIO_SHA256='+$wantCandidate+'\r?$')){throw 'MANIFEST_FIELD_1'}
+          if($m -notmatch ('(?m)^REFERENCE_GIO_SHA256='+$wantSdk+'\r?$')){throw 'MANIFEST_FIELD_2'}
+          if($m -notmatch '(?m)^C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST\r?$'){throw 'MANIFEST_FIELD_3'}
           $f=[IO.File]::OpenRead($cand);$reader=[IO.BinaryReader]::new($f)
           try {
             if($f.Length -lt 256 -or $reader.ReadUInt16() -ne 0x5A4D){throw 'Not PE'}
