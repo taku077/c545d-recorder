@@ -3,17 +3,26 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#57](https://github.com/taku077/c545d-recorder/pull/57) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-mta-transition-guard-20261120` / `9a93141483b79cbaeff90f52ff1fe296f84bd2a3`
-- **PR updated at (UTC):** `2026-11-20T12:38:54Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9a93141483b79cbaeff90f52ff1fe296f84bd2a3/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-mta-transition-guard-20261120` / `c8709bff0e9b1d1a064b341ae559b0cc443ffa67`
+- **PR updated at (UTC):** `2026-11-20T12:55:26Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c8709bff0e9b1d1a064b341ae559b0cc443ffa67/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | success | [#44737530842](https://github.com/taku077/c545d-recorder/actions/runs/44737530842) |
+| C545D active development handoff auto-refresh | pending | [#44739835934](https://github.com/taku077/c545d-recorder/actions/runs/44739835934) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-20 JST — NEWEST diagnostic child PR #62 StatusChanged-only notification path
+
+- Central active PR #57 -> PR59 -> PR60 -> PR61 -> **NEW [draft PR #62](https://github.com/taku077/c545d-recorder/pull/62)**, branch `investigate/c545d-status-only-monitor-20261120`. **Inspect PR62 HEAD and all CI; do not return to PR57/PR60 or re-run tests already finished.** Source and tests CI-ONLY, no Windows10/Tapo recorder modification.
+- Parent PR61 genuine PackageCatalog install/update/uninstall unsolicited signal is ALREADY proven [#44735510844 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44735510844), versioned DisplayName changed under same app count [#44736325413 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44736325413), full official GStreamer 1.28.8 MSVC 2047 exports and dual H264 AAC MP4/EOS [#44735654059 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44735654059), native 24-loop exit/handles [#44735146320 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44735146320). Do NOT re-investigate spontaneous no-query monitor.
+- **New source gap**: PR61 native `PackageStatusChanged` callback increments generation, but its MTA→GLib monitor sink was only notified for install/update/uninstall `IsComplete()`; status-only update could be missed without a public GAppInfo query. PR62's `tests/patch_c545d_winrt_status_only_listener_ci.py` treats status-only as potential app-info change, calls no GLib under COM callback and uses existing native condition-variable/owner MTA thread, no new worker/timer. Isolated test C ABI `c545d_dedicated_ci_force_status_only` is explicitly SYNTHETIC and is not a real OS PackageStatusChanged event.
+- **[Short Windows CI #44739071769 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44739071769)**, numeric artifact 14630012293: synthetic status-only notifications delivered2, detached listener never called again, stale opaque token rejected, detach waits in-flight callback, 8 WinRT subscriptions and 8 revocations, shutdown errors0, MTA refs0/pending opens0/pending closes0/live watchers0. HandleCount initial83 and exit120 (**+37 init retained; owner unknown**); NOT indefinite zero handle growth proof.
+- **[Real signed MSIX regression #44739270625](https://github.com/taku077/c545d-recorder/actions/runs/44739270625) IS PENDING**: exact PR61 true unsolicited install/update/uninstall test, with only new native status branch, must still yield GIO inventory39→40→40→39 and exact three pre-query monitor signals before treating status support as non-regressing. Test fixture does not generate a status-only true OS event, and same-fullname locale/resource freshness and Win10 recorder resource plateau remain unresolved.
+- **Next AI**: check final #44739270625 and actual numeric artifacts, fix duplicates if observed; then identify a safe real OS status-only stimulus if supported in disposable Windows CI. Preserve all recorder specifications, AV/sync/EOS/1h filenames. No user manual WPR/UMDH, registry changes, DLL swap or 4h measurement.
 
 ### UPDATE 2026-11-20 JST — NEWEST child PR #61 unsolicited GAppInfoMonitor real MSIX + versioned name + official AV SUCCESS
 
