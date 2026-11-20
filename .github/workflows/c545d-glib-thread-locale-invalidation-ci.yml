@@ -2,7 +2,9 @@ name: C545D GLib AppInfo pool-thread locale cache invalidation (CI ONLY)
 on:
   push:
     branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
-    paths: ['.github/workflows/c545d-glib-thread-locale-invalidation-ci.yml']
+    paths:
+      - '.github/workflows/c545d-glib-thread-locale-invalidation-ci.yml'
+      - 'tests/analyze_gio_real_thread_locale.py'
   workflow_dispatch:
 permissions:
   contents: read
