@@ -1,5 +1,9 @@
 name: C545D lazy generation-triggered AppInfo rebuild with genuine MSIX (CI ONLY)
 on:
+  push:
+    branches: ['investigate/c545d-mta-transition-guard-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-lazy-package-rescan-ci.yml'
   workflow_dispatch:
 
 permissions:
