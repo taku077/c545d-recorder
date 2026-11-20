@@ -85,8 +85,16 @@ failed:
               c545d_bridge_watch, c545d_ci_spontaneous_monitor_sink, NULL) != 0)
         {
           g_print ("C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=0\\n");
-          /* Fail closed: do not claim notification support on this watcher. */
-          return FALSE;
+          /* Fail closed and release the entire partially initialized native
+           * watcher, not only its cache. The pre-existing atexit handler
+           * then sees a NULL token/module and cannot double-close it.
+           */
+          c545d_bridge_close (c545d_bridge_watch);
+          c545d_bridge_watch = NULL;
+          if (c545d_bridge_leave != NULL)
+            c545d_bridge_leave ();
+          c545d_bridge_leave = NULL;
+          goto failed;
         }
       g_print ("C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=1\\n");
     }
