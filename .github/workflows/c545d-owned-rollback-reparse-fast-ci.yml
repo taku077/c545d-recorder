@@ -1,0 +1,41 @@
+name: C545D disposable rollback no-reparse guard fast Windows CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tools/Invoke-C545DWin10IsolatedGioSmoke.ps1'
+      - '.github/workflows/c545d-owned-rollback-reparse-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fast-owned-rollback-guard:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check actual source cleanup guard on direct child and junction
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=(Resolve-Path tools/Invoke-C545DWin10IsolatedGioSmoke.ps1).Path
+          $tokens=$null;$errors=$null
+          $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+          if($errors.Count -gt 0){throw 'Smoke source invalid'}
+          $nodes=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-C545DStageHasNoReparse'},$true))
+          if($nodes.Count -ne 1){throw 'Exact one no-reparse guard not present'}
+          $body=Get-Content -LiteralPath $source -Raw
+          if(-not $body.Contains('(Test-C545DStageHasNoReparse -Root $stage)')){throw 'Deletion is not gated by this function'}
+          . ([scriptblock]::Create($nodes[0].Extent.Text))
+          $parent=Join-Path $env:RUNNER_TEMP 'c545d-reparse-guard-test'
+          $owned=Join-Path $parent 'owned'
+          $outside=Join-Path $parent 'outside'
+          New-Item -ItemType Directory -Path $owned,$outside -Force | Out-Null
+          $sentinel=Join-Path $outside 'outside-must-not-delete.txt'
+          [IO.File]::WriteAllText($sentinel,'externally owned')
+          if(-not (Test-C545DStageHasNoReparse -Root $owned)){throw 'Ordinary owned tree rejected'}
+          $junction=Join-Path $owned 'unexpected-junction'
+          New-Item -ItemType Junction -Path $junction -Target $outside | Out-Null
+          if(Test-C545DStageHasNoReparse -Root $owned){throw 'Linked tree not rejected'}
+          if(-not (Test-Path -LiteralPath $sentinel -PathType Leaf)){throw 'External file was harmed'}
+          Write-Host 'C545D_ROLLBACK_REPARSE_GUARD_CI_PASS,plain_tree=1,junction_blocked=1,outside_sentinel_intact=1,installed_dll_changed=0,host_tested=0,install_approved=0'
