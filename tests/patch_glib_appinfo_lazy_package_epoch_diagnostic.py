@@ -47,6 +47,9 @@ def patch_parser(src: str) -> str:
  * this read-only bridge snapshot is used ONLY to request a GLib rebuild.
  * It does NOT populate/return a DisplayName cache entry on this caller.
  */
+/* GCC -Wmissing-prototypes: internal cross-object declaration first. */
+gboolean c545d_ci_package_generation_needs_rescan (void);
+
 gboolean
 c545d_ci_package_generation_needs_rescan (void)
 {
