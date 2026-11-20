@@ -2,7 +2,7 @@
 """CI-only end-to-end GIO locale cache invalidation check, numeric-only.
 
 Compare identical 16-cycle synthetic registry activity, with a single
-caller-thread SetThreadPreferredUILanguages change at cycle 5. No system-wide
+GIO AppInfo pool-thread SetThreadPreferredUILanguages change at scan 5. No system-wide
 language changes, real installed package mutations, or recorder/camera.
 """
 import re
@@ -15,7 +15,7 @@ def require(condition, why):
 def parse(path):
     data=Path(path).read_text(encoding="utf-8")
     require(data.count("GIO_PROBE_DONE,cycles=16,")==1, f"{path}: incomplete run")
-    applied=re.findall(r"^C545D_THREAD_LOCALE_CHANGE,cycle=5,count=(\d+)$",data,re.M)
+    applied=re.findall(r"^C545D_GIO_WORKER_LOCALE_CHANGE,scan=5,count=(\d+)$",data,re.M)
     require(len(applied)==1 and int(applied[0])>0,
             f"{path}: missing real thread-locale mutation")
     cache=re.findall(r"^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$",
@@ -35,13 +35,13 @@ def parse(path):
 def main():
     plain,b0=parse("artifacts/locale_plain_16.log")
     changed,b1=parse("artifacts/locale_bridge_16.log")
-    require(plain==(544,32,32),f"plain cache unexpected: {plain}")
+    require(plain==(576,32,32),f"plain cache unexpected: {plain}")
     require(b0 is None,"plain cache unexpectedly enabled watch bridge")
     require(changed==(512,64,32),f"locale change did not refetch 32 names: {changed}")
     require(b1==(18,0,1,0,1),
             f"epoch/language invalidation failed under real thread change: {b1}")
     print("C545D_GLIB_REAL_THREAD_LOCALE_INVALIDATION_PASS,"
-          "plain_hits=544,plain_misses=32,bridge_hits=512,bridge_misses=64,"
+          "plain_hits=576,plain_misses=32,bridge_hits=512,bridge_misses=64,"
           "locale_evictions=1,package_injections=0,errors=0,"
           "original_getter_fallback_on_snapshot_failure_preserved=true,"
           "real_install_events_not_tested=true,ci_only=true")
