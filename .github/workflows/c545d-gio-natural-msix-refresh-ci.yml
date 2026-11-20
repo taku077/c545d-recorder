@@ -1,16 +1,7 @@
 name: C545D real MSIX natural GIO refresh vs registry wakeup (CI ONLY)
 on:
-  push:
-    branches: ['investigate/c545d-mta-transition-guard-20261120']
-    paths:
-      - '.github/workflows/c545d-gio-natural-msix-refresh-ci.yml'
-      - 'tests/analyze_gio_natural_msix_refresh.py'
-      - 'tests/c545d_winrt_dedicated_watch.cpp'
-      - 'tests/c545d_winrt_dedicated_watch.h'
-      - 'tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py'
-      - 'tests/Invoke-C545DRealPackageEventCI.ps1'
-      - 'tests/c545d_gio_real_msix_cache_scan.c'
   workflow_dispatch:
+
 permissions:
   contents: read
 jobs:
