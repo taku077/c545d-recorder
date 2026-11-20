@@ -1,0 +1,18 @@
+name: C545D dedicated WinRT package-and-locale epoch source regression
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - 'tests/test_dedicated_bridge_epoch_patch.py'
+      - '.github/workflows/c545d-winrt-dedicated-epoch-unit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  epoch-source-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert source-level generation plus locale epoch and fail-closed guards
+        run: python3 -m unittest discover -s tests -p test_dedicated_bridge_epoch_patch.py -v
