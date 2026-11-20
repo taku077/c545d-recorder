@@ -4,7 +4,7 @@
 
 - **Active PR:** [#54](https://github.com/taku077/c545d-recorder/pull/54) / state `open`
 - **Exact branch HEAD:** `investigate/gio-2824-key-handle-lifecycle` / `cd12b570a29c0ec7992f7c23aa878a12181e080c`
-- **PR updated at (UTC):** `2026-11-20T08:08:23Z`
+- **PR updated at (UTC):** `2026-11-20T08:10:00Z`
 - **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/cd12b570a29c0ec7992f7c23aa878a12181e080c/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
