@@ -1,0 +1,262 @@
+name: C545D core-only GIO MSVC release candidate qualification (CI artifact ONLY)
+
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-only-gio-release-candidate-ci.yml'
+      - 'tests/patch_glib_appinfo_weak_backrefs.py'
+      - 'tests/patch_glib_registry_owned_path.py'
+      - 'tests/patch_glib_msvc_gio_sdk_export.py'
+      - 'tests/Assert-GStreamerOverlayMedia.ps1'
+      - 'tests/Assert-GStreamerOverlaySplitMux.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-msvc-and-compare-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install native build dependencies and fetch exact upstream GLib tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install native Meson tools' }
+          $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $glib
+          if ($LASTEXITCODE -ne 0) { throw 'GLib exact upstream source checkout failed' }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          "GLIB_SOURCE_COMMIT=$((git -C $glib rev-parse HEAD).Trim())" | Out-File -FilePath artifacts/abi_inventory.txt -Encoding ascii
+          py tests/patch_glib_appinfo_weak_backrefs.py "$glib/gio/gwin32appinfo.c"
+          if ($LASTEXITCODE -ne 0) { throw 'AppInfo weakref source patch failed' }
+          py tests/patch_glib_registry_owned_path.py "$glib/gio/gwin32registrykey.c"
+          if ($LASTEXITCODE -ne 0) { throw 'Win32 UTF16 source patch failed' }
+          # Keep the official SDK's existing, internal GIO export visible only
+          # in this MSVC compatibility build; do not add a stub implementation.
+          py tests/patch_glib_msvc_gio_sdk_export.py "$glib/gio/meson.build"
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC SDK GIO export parity patch failed' }
+          git -C $glib diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Combined source patch whitespace verification failed' }
+          $changed=@(git -C $glib diff --name-only)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32registrykey.c','gio/meson.build')
+          if ($changed.Count -ne 3 -or @($changed | Where-Object {$_ -notin $expected}).Count) {
+            throw "Unexpected modified GLib sources: $($changed -join ',')"
+          }
+          # This is intentionally a CORE-ONLY DLL. Any diagnostic bypass
+          # flag or native PackageCatalog CI hook makes it unshippable.
+          foreach($p in @("$glib/gio/gwin32appinfo.c","$glib/gio/gwin32registrykey.c","$glib/gio/meson.build")){
+            if(Select-String -LiteralPath $p -Pattern 'C545D_DIAG_|C545D_CI_FORCE_|C545D_DIAG_APPINFO_' -Quiet){
+              throw "Release-candidate source contains CI-only bypasses: $p"
+            }
+          }
+          'RC_SOURCE_CORE_ONLY=1; NO_C545D_DIAGNOSTIC_ENV_GATES=1' | Add-Content artifacts/abi_inventory.txt
+      - name: Install official GStreamer 1.28.8 MSVC SDK before dependency selection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -TimeoutSec 180
+          if ((Get-Item $installer).Length -lt 15000000) { throw 'Official SDK download incomplete' }
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdkRoot") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($p.ExitCode)" }
+          if (-not (Test-Path (Join-Path $sdkRoot 'bin\gio-2.0-0.dll'))) {
+            throw 'Official GIO DLL missing from SDK'
+          }
+          $zlibLibs=@(Get-ChildItem (Join-Path $sdkRoot 'lib') -File -Filter '*z*.lib' |
+            Where-Object { $_.Name -match '^(z|zlib)[-.0-9]*\.lib$' } |
+            Select-Object -ExpandProperty Name)
+          "SDK_ZLIB_IMPORT_LIBS=$($zlibLibs -join ',')" | Add-Content artifacts/abi_inventory.txt
+          "SDK_ZLIB_PC_PRESENT=$(Test-Path (Join-Path $sdkRoot 'lib\pkgconfig\zlib.pc'))" |
+            Add-Content artifacts/abi_inventory.txt
+          "SDK_ZLIB_HEADER_PRESENT=$(Test-Path (Join-Path $sdkRoot 'include\zlib.h'))" |
+            Add-Content artifacts/abi_inventory.txt
+      - name: Build combined fix in MSVC x64 environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          # Resolve zlib against the official MSVC SDK instead of building a
+          # fallback that imports non-SDK z.dll. No installed DLL is modified.
+          $env:LIB="$sdkRoot\lib;$env:LIB"
+          $env:INCLUDE="$sdkRoot\include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdkRoot\lib\pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdkRoot;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdkRoot\bin;$env:PATH"
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC GLib configure failed' }
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC combined GLib compile failed' }
+          $gio=@(Get-ChildItem -LiteralPath $build -Recurse -Filter gio-2.0-0.dll -File)
+          if ($gio.Count -ne 1) { throw "Expected exactly one compiled GIO DLL; got $($gio.Count)" }
+          "BUILD_ARCH=MSVC_x64" | Add-Content artifacts/abi_inventory.txt
+          "BUILT_GIO_VERSION=$($gio[0].VersionInfo.FileVersion)" | Add-Content artifacts/abi_inventory.txt
+          "BUILT_GIO_SHA256=$((Get-FileHash $gio[0].FullName -Algorithm SHA256).Hash)" | Add-Content artifacts/abi_inventory.txt
+      - name: Compare public GIO DLL exports with official GStreamer 1.28.8 SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdkRoot=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $sdkGio=Join-Path $sdkRoot 'bin\gio-2.0-0.dll'
+          if (-not (Test-Path $sdkGio)) { throw 'Official GIO DLL missing from SDK' }
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $built=@(Get-ChildItem $build -Recurse -File -Filter gio-2.0-0.dll)
+          if ($built.Count -ne 1) { throw 'Compiled GIO DLL not uniquely found' }
+          "OFFICIAL_SDK_GIO_VERSION=$((Get-Item $sdkGio).VersionInfo.FileVersion)" | Add-Content artifacts/abi_inventory.txt
+          $r=@(& dumpbin.exe /nologo /exports $sdkGio)
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed on official SDK DLL' }
+          $p=@(& dumpbin.exe /nologo /exports $built[0].FullName)
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed on compiled DLL' }
+          function ExportNames([string[]]$lines) {
+            $out=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            foreach($line in $lines) {
+              if($line -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') {
+                [void]$out.Add($Matches[1])
+              }
+            }
+            return ,$out
+          }
+          $reference=ExportNames $r
+          $candidate=ExportNames $p
+          if ($reference.Count -lt 500 -or $candidate.Count -lt 500) {
+            throw "Unable to parse all GIO export symbols: SDK=$($reference.Count) candidate=$($candidate.Count)"
+          }
+          $missing=@($reference | Where-Object {-not $candidate.Contains($_)} | Sort-Object)
+          "SDK_EXPORT_COUNT=$($reference.Count)" | Add-Content artifacts/abi_inventory.txt
+          "CANDIDATE_EXPORT_COUNT=$($candidate.Count)" | Add-Content artifacts/abi_inventory.txt
+          "SDK_EXPORTS_MISSING_FROM_CANDIDATE=$($missing.Count)" | Add-Content artifacts/abi_inventory.txt
+          if ($missing.Count -gt 0) {
+            $missing | Select-Object -First 40 | Out-File artifacts/missing_public_exports.txt -Encoding ascii
+            throw "MSVC ABI blocker: $($missing.Count) SDK public exports missing in combined build"
+          }
+          if($reference.Count -ne 2047 -or $candidate.Count -ne 2047) {
+            throw "Release candidate requires official 1.28.8 exact 2047/2047 GIO export inventory"
+          }
+          'RC_EXACT_EXPORTS=2047; SOURCE_REPLAYABLE=1' | Add-Content artifacts/abi_inventory.txt
+          'MSVC_COMPILE_AND_EXPORT_SUBSET_PASS; RUNTIME_ABI_NOT_YET_CERTIFIED' | Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - name: Verify official SDK-linked client actually loads candidate GIO DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $overlay=Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay'
+          New-Item -ItemType Directory -Path $overlay -Force | Out-Null
+          $candidate=@(Get-ChildItem -LiteralPath $build -Recurse -File -Filter gio-2.0-0.dll)
+          if ($candidate.Count -ne 1) { throw 'Expected exactly one candidate GIO DLL' }
+          $target=Join-Path $overlay 'gio-2.0-0.dll'
+          Copy-Item -LiteralPath $candidate[0].FullName -Destination $target -Force
+          $exe=Join-Path $overlay 'gio_msvc_sdk_overlay_smoke.exe'
+          $inc=@("/I$sdk\include\glib-2.0","/I$sdk\lib\glib-2.0\include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+
+            @('tests/gio_msvc_sdk_overlay_smoke.c',"/Fe:$exe",
+              '/link',"/LIBPATH:$sdk\lib",'gio-2.0.lib',
+              'gobject-2.0.lib','glib-2.0.lib'))
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
+            throw 'Official MSVC SDK client compile/link failed'
+          }
+          $env:PATH="$overlay;$sdk\bin;$env:PATH"
+          $env:C545D_EXPECTED_GIO_DLL=$target
+          # SDK-linked executable; record dependent DLL names before loading.
+          $candDeps=@(& dumpbin.exe /nologo /dependents $target)
+          $sdkDeps=@(& dumpbin.exe /nologo /dependents (Join-Path $sdk 'bin\gio-2.0-0.dll'))
+          $candNames=@($candDeps | ForEach-Object {
+            if ($_ -match '^\s+([A-Za-z0-9_.-]+\.dll)\s*$') { $Matches[1].ToLowerInvariant() }
+          } | Sort-Object -Unique)
+          $sdkNames=@($sdkDeps | ForEach-Object {
+            if ($_ -match '^\s+([A-Za-z0-9_.-]+\.dll)\s*$') { $Matches[1].ToLowerInvariant() }
+          } | Sort-Object -Unique)
+          "CANDIDATE_DEPENDENTS=$($candNames -join ',')" | Add-Content artifacts/abi_inventory.txt
+          "SDK_DEPENDENTS=$($sdkNames -join ',')" | Add-Content artifacts/abi_inventory.txt
+          $extra=@($candNames | Where-Object { $_ -notin $sdkNames })
+          "CANDIDATE_ONLY_DLL_DEPENDENTS=$($extra -join ',')" | Add-Content artifacts/abi_inventory.txt
+          foreach ($name in $candNames) {
+            $foundInSdk=Test-Path (Join-Path $sdk "bin\$name")
+            $foundInOverlay=Test-Path (Join-Path $overlay $name)
+            $foundInWindows=Test-Path (Join-Path $env:windir "System32\$name")
+            if (-not ($foundInSdk -or $foundInOverlay -or $foundInWindows)) {
+              "DEPENDENCY_MISSING_IN_SDK=$name" | Add-Content artifacts/abi_inventory.txt
+            }
+          }
+          Get-Content artifacts/abi_inventory.txt
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "SDK overlay runtime smoke failed: $LASTEXITCODE"
+          }
+          'SDK_LINKED_CLIENT_CANDIDATE_RUNTIME_PASS; MULTITHREAD_ABI_NOT_YET_CERTIFIED' |
+            Add-Content artifacts/abi_inventory.txt
+          Get-Content artifacts/abi_inventory.txt
+      - name: Camera-free two-video RTP decode plus AAC MP4 media integration under patched GIO
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Assert-GStreamerOverlayMedia.ps1 `
+            -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
+            -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate GIO media integration test failed' }
+      - name: Camera-free repeated MP4 splitmuxsink EOS and per-fragment AV regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Assert-GStreamerOverlaySplitMux.ps1 `
+            -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8') `
+            -OverlayDir (Join-Path $env:RUNNER_TEMP 'c545d-gio-overlay')
+          if ($LASTEXITCODE -ne 0) { throw 'Patched GIO splitmuxsink segmentation test failed' }
+      - name: Materialize a reproducible CI-only core candidate with provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $build=Join-Path $env:RUNNER_TEMP 'glib-combined-build'
+          $glib=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $target=@(Get-ChildItem $build -Recurse -File -Filter 'gio-2.0-0.dll')
+          if($target.Count -ne 1){throw 'Candidate GIO binary not uniquely found'}
+          $out=Join-Path (Resolve-Path artifacts).Path 'core-only-rc'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          Copy-Item $target[0].FullName (Join-Path $out 'gio-2.0-0.dll')
+          $rc=Join-Path $out 'gio-2.0-0.dll'
+          $ref=Join-Path $sdk 'bin\gio-2.0-0.dll'
+          $sourceSha=(git -C $glib rev-parse HEAD).Trim()
+          $projectSha=(git rev-parse HEAD).Trim()
+          if($sourceSha.Length -ne 40 -or $projectSha.Length -ne 40){throw 'Missing exact source provenance'}
+          $manifest=@(
+            'C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST',
+            'C545D_RECORDING_PC_APPLIED=NO',
+            'GLIB_SOURCE_TAG=2.82.4',
+            "GLIB_SOURCE_SHA=$sourceSha",
+            "REPO_SHA=$projectSha",
+            'PATCHES=weak_backrefs,registry_owned_utf16,official_sdk_export_visibility',
+            'EXCLUDED=CI_DIAGNOSTIC_UWP_API,WINRT_MONITOR,CACHE_EVENT_BRIDGE,LAZY_RESCAN,SYNTHETIC_FAULT_INJECTION',
+            'OFFICIAL_GSTREAMER_SDK=1.28.8-msvc-x86_64',
+            "REFERENCE_GIO_SHA256=$((Get-FileHash $ref -Algorithm SHA256).Hash)",
+            "CANDIDATE_GIO_SHA256=$((Get-FileHash $rc -Algorithm SHA256).Hash)",
+            'GIO_EXPORTS_REFERENCE=2047',
+            'GIO_EXPORTS_CANDIDATE=2047',
+            'SDK_LINKED_CLIENT_AND_MEDIA_AND_SPLITMUX_GATE=PASS',
+            'WINDOWS10_TAPO_LONGRUN=NOT_TESTED'
+          )
+          $manifest | Set-Content -LiteralPath (Join-Path $out 'manifest.txt') -Encoding ascii
+          if((Get-Item $rc).Length -lt 1000000){throw 'Candidate GIO binary unexpectedly small'}
+          Write-Host 'C545D_CORE_ONLY_RC_CI_PASS,patched_source_files=3,export_match=2047,media_eos=1,diagnostic_switches=0,host_installed=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          path: artifacts/core-only-rc/
+          retention-days: 7
+          if-no-files-found: error
