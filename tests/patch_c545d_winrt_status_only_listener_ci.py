@@ -35,10 +35,18 @@ def patch(s: str) -> str:
               // MAY affect application availability; notify without
               // blocking, scanning, invoking GIO or taking any GMutex here.
               // This is not an extra thread or a timer.
+              p->ci_status_changed.fetch_add(1,std::memory_order_relaxed);
               terminal=true;
             }
           } catch(...) {"""
     s=once(s,old,new,"status-only completion detection")
+    # CI-only observed provenance: count actual OS callbacks for the filtered
+    # signed fixture, never calls from synthetic force_status_only.
+    s=once(s,
+           "  std::atomic<uint64_t> ci_uninstall_complete{0};",
+           "  std::atomic<uint64_t> ci_uninstall_complete{0};\n"
+           "  std::atomic<uint64_t> ci_status_changed{0};",
+           "status event provenance counter")
     old="""extern "C" __declspec(dllexport) int c545d_dedicated_ci_monitor_delivered("""
     new="""/* A deliberately synthetic status-only event to exercise the SAME
  * native notification state machine without changing Windows packages,
@@ -60,6 +68,20 @@ extern "C" __declspec(dllexport) int c545d_dedicated_ci_force_status_only(
 }
 extern "C" __declspec(dllexport) int c545d_dedicated_ci_monitor_delivered("""
     s=once(s,old,new,"synthetic status test entry")
+    old='extern "C" __declspec(dllexport) int c545d_dedicated_ci_monitor_delivered('
+    new="""/* Counts ONLY genuine PackageCatalog.PackageStatusChanged callbacks
+ * attributed to the signed disposable CI fixture. Synthetic test entry
+ * deliberately does not increment this. Read while watch token is live. */
+extern "C" __declspec(dllexport) int c545d_dedicated_ci_status_event_count(
+    c545d_dedicated_watch* token, uint64_t* observed) {
+  if(!observed)return 2;
+  auto watch=c545d_watch_lease(token);
+  if(!watch)return 3;
+  *observed=watch->state->ci_status_changed.load(std::memory_order_acquire);
+  return 0;
+}
+extern "C" __declspec(dllexport) int c545d_dedicated_ci_monitor_delivered("""
+    s=once(s,old,new,"real status event provenance API")
     return s
 
 def main() -> None:
