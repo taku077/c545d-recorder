@@ -99,7 +99,7 @@ c545d_ci_package_scan_finished (gboolean success)
       g_atomic_int_compare_and_exchange (&c545d_ci_forced_scan_failure_once,
                                          0, 1))
     {
-      g_print ("C545D_CI_PACKAGE_PARSE_FAULT,once=1\\n");
+      g_print ("C545D_CI_PACKAGE_PARSE_FAULT,once=1\n");
       success = FALSE;
     }
   if (success)
