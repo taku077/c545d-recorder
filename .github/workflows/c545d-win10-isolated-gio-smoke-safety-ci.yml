@@ -48,6 +48,12 @@ jobs:
           $gatePos=$txt.IndexOf('$phase=''SDK_INPUT_OK''')
           $compilerPos=$txt.IndexOf('Add-Type -TypeDefinition')
           if($gatePos -lt 0 -or $compilerPos -le $gatePos){throw 'Helper compilation must follow all no-run safety gates'}
+          # Check ALL inherited plugin path overrides are suppressed while
+          # the test child runs and that every prior value is remembered.
+          foreach($key in @('GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0','GST_PLUGIN_SYSTEM_PATH')){
+            if(-not $txt.Contains(("$"+"env:"+$key+"=''"))){throw "Inherited plugin path is not cleared: $key"}
+            if(-not $txt.Contains("'"+$key+"'")){throw "Inherited plugin path is not saved: $key"}
+          }
           foreach($forbidden in @('Stop-Process','Set-ItemProperty','Remove-ItemProperty','Set-Content','Invoke-WebRequest','Invoke-RestMethod')){
             if($txt -match ('(?im)^\s*'+[regex]::Escape($forbidden)+'\b')){throw "Host smoke forbidden operation: $forbidden"}
           }
@@ -119,10 +125,26 @@ jobs:
               $fake.Dispose()
             }
           }
-          Check 'Real app-local camera-free GIO trial and owned rollback' $candidate $true 0 $success
+          # Positive case begins with deliberately hostile inherited plugin
+          # search variables. The tested script must isolate and restore
+          # these values without touching user/system environment settings.
+          $polluted=Join-Path $env:RUNNER_TEMP 'c545d-untrusted-plugin-override'
+          New-Item -ItemType Directory -Path $polluted -Force | Out-Null
+          $oldPluginVars=@{}
+          foreach($key in @('GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0','GST_PLUGIN_SYSTEM_PATH')){
+            $oldPluginVars[$key]=[Environment]::GetEnvironmentVariable($key,'Process')
+            [Environment]::SetEnvironmentVariable($key,$polluted,'Process')
+          }
+          try {
+            Check 'Real app-local camera-free GIO trial ignores inherited plugin overrides' $candidate $true 0 $success
+          } finally {
+            foreach($key in $oldPluginVars.Keys){
+              [Environment]::SetEnvironmentVariable($key,$oldPluginVars[$key],'Process')
+            }
+          }
           if((Get-FileHash $orig -Algorithm SHA256).Hash -ne $before -or (Get-FileHash $candidate -Algorithm SHA256).Hash -ne $beforeCandidate){throw 'Original binaries changed'}
           if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 6){throw 'Missing numeric results'}
-          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,manifest_tamper_refused=1,contradictory_fingerprint_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
+          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,manifest_tamper_refused=1,contradictory_fingerprint_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,plugin_overrides_suppressed=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
           exit 0
       - uses: actions/upload-artifact@v4
         if: success()
