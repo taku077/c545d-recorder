@@ -140,8 +140,16 @@ try {
   if($originals -ne 1){throw 'INPUT_CHANGED'}
   $reason=if($isCi){'CI_SYNTHETIC_PASS'}else{'WIN10_SYNTHETIC_PASS_NOT_LIVE_APPROVAL'}
 } catch {
-  # Sanitized output only; paths, hashes and stdout/stderr stay private.
-  $reason='BLOCKED'
+  # Only allow-listed fixed reason identifiers; never print native exception
+  # text, local filenames, host paths, credentials, or raw process stderr.
+  $code=[string]$_.Exception.Message
+  $known=@('NOT_CI','MISSING_CHECKER','NO_SDK','FINGERPRINT_FAILED',
+    'HOST_NOT_ELIGIBLE','RECORDER_ACTIVE','CANDIDATE_BAD','MANIFEST_BAD',
+    'SDK_INCOMPLETE','BAD_TEMP','STAGE_EXISTS','BAD_OVERLAY',
+    'RECORDER_BECAME_ACTIVE','NO_CHILD_QUERY_HANDLE','WRONG_DLL',
+    'MODULE_NOT_OBSERVED','CHILD_TIMEOUT','CHILD_FAILED','NO_WAV',
+    'INPUT_CHANGED')
+  if($code -in $known){$reason=$code}else{$reason='BLOCKED'}
 } finally {
   if($handle -ne [IntPtr]::Zero){[void][C545DHostGioSmokeQuery]::CloseHandle($handle)}
   if($child){
