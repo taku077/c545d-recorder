@@ -81,7 +81,11 @@ jobs:
           SCAN="$(cygpath -w "$PWD/artifacts/c545d_gio_real_msix_cache_scan.dll")"
           # Native printf / atexit stats bypass the PS object pipeline; capture
           # this entire PowerShell process stdout in one sanitized artifact.
-          meson devenv -C glib-build powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" > artifacts/real_msix_gio_output.txt
+          export WATCH NOOP SCAN
+          # meson devenv starts in glib-build; switch back to checkout so
+          # PowerShell resolves tests/ and artifact paths exactly as validated
+          # by the standalone successful MSIX lifecycle workflow.
+          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN"' > artifacts/real_msix_gio_output.txt
           grep -q 'C545D_REAL_APPX_CLEANUP_EXECUTED=true' artifacts/real_msix_gio_output.txt
       - name: Reject absent or fabricated event-to-cache signals
         shell: pwsh
