@@ -82,19 +82,35 @@ c545d_ci_package_generation_needs_rescan (void)
 
 """
     helper += r"""/* Called by the exact parser exit path, not from the middle of enumeration.
- * No commit on false: the next public GAppInfo query will retry the same
- * package epoch. A concurrent event after start also remains pending.
+ * No commit on false: the next public GAppInfo query retries this epoch.
+ * A real event arriving during enumeration also remains pending.
  */
-static void
+static gint c545d_ci_forced_scan_failure_once;
+
+static gboolean
 c545d_ci_package_scan_finished (gboolean success)
 {
-  if (!success)
-    return;
-  g_mutex_lock (&c545d_bridge_lock);
-  if (c545d_ci_scan_started_package_generation != 0)
-    c545d_ci_last_parsed_package_generation =
-      c545d_ci_scan_started_package_generation;
-  g_mutex_unlock (&c545d_bridge_lock);
+  /* CI-only fault: turn ONE actual successful enumeration into a reported
+   * unsuccessful parse. No package, registry or user state is modified.
+   * This is a failure-return-path probe, not an artificial Windows event.
+   */
+  if (success &&
+      g_getenv ("C545D_CI_PACKAGE_PARSE_FAIL_ONCE") != NULL &&
+      g_atomic_int_compare_and_exchange (&c545d_ci_forced_scan_failure_once,
+                                         0, 1))
+    {
+      g_print ("C545D_CI_PACKAGE_PARSE_FAULT,once=1\\n");
+      success = FALSE;
+    }
+  if (success)
+    {
+      g_mutex_lock (&c545d_bridge_lock);
+      if (c545d_ci_scan_started_package_generation != 0)
+        c545d_ci_last_parsed_package_generation =
+          c545d_ci_scan_started_package_generation;
+      g_mutex_unlock (&c545d_bridge_lock);
+    }
+  return success;
 }
 
 """
@@ -104,8 +120,8 @@ c545d_ci_package_scan_finished (gboolean success)
         "insert generation-only query before real package parser")
     return replace_exact(
         src, "  return result;\n}\n\nstatic gboolean\nparse_manifest_file",
-        "  c545d_ci_package_scan_finished (result);\n"
-        "  return result;\n}\n\nstatic gboolean\nparse_manifest_file",
+        "  return c545d_ci_package_scan_finished (result);\n"
+        "}\n\nstatic gboolean\nparse_manifest_file",
         "commit generation only on parser success")
 
 
