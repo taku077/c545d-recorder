@@ -86,8 +86,7 @@ try {
     [DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
     [DllImport("kernel32.dll",SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
   }
-  '@
-  
+'@
   $before1=(Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash
   $before2=(Get-FileHash -LiteralPath $CandidateDll -Algorithm SHA256).Hash
   $temp=if($isCi){$env:RUNNER_TEMP}else{$env:TEMP}
