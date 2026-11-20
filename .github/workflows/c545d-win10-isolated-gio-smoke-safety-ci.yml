@@ -59,8 +59,10 @@ jobs:
           New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
           $blocked='C545D_GIO_ISOLATED_SMOKE,started=0,loaded_expected=0,wav_ok=0,exit_ok=0,rollback_ok=0,originals_unchanged=0,install_approved=0,live_tapo_authorized=0,reason=BLOCKED'
           $success='C545D_GIO_ISOLATED_SMOKE,started=1,loaded_expected=1,wav_ok=1,exit_ok=1,rollback_ok=1,originals_unchanged=1,install_approved=0,live_tapo_authorized=0,reason=CI_SYNTHETIC_PASS'
-          function Check([string]$label,[string]$dll,[bool]$ci,[int]$expectExit,[string]$expected){
-            $argv=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-GStreamerBin',$sdkBin,'-CandidateDll',$dll,'-CandidateManifest',$manifest,'-ReferenceManifest',$ref)
+          function Check([string]$label,[string]$dll,[bool]$ci,[int]$expectExit,[string]$expected,[string]$testScript='',[string]$testManifest=''){
+            if(-not $testScript){$testScript=$script}
+            if(-not $testManifest){$testManifest=$manifest}
+            $argv=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$testScript,'-GStreamerBin',$sdkBin,'-CandidateDll',$dll,'-CandidateManifest',$testManifest,'-ReferenceManifest',$ref)
             if($ci){$argv+='-CiRunnerOnly'}
             $lines=@(& $ps @argv)
             if($LASTEXITCODE -ne $expectExit -or $lines.Count -ne 1 -or $lines[0] -cne $expected){
@@ -79,6 +81,27 @@ jobs:
           Copy-Item $candidate $bad
           [IO.File]::AppendAllText($bad,'0')
           Check 'Corrupt candidate refused' $bad $true 3 ($blocked.Replace('reason=BLOCKED','reason=CANDIDATE_BAD'))
+          # The release manifest is independently mandatory and must fail
+          # before staging any executable or creating a private test process.
+          $badManifest=Join-Path $env:RUNNER_TEMP 'candidate-invalid-manifest.txt'
+          $m=Get-Content -LiteralPath $manifest -Raw
+          $n=$m.Replace('C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST','C545D_RELEASE_CANDIDATE_STATUS=NOT_QUALIFIED')
+          if($n -ceq $m){throw 'Cannot construct manifest negative control'}
+          [IO.File]::WriteAllText($badManifest,$n)
+          Check 'Tampered candidate manifest refused' $candidate $true 3 ($blocked.Replace('reason=BLOCKED','reason=MANIFEST_BAD')) '' $badManifest
+          # A checker returning exit0 and internally contradictory numeric
+          # flags cannot ever authorize a smoke run. Synthetic checker is
+          # isolated under RUNNER_TEMP; the real bundled checker is untouched.
+          $fakeDir=Join-Path $env:RUNNER_TEMP 'c545d-false-fingerprint'
+          New-Item -ItemType Directory -Path $fakeDir -Force | Out-Null
+          $fakeSmoke=Join-Path $fakeDir 'Invoke-C545DWin10IsolatedGioSmoke.ps1'
+          Copy-Item -LiteralPath $script -Destination $fakeSmoke
+          $fakeCheck=@'
+Write-Output 'C545D_HOST_GIO_FINGERPRINT,manifest_valid=1,runtime_found=1,executables_found=1,dll_found=6,dll_hash_matched=6,gio_match=1,glib_match=0,gobject_match=1,gmodule_match=1,intl_match=1,zlib_match=1,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=1,install_approved=0,live_test_authorized=0,reason=PINNED_SDK_MATCH_NON_WIN10'
+exit 0
+'@
+          [IO.File]::WriteAllText((Join-Path $fakeDir 'Get-C545DGStreamerHostFingerprintReadOnly.ps1'),$fakeCheck)
+          Check 'Contradictory fingerprint refused' $candidate $true 3 ($blocked.Replace('reason=BLOCKED','reason=HOST_NOT_ELIGIBLE')) $fakeSmoke
           $fakePath=Join-Path $env:RUNNER_TEMP 'gst-launch-1.0.exe'
           Copy-Item (Join-Path $env:SystemRoot 'System32\ping.exe') $fakePath
           $fake=$null
@@ -95,8 +118,8 @@ jobs:
           }
           Check 'Real app-local camera-free GIO trial and owned rollback' $candidate $true 0 $success
           if((Get-FileHash $orig -Algorithm SHA256).Hash -ne $before -or (Get-FileHash $candidate -Algorithm SHA256).Hash -ne $beforeCandidate){throw 'Original binaries changed'}
-          if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 4){throw 'Missing numeric results'}
-          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
+          if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 6){throw 'Missing numeric results'}
+          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,manifest_tamper_refused=1,contradictory_fingerprint_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
           exit 0
       - uses: actions/upload-artifact@v4
         if: success()
