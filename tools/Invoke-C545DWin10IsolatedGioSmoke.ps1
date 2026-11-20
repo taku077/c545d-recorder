@@ -189,7 +189,7 @@ try {
 }
 $passed=[int]($started -eq 1 -and $observed -eq 1 -and $wav -eq 1 -and
               $cleanExit -eq 1 -and $originals -eq 1 -and $cleanup -eq 1)
-if($passed -ne 1){$reason='BLOCKED'}
+if($passed -ne 1 -and $reason -in @('CI_SYNTHETIC_PASS','WIN10_SYNTHETIC_PASS_NOT_LIVE_APPROVAL')){$reason='BLOCKED'}
 Write-Output "C545D_GIO_ISOLATED_SMOKE,started=$started,loaded_expected=$observed,wav_ok=$wav,exit_ok=$cleanExit,rollback_ok=$cleanup,originals_unchanged=$originals,install_approved=0,live_tapo_authorized=0,reason=$reason"
 if($passed -eq 1){exit 0}
 exit 3
