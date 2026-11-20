@@ -1,0 +1,98 @@
+name: C545D read-only core GIO candidate preflight and fail-closed negatives CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tools/Test-C545DCoreGioReadOnly.ps1'
+      - '.github/workflows/c545d-core-gio-readonly-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  readonly-preflight:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - name: Fetch official SDK reference only into disposable Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-1.28.8.exe'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gstreamer-1.28.8'
+          Invoke-WebRequest -Uri 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK archive incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'GStreamer SDK install failed'}
+          "C545D_TEST_GST_BIN=$(Join-Path $sdk 'bin')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Verify host script syntax, read-only positive inventory and two fail-closed negatives
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null
+          $parseErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tools/Test-C545DCoreGioReadOnly.ps1).Path,
+            [ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count -ne 0){throw 'PowerShell preflight parsing failed'}
+          $source=Get-Content -LiteralPath tools/Test-C545DCoreGioReadOnly.ps1 -Raw
+          foreach($forbidden in @('Copy-Item','Move-Item','Remove-Item','Set-DllDirectory','Start-Process','Stop-Process','Set-ItemProperty','New-ItemProperty','Set-Content','WriteAllBytes')){
+            if($source -match ('(?im)^\s*'+[regex]::Escape($forbidden)+'\b')){
+              throw "Read-only inventory contains dangerous mutator $forbidden"
+            }
+          }
+          New-Item -ItemType Directory -Force artifacts/numeric | Out-Null
+          $candidate=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          $manifest=(Resolve-Path artifacts/core-rc/manifest.txt).Path
+          $bin=$env:C545D_TEST_GST_BIN
+          $reference=Join-Path $bin 'gio-2.0-0.dll'
+          $beforeCandidate=(Get-FileHash $candidate -Algorithm SHA256).Hash
+          $beforeSdk=(Get-FileHash $reference -Algorithm SHA256).Hash
+          function Check([string]$label,[string]$dll,[string]$rtBin,[string]$expected){
+            $rows=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-C545DCoreGioReadOnly.ps1 -CandidateDll $dll -ManifestFile $manifest -GStreamerBin $rtBin)
+            if($LASTEXITCODE -ne 3){throw "CI Windows Server must be blocked: $label"}
+            $line=($rows | Where-Object {$_ -match '^C545D_CORE_GIO_PREFLIGHT,'} | Select-Object -Last 1)
+            if($line -notmatch $expected){throw "Wrong preflight $label fail-closed reason: $line"}
+            if($line -notmatch 'install_approved=0'){throw 'No host install may be authorized'}
+            $line | Add-Content artifacts/numeric/readonly_preflight.txt
+          }
+          # Genuine matching reference, but Server 2022 is NOT the user's
+          # Windows 10: compatibility=1, install approval=0, exit3.
+          Check 'server_control' $candidate $bin 'candidate_sha=1,reference_sha=1,pe_x64=1,runtime_exes=1,active_recorder=0,windows10=0,compatible=1,read_only_eligibility=0,install_approved=0,reason=WIN10_NOT_VERIFIED'
+          $badCandidate=Join-Path $env:RUNNER_TEMP 'tampered-copy.dll'
+          Copy-Item $candidate $badCandidate
+          $f=[System.IO.File]::Open($badCandidate,[System.IO.FileMode]::Append)
+          try{$f.WriteByte(0)}finally{$f.Dispose()}
+          Check 'bad_candidate_copy' $badCandidate $bin 'candidate_sha=0,reference_sha=1,pe_x64=1,runtime_exes=1,active_recorder=0,windows10=0,compatible=0,read_only_eligibility=0,install_approved=0,reason=BAD_CANDIDATE'
+          $badBin=Join-Path $env:RUNNER_TEMP 'tampered-runtime-copy'
+          New-Item -ItemType Directory -Force -Path $badBin | Out-Null
+          Copy-Item $reference (Join-Path $badBin 'gio-2.0-0.dll')
+          Copy-Item (Join-Path $bin 'gst-launch-1.0.exe') $badBin
+          Copy-Item (Join-Path $bin 'gst-inspect-1.0.exe') $badBin
+          $f=[System.IO.File]::Open((Join-Path $badBin 'gio-2.0-0.dll'),[System.IO.FileMode]::Append)
+          try{$f.WriteByte(0)}finally{$f.Dispose()}
+          Check 'unknown_local_runtime_copy' $candidate $badBin 'candidate_sha=1,reference_sha=0,pe_x64=1,runtime_exes=1,active_recorder=0,windows10=0,compatible=0,read_only_eligibility=0,install_approved=0,reason=UNKNOWN_INSTALLED_RUNTIME'
+          if($beforeCandidate -ne (Get-FileHash $candidate -Algorithm SHA256).Hash -or
+             $beforeSdk -ne (Get-FileHash $reference -Algorithm SHA256).Hash){
+            throw 'Read-only preflight modified a reference or candidate DLL'
+          }
+          if((Get-Content artifacts/numeric/readonly_preflight.txt).Count -ne 3){
+            throw 'Missing one strict negative control'
+          }
+          Write-Host 'C545D_READONLY_GIO_PREFLIGHT_CI_PASS,matching_reference=1,tampered_candidate_rejected=1,unknown_installed_reference_rejected=1,win10_not_inferred_from_server=1,host_modified=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-readonly-gio-host-gate-numeric-only
+          path: artifacts/numeric/readonly_preflight.txt
+          retention-days: 7
+          if-no-files-found: error
