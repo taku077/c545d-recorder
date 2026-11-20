@@ -13,6 +13,15 @@
 #include <string.h>
 
 typedef void (__cdecl *Counters)(uint64_t*,uint64_t*,uint64_t*);
+static volatile gint c545d_changed_count = 0;
+static void on_changed(GAppInfoMonitor *monitor, gpointer data) {
+  (void)monitor;(void)data;
+  g_atomic_int_inc(&c545d_changed_count);
+}
+static void dispatch_pending_main_context(void) {
+  for(int k=0;k<300 && g_main_context_pending(NULL);k++)
+    g_main_context_iteration(NULL,FALSE);
+}
 static gint compare_rows(gconstpointer a,gconstpointer b) {
   const char * const *aa=a,* const *bb=b;
   return g_strcmp0(*aa,*bb);
@@ -59,6 +68,11 @@ int main(void) {
   int status=1;
   HMODULE bridge;
   Counters counters=NULL;
+  GAppInfoMonitor *monitor=g_app_info_monitor_get();
+  if(!monitor) {
+    fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=monitor_not_available\n");return 1;
+  }
+  g_signal_connect(monitor,"changed",G_CALLBACK(on_changed),NULL);
   uint64_t regs=0,revs=0,errs=0;
   if(!snapshot(initial,&apps0)||apps0==0) {
     fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=initial_appinfo\n");goto done;
@@ -103,12 +117,25 @@ int main(void) {
   _snwprintf(value_name,95,L"C545D_RuntimeDropCI_%lu",(unsigned long)GetCurrentProcessId());
   value_name[95]=L'\0';
   const wchar_t value[]=L"Software\\C545D_CI_NONEXISTENT_CAPABILITIES";
+  gint changes_before=g_atomic_int_get(&c545d_changed_count);
   if(RegSetValueExW(key,value_name,0,REG_SZ,(const BYTE*)value,
                     (DWORD)sizeof(value))!=ERROR_SUCCESS) {
     fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=disposable_registry_write\n");goto done;
   }
   wrote=TRUE;
-  Sleep(1600);
+  /* Stock GLib Win32 registry notification requires processing the
+   * thread-default main context, as in the previously verified 16-cycle
+   * watcher probe. Do not count mere unchanged g_app_info_get_all queries
+   * as a successful cache fallback test. */
+  for(int k=0;k<65;k++) {
+    Sleep(100);
+    dispatch_pending_main_context();
+    if(g_atomic_int_get(&c545d_changed_count)>changes_before)break;
+  }
+  if(g_atomic_int_get(&c545d_changed_count)<=changes_before) {
+    fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=registry_signal_not_delivered\n");
+    goto done;
+  }
   for(int k=0;k<10;k++) {
     if(!snapshot(after_refresh,&apps2)) {
       fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=after_refresh_query\n");goto done;
@@ -133,6 +160,8 @@ int main(void) {
   status=0;
 done:
   SetEnvironmentVariableW(L"C545D_CI_FORCE_RUNTIME_UNAVAILABLE",NULL);
+  g_signal_handlers_disconnect_by_func(monitor,G_CALLBACK(on_changed),NULL);
+  g_object_unref(monitor);
   if(key!=NULL) {
     if(wrote) RegDeleteValueW(key,value_name);
     RegCloseKey(key);
