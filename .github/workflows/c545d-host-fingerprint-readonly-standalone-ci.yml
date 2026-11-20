@@ -53,25 +53,25 @@ jobs:
             $lines[0] | Add-Content artifacts/numeric/host_fingerprint_scenarios.txt
           }
           $prefix='C545D_HOST_GIO_FINGERPRINT,manifest_valid=1,runtime_found=1,executables_found=1,'
-          Check 'official_sdk_non_win10' $sdkBin $ref 0 ($prefix+'dll_found=6,dll_hash_matched=6,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=1,install_approved=0,live_test_authorized=0,reason=PINNED_SDK_MATCH_NON_WIN10')
+          Check 'official_sdk_non_win10' $sdkBin $ref 0 ($prefix+'dll_found=6,dll_hash_matched=6,gio_match=1,glib_match=1,gobject_match=1,gmodule_match=1,intl_match=1,zlib_match=1,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=1,install_approved=0,live_test_authorized=0,reason=PINNED_SDK_MATCH_NON_WIN10')
           $names=@('gio-2.0-0.dll','glib-2.0-0.dll','gobject-2.0-0.dll','gmodule-2.0-0.dll','intl-8.dll','z-1.dll','gst-launch-1.0.exe','gst-inspect-1.0.exe')
           $bad=Join-Path $env:RUNNER_TEMP 'fingerprint-bad-glib-copy'
           New-Item -ItemType Directory -Path $bad -Force | Out-Null
           foreach($n in $names){Copy-Item (Join-Path $sdkBin $n) $bad}
           $handle=[IO.File]::Open((Join-Path $bad 'glib-2.0-0.dll'),[IO.FileMode]::Append)
           try{$handle.WriteByte(0)}finally{$handle.Dispose()}
-          Check 'changed_runtime' $bad $ref 3 ($prefix+'dll_found=6,dll_hash_matched=5,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=0,install_approved=0,live_test_authorized=0,reason=INSTALLED_RUNTIME_DIFFERS_FROM_PINNED_1288')
+          Check 'changed_runtime' $bad $ref 3 ($prefix+'dll_found=6,dll_hash_matched=5,gio_match=1,glib_match=0,gobject_match=1,gmodule_match=1,intl_match=1,zlib_match=1,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=0,install_approved=0,live_test_authorized=0,reason=INSTALLED_RUNTIME_DIFFERS_FROM_PINNED_1288')
           $missing=Join-Path $env:RUNNER_TEMP 'fingerprint-missing-intl-copy'
           New-Item -ItemType Directory -Path $missing -Force | Out-Null
           foreach($n in $names | Where-Object {$_ -ne 'intl-8.dll'}){Copy-Item (Join-Path $sdkBin $n) $missing}
-          Check 'missing_dependency' $missing $ref 3 ($prefix+'dll_found=5,dll_hash_matched=5,dll_missing=1,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=0,install_approved=0,live_test_authorized=0,reason=SOME_DLLS_MISSING')
+          Check 'missing_dependency' $missing $ref 3 ($prefix+'dll_found=5,dll_hash_matched=5,gio_match=1,glib_match=1,gobject_match=1,gmodule_match=1,intl_match=0,zlib_match=1,dll_missing=1,pe64_failed=0,windows10=0,recorder_active=0,pinned_sdk_match=0,install_approved=0,live_test_authorized=0,reason=SOME_DLLS_MISSING')
           $fakeProc=Join-Path $env:RUNNER_TEMP 'gst-launch-1.0.exe'
           Copy-Item (Join-Path $env:SystemRoot 'System32\PING.EXE') $fakeProc
           $fake=$null
           try{
             $fake=Start-Process $fakeProc -ArgumentList @('-n','30','127.0.0.1') -PassThru -WindowStyle Hidden
             Start-Sleep -Milliseconds 300
-            Check 'read_only_even_during_recorder' $sdkBin $ref 0 ($prefix+'dll_found=6,dll_hash_matched=6,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=1,pinned_sdk_match=1,install_approved=0,live_test_authorized=0,reason=PINNED_SDK_MATCH_NON_WIN10')
+            Check 'read_only_even_during_recorder' $sdkBin $ref 0 ($prefix+'dll_found=6,dll_hash_matched=6,gio_match=1,glib_match=1,gobject_match=1,gmodule_match=1,intl_match=1,zlib_match=1,dll_missing=0,pe64_failed=0,windows10=0,recorder_active=1,pinned_sdk_match=1,install_approved=0,live_test_authorized=0,reason=PINNED_SDK_MATCH_NON_WIN10')
           }finally{
             if($fake){
               if(-not $fake.HasExited){Stop-Process -Id $fake.Id -Force -ErrorAction SilentlyContinue}
