@@ -1,0 +1,63 @@
+name: C545D real PackageCatalog MSIX install-update-remove event proof (RUNNER ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - '.github/workflows/c545d-winrt-real-package-events-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-package-events:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Validate test orchestration syntax BEFORE any package action
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DRealPackageEventCI.ps1).Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0) {
+            foreach($e in $errors) { Write-Error $e.Message }
+            throw 'PackageCatalog live event orchestration script has syntax errors'
+          }
+          py -m py_compile tests/make_c545d_ci_package_fixture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic package fixture generator invalid' }
+          'C545D_REAL_PACKAGE_EVENT_SOURCE_PREFLIGHT_PASS'
+      - name: Build no-op package app and dedicated C++ WinRT watch DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /W4 /MD /O2 tests/c545d_ci_package_noop.c /Fe:artifacts/c545d_ci_noop.exe /link /SUBSYSTEM:WINDOWS
+          if ($LASTEXITCODE -ne 0) { throw 'No-op app package entrypoint failed to compile' }
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Dedicated watcher C ABI library failed to compile' }
+      - name: REAL synthetic MSIX installation, update and removal with active dedicated watcher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll (Resolve-Path artifacts/c545d_dedicated_watch.dll).Path -StubExe (Resolve-Path artifacts/c545d_ci_noop.exe).Path | Tee-Object -FilePath artifacts/real_package_event_summary.txt
+          if($LASTEXITCODE -ne 0) { throw "Real Windows PackageCatalog notification test failed: $LASTEXITCODE" }
+          $output=Get-Content artifacts/real_package_event_summary.txt -Raw
+          if($output -notmatch 'C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=([1-9][0-9]*),update_delta=([1-9][0-9]*),uninstall_delta=([1-9][0-9]*)') {
+            throw 'A true Windows install/update/uninstall event was not received'
+          }
+          if($output -notmatch 'C545D_REAL_APPX_CLEANUP_EXECUTED=true') {
+            throw 'Temporary package and certificate cleanup did not execute'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-real-packagecatalog-three-event-numeric-only
+          path: artifacts/real_package_event_summary.txt
+          retention-days: 7
+          if-no-files-found: warn
