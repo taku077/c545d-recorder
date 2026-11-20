@@ -16,6 +16,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 $filesFound=0;$matched=0;$missing=0;$notPe64=0
+$matchedNames=@{}
 $runtimeFound=0;$runtimeExe=0;$os10=0;$recordingActive=0;$manifestValid=0
 $reason='INCOMPLETE'
 try {
@@ -66,6 +67,7 @@ try {
       $runtimeExe=1
     }
     foreach($name in $names){
+      $matchedNames[$name]=0
       $file=Join-Path $GStreamerBin $name
       if(-not (Test-Path -LiteralPath $file -PathType Leaf)){$missing++;continue}
       $filesFound++
@@ -76,7 +78,7 @@ try {
       }
       $expected=([string]$ref.dll_sha256.PSObject.Properties[$name].Value).ToUpperInvariant()
       $actual=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
-      if($actual -eq $expected){$matched++}
+      if($actual -eq $expected){$matched++;$matchedNames[$name]=1}
       $s=$null;$r=$null
       try {
         $s=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
@@ -112,12 +114,20 @@ try {
 }
 $match=[int]($runtimeExe -eq 1 -and $filesFound -eq 6 -and $matched -eq 6 -and
              $missing -eq 0 -and $notPe64 -eq 0 -and $manifestValid -eq 1)
+# Per-library binary MATCH flags avoid needing another user-host check if
+# only one of the six reference DLLs is from a different SDK build. No
+# unknown local hash is exported. These flags are numeric only.
 $line=("C545D_HOST_GIO_FINGERPRINT,manifest_valid={0},runtime_found={1},"+
        "executables_found={2},dll_found={3},dll_hash_matched={4},"+
-       "dll_missing={5},pe64_failed={6},windows10={7},recorder_active={8},"+
-       "pinned_sdk_match={9},install_approved=0,live_test_authorized=0,reason={10}") -f @(
-        $manifestValid,$runtimeFound,$runtimeExe,$filesFound,$matched,$missing,
-        $notPe64,$os10,$recordingActive,$match,$reason)
+       "gio_match={5},glib_match={6},gobject_match={7},gmodule_match={8},"+
+       "intl_match={9},zlib_match={10},dll_missing={11},pe64_failed={12},"+
+       "windows10={13},recorder_active={14},pinned_sdk_match={15},"+
+       "install_approved=0,live_test_authorized=0,reason={16}") -f @(
+        $manifestValid,$runtimeFound,$runtimeExe,$filesFound,$matched,
+        [int]$matchedNames['gio-2.0-0.dll'],[int]$matchedNames['glib-2.0-0.dll'],
+        [int]$matchedNames['gobject-2.0-0.dll'],[int]$matchedNames['gmodule-2.0-0.dll'],
+        [int]$matchedNames['intl-8.dll'],[int]$matchedNames['z-1.dll'],
+        $missing,$notPe64,$os10,$recordingActive,$match,$reason)
 Write-Output $line
 # A DIFFERENT runtime is information, not authorization to change it.
 if($match -eq 1){exit 0}
