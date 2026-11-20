@@ -25,6 +25,12 @@ C545D_API int c545d_dedicated_snapshot(c545d_dedicated_watch *watch,
                                           uint64_t *generation, uint64_t *locale_hash);
 C545D_API int c545d_dedicated_synthetic_event(c545d_dedicated_watch *watch);
 C545D_API void c545d_dedicated_close(c545d_dedicated_watch *watch);
+/* CI-only read-only counters: native IsComplete() callbacks for the three
+ * package deployment event types. Count only, never print package identity.
+ */
+C545D_API int c545d_dedicated_ci_completion_counters(
+    c545d_dedicated_watch *watch, uint64_t *install_done,
+    uint64_t *update_done, uint64_t *uninstall_done);
 C545D_API void c545d_dedicated_global_counters(uint64_t *registered,
                                                     uint64_t *revoked,
                                                     uint64_t *shutdown_errors);
