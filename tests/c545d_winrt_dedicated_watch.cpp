@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -99,7 +100,17 @@ struct c545d_dedicated_watch {
           if(!p->active.load(std::memory_order_acquire)) return;
           if(!ci_name.empty()) {
             try {
-              const auto pkg=args.Package();
+              // Unlike Installing/Uninstalling/StatusChanged, the WinRT
+              // UpdatingEventArgs API exposes TargetPackage/SourcePackage,
+              // not Package(). Match the updated target identity.
+              using Args=std::decay_t<decltype(args)>;
+              const auto pkg=[&]() {
+                if constexpr(std::is_same_v<
+                    Args,winrt::Windows::ApplicationModel::PackageUpdatingEventArgs>)
+                  return args.TargetPackage();
+                else
+                  return args.Package();
+              }();
               if(!pkg || std::wstring(pkg.Id().Name().c_str())!=ci_name)
                 return;
             } catch(...) {
