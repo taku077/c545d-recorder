@@ -96,7 +96,14 @@ try {
   Checked 'main_pri_index'
   & $pri createconfig /cf $resCfg /dq fr-FR /o
   Checked 'resource_pri_config'
-  & $pri resourcepack /pr $resDir /cf $resCfg /if $mainPri /of $resPri /o
+  # ResourcePack may only index additional variants of names already in
+  # the parent PRI. Keep unrelated PNG/TXT payload out of MakePri's input,
+  # although MakeAppx will still package them from the mapping separately.
+  $indexOnly=Join-Path $root 'fr-index-only'
+  $indexStrings=Join-Path $indexOnly 'Strings\fr-fr'
+  New-Item -ItemType Directory -Path $indexStrings -Force | Out-Null
+  Copy-Item -LiteralPath (Join-Path $resDir 'Strings\fr-fr\Resources.resw') -Destination $indexStrings
+  & $pri resourcepack /pr $indexOnly /cf $resCfg /if $mainPri /of $resPri /o
   Checked 'resource_pri_index'
   if(-not (Test-Path $mainPri) -or -not (Test-Path $resPri)){
     throw 'C545D_RESOURCE_CI_PRI_OUTPUT_MISSING'
