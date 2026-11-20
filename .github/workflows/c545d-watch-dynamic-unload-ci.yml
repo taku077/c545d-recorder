@@ -1,0 +1,49 @@
+name: C545D isolated dedicated watcher LoadLibrary atexit FreeLibrary teardown (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - 'tests/c545d_watch_dynamic_unload_probe.c'
+      - '.github/workflows/c545d-watch-dynamic-unload-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dynamic-unload:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build current WinRT watcher DLL and isolated dynamic-load client
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0) {throw 'WinRT DLL build failed'}
+          & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_watch_dynamic_unload_probe.c /Fe:artifacts/c545d_watch_dynamic_unload.exe
+          if($LASTEXITCODE -ne 0) {throw 'Unload probe C compilation failed'}
+      - name: Test normal and atexit unload in two fresh processes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dll=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+          foreach($mode in @(0,1)) {
+            & artifacts/c545d_watch_dynamic_unload.exe $dll $mode > "artifacts/unload_$mode.txt"
+            $exit=$LASTEXITCODE
+            Get-Content "artifacts/unload_$mode.txt"
+            if($exit -ne 0) {throw "WinRT dynamic unload failed mode=$mode exit=$exit"}
+            if((Get-Content "artifacts/unload_$mode.txt" -Raw) -notmatch 'C545D_DYNAMIC_UNLOAD_STAGE=after_freelibrary') {
+              throw "WinRT dynamic unload incomplete mode=$mode"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-watch-dynamic-unload-markers-only
+          path: artifacts/unload_*.txt
+          retention-days: 7
+          if-no-files-found: warn
