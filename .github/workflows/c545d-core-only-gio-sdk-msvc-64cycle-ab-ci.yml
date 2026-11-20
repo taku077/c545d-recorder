@@ -1,0 +1,128 @@
+name: C545D exact core-only GIO MSVC binary 64-cycle A/B CI only
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-only-gio-sdk-msvc-64cycle-ab-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  core-msvc-ab:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - name: Install pinned official SDK and read-only Handle64 on disposable Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $root=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK installer incomplete'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$root") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'SDK installation failed'}
+          $candidate=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core-rc/manifest.txt -Raw
+          $digest=(Get-FileHash $candidate -Algorithm SHA256).Hash
+          if($digest -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$digest") -or
+             $manifest -notmatch 'STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){throw 'Wrong candidate artifact'}
+          $refHash=(Get-FileHash (Join-Path $root 'bin\gio-2.0-0.dll') -Algorithm SHA256).Hash
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){throw 'Wrong SDK reference'}
+          $zip=Join-Path $env:RUNNER_TEMP 'handle.zip'
+          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 60
+          $tools=Join-Path $env:RUNNER_TEMP 'handle'
+          Expand-Archive -LiteralPath $zip -DestinationPath $tools -Force
+          $handle=Join-Path $tools 'handle64.exe'
+          if(-not (Test-Path $handle)){throw 'Handle64 unavailable'}
+          "SDK_ROOT=$root" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "C545D_HANDLE_EXE=$handle" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host 'C545D_AB_BINARY_PROVENANCE_PASS,SDK_SHA_verified=1,candidate_SHA_verified=1'
+      - name: Build one identical SDK-linked probe and test two GIO DLL binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=$env:SDK_ROOT
+          $root=(Resolve-Path artifacts).Path
+          $probe=Join-Path $root 'c545d_appinfo_probe.exe'
+          $inc=@("/I$sdk\include\glib-2.0","/I$sdk\lib\glib-2.0\include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$inc+@('tests/gio_appinfo_key_handle_probe.c',"/Fe:$probe",'/link',"/LIBPATH:$sdk\lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if($LASTEXITCODE -ne 0 -or -not (Test-Path $probe)){throw 'Probe failed to compile'}
+          $oldPath=$env:PATH
+          foreach($mode in @('official','candidate')){
+            $dir=Join-Path $root "overlay-$mode"
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            Copy-Item $probe (Join-Path $dir 'c545d_appinfo_probe.exe')
+            $source=if($mode -eq 'official'){Join-Path $sdk 'bin\gio-2.0-0.dll'}else{(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path}
+            Copy-Item $source (Join-Path $dir 'gio-2.0-0.dll')
+            $env:PATH="$dir;$sdk\bin;$oldPath"
+            foreach($scenario in @('nochange','registry')){
+              $args=@('--cycles=64')
+              if($scenario -eq 'nochange'){$args+='--no-registry-change'}
+              $log=Join-Path $root "$mode-$scenario-64.txt"
+              & (Join-Path $dir 'c545d_appinfo_probe.exe') @args > $log
+              if($LASTEXITCODE -ne 0){throw "64-cycle probe exited abnormally $mode/$scenario"}
+              if((Get-Content $log -Raw) -notmatch 'GIO_PROBE_DONE,cycles=64,notifications=\d+,reg_changes=(0|1)'){
+                throw "Incomplete probe $mode/$scenario"
+              }
+              Write-Host "C545D_AB_64_RUN,mode=$mode,scenario=$scenario,cycles=64,CI_only=1"
+            }
+          }
+          $env:PATH=$oldPath
+      - name: Strict no-change-controlled Key census, handles and PrivateUsage comparison
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import json,pathlib,re
+          root=pathlib.Path("artifacts")
+          def parse(mode,scenario):
+              data=(root/f"{mode}-{scenario}-64.txt").read_text(encoding="utf-8",errors="replace")
+              values={kind:(int(h),int(p)) for kind,h,p in re.findall(r"^GIO_PROBE,(baseline|settled_cleanup),\d+,\d+,(\d+),(\d+)$",data,re.M)}
+              keys={kind:int(n) for kind,n in re.findall(r"^GIO_KEY,(baseline|settled_cleanup),\d+,(\d+)$",data,re.M)}
+              assert set(values)=={"baseline","settled_cleanup"},(mode,scenario,"memory counts missing")
+              assert set(keys)=={"baseline","settled_cleanup"},(mode,scenario,"Key Handle64 census missing")
+              return dict(handles=values["settled_cleanup"][0]-values["baseline"][0],
+                          private_bytes=values["settled_cleanup"][1]-values["baseline"][1],
+                          key=keys["settled_cleanup"]-keys["baseline"])
+          d={f"{m}_{s}":parse(m,s) for m in ("official","candidate") for s in ("nochange","registry")}
+          def effect(mode,metric):
+              return d[f"{mode}_registry"][metric]-d[f"{mode}_nochange"][metric]
+          old_key,new_key=effect("official","key"),effect("candidate","key")
+          old_mem,new_mem=effect("official","private_bytes"),effect("candidate","private_bytes")
+          assert old_key>20,("reference Key-leak baseline not reproduced",d)
+          assert new_key<=4,("candidate retained Key handle gate failed",d)
+          assert effect("candidate","handles")<=6,("candidate total handles gate failed",d)
+          assert new_mem<old_mem,("candidate PrivateUsage did not improve over control",d)
+          (root/"ab64_summary.json").write_text(json.dumps(d,sort_keys=True,indent=2),encoding="utf-8")
+          print("C545D_CORE_ONLY_MSVC_64_AB_PASS,official_Key_effect=%d,candidate_Key_effect=%d,official_PrivateUsage_effect_B=%d,candidate_PrivateUsage_effect_B=%d,cycles_per_mode=64,modes=4,CI_only=1"%
+                (old_key,new_key,old_mem,new_mem))
+          '@ | Set-Content artifacts/analyze_ab64.py -Encoding utf8
+          py artifacts/analyze_ab64.py
+          if($LASTEXITCODE -ne 0){throw 'A/B Key or PrivateUsage regression'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-core-only-msvc-64cycle-ab-numeric-only
+          path: |
+            artifacts/official-nochange-64.txt
+            artifacts/official-registry-64.txt
+            artifacts/candidate-nochange-64.txt
+            artifacts/candidate-registry-64.txt
+            artifacts/ab64_summary.json
+          retention-days: 7
+          if-no-files-found: warn
