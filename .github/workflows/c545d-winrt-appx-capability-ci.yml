@@ -1,0 +1,54 @@
+name: C545D ephemeral Windows AppX event-test capability preflight (NO INSTALL)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - '.github/workflows/c545d-winrt-appx-capability-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-appx-capabilities:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    runs-on: \${{ matrix.runner }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only capability probe; never change package, setting, certificate or registry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $os=[System.Environment]::OSVersion.Version
+          $svc=Get-Service -Name AppXSvc -ErrorAction SilentlyContinue
+          $running=if($svc) { $svc.Status.ToString() } else { 'absent' }
+          $cmdNames=@('Add-AppxPackage','Remove-AppxPackage','Get-AppxPackage','New-SelfSignedCertificate')
+          $available=@()
+          foreach($name in $cmdNames) {
+            $command=Get-Command $name -ErrorAction SilentlyContinue
+            if($null -ne $command) { $available+= $name }
+          }
+          $sdkBin=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
+          $make=@()
+          $sign=@()
+          if(Test-Path $sdkBin) {
+            $make=@(Get-ChildItem $sdkBin -Filter MakeAppx.exe -Recurse -File -ErrorAction SilentlyContinue)
+            $sign=@(Get-ChildItem $sdkBin -Filter SignTool.exe -Recurse -File -ErrorAction SilentlyContinue)
+          }
+          $canEnumerate=0
+          $cnt=0
+          try {
+            $list=@(Get-AppxPackage -ErrorAction Stop)
+            $cnt=$list.Count
+            $canEnumerate=1
+          } catch {
+            "C545D_APPX_PREFLIGHT_ENUMERATION_ERROR_TYPE=$($_.Exception.GetType().Name)"
+          }
+          "C545D_APPX_PREFLIGHT,os_build=$($os.Build),appx_service_status=$running,commands=$($available.Count)/4,makeappx_count=$($make.Count),signtool_count=$($sign.Count),package_query_works=$canEnumerate,existing_package_count=$cnt,runner=\${{ matrix.runner }},no_mutations=true"
+          if($available.Count -ne 4 -or $make.Count -eq 0 -or $sign.Count -eq 0 -or $canEnumerate -eq 0) {
+            "C545D_APPX_PREFLIGHT_INSTALL_TEST_BLOCKED=true; no package install attempted"
+          } else {
+            "C545D_APPX_PREFLIGHT_TOOLCHAIN_PRESENT=true; real package-event delivery STILL NOT TESTED"
+          }
