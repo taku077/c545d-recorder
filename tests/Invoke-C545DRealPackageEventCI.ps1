@@ -103,6 +103,9 @@ public static class C545DWatchInterop {
 }
 '@
   Add-Type -TypeDefinition $native.Replace('__DLL__',$WatchDll.Replace('"','""')) -ErrorAction Stop
+  # Attribution: the test generation counter must only advance for THIS
+  # synthetic package, not any unrelated background runner activity.
+  $env:C545D_CI_EVENT_PACKAGE_NAME=$name
   $ret=[C545DWatchInterop]::Enter()
   if($ret -ne 0) { throw "C545D_REAL_APPX_ENTER_FAILED,status=$ret" }
   $runtime=$true
@@ -129,7 +132,7 @@ public static class C545DWatchInterop {
     throw 'C545D_REAL_APPX_UNINSTALL_STATE_WRONG'
   }
   [UInt64]$g3=Await-Event $g2 'uninstall'
-  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),no_synthetic_notifications=true,CI_only=true"
+  "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),no_synthetic_notifications=true,only_ci_package_events_counted=true,CI_only=true"
 }
 finally {
   if($watch -ne [IntPtr]::Zero) {
@@ -151,6 +154,7 @@ finally {
       Remove-Item -LiteralPath ($store+'\'+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
     }
   }
+  Remove-Item Env:C545D_CI_EVENT_PACKAGE_NAME -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
   "C545D_REAL_APPX_CLEANUP_EXECUTED=true,runner_only=true"
 }
