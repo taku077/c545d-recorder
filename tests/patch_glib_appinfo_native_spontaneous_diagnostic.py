@@ -32,6 +32,9 @@ def patch_appinfo(s):
  * The actual graph is rebuilt by the next public GAppInfo query.
  */
 static gint c545d_ci_native_monitor_dispatches;
+/* GLib's -Wmissing-prototypes requires a prior cross-translation-unit
+ * declaration, even for a diagnostic symbol used by the package parser. */
+void __cdecl c545d_ci_spontaneous_monitor_sink (void *ignored);
 void __cdecl
 c545d_ci_spontaneous_monitor_sink (void *ignored)
 {
