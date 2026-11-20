@@ -159,7 +159,7 @@ try {
     'MODULE_NOT_OBSERVED','CHILD_TIMEOUT','CHILD_FAILED','NO_WAV',
     'INPUT_CHANGED')
   if($code -in $known){$reason=$code}
-  elseif($env:GITHUB_ACTIONS -eq 'true' -and $CiRunnerOnly){$reason='CI_UNKNOWN_PHASE_'+$phase}
+  elseif($env:GITHUB_ACTIONS -eq 'true'){$reason='CI_UNKNOWN_PHASE_'+$phase}
   else{$reason='BLOCKED'}
 } finally {
   if($handle -ne [IntPtr]::Zero){[void][C545DHostGioSmokeQuery]::CloseHandle($handle)}
