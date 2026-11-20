@@ -4,6 +4,8 @@ on:
     branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
     paths:
       - '.github/workflows/c545d-winrt-real-package-events-ci.yml'
+      - 'tests/Invoke-C545DRealPackageEventCI.ps1'
+      - 'tests/make_c545d_ci_package_fixture.py'
   workflow_dispatch:
 permissions:
   contents: read
