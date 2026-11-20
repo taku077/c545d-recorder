@@ -21,7 +21,7 @@ jobs:
         with:
           name: c545d-glib-real-msix-event-numeric-only
           run-id: 44688737357
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: artifacts
       - name: Verify actual previous Windows MSIX-to-GIO five stage measurements
         run: |
