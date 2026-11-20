@@ -71,7 +71,13 @@ try {
   $pw=ConvertTo-SecureString -String $secret -AsPlainText -Force
   Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $pw | Out-Null
   Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+  # A signed MSIX deployment is validated by the AppX service under
+  # machine trust. CurrentUser TrustedPeople alone is insufficient on
+  # Windows Server CI (CERT_E_UNTRUSTEDROOT 0x800B0109).
+  # The self-signed PUBLIC key is trusted ONLY in this disposable runner.
   Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+  Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
+  Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
   $trusted=$true
   $v1=Pack-Fixture '1.0.0.0' $make $sign $pfx
   $v2=Pack-Fixture '1.0.1.0' $make $sign $pfx
@@ -135,11 +141,15 @@ finally {
     @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) |
       ForEach-Object {Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue}
   } catch { "C545D_REAL_APPX_CLEANUP_PACKAGE_WARNING=true" }
-  if($trusted -and $cert) {
-    Remove-Item -LiteralPath ("Cert:\CurrentUser\TrustedPeople\"+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
-  }
+  # Always remove the temporary CI root immediately; the machine will
+  # also be discarded after this GitHub-hosted job.
   if($cert) {
-    Remove-Item -LiteralPath ("Cert:\CurrentUser\My\"+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
+    foreach($store in @('Cert:\CurrentUser\TrustedPeople',
+                       'Cert:\LocalMachine\TrustedPeople',
+                       'Cert:\LocalMachine\Root',
+                       'Cert:\CurrentUser\My')) {
+      Remove-Item -LiteralPath ($store+'\'+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
+    }
   }
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
   "C545D_REAL_APPX_CLEANUP_EXECUTED=true,runner_only=true"
