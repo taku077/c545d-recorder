@@ -61,7 +61,14 @@ def extract_current(source, boundary, guard):
         "above; do not treat their omission here as forgotten validation."
     )
     if guard and guard not in excerpt:
-        raise ValueError("Latest excerpt missing protected validation evidence")
+        # The full exact-SHA current section DID pass the required-evidence
+        # check above. Do not permanently stop updating the central handoff
+        # merely because newer UPDATE sections pushed that verified older
+        # evidence outside the size-bounded excerpt. Keep the guard visible
+        # and point to the authoritative full history; never invent a pass.
+        excerpt += ("\n\nProtected evidence exists in the exact-commit full "
+                    "handoff but was omitted from this size-limited excerpt: "
+                    + guard + ". Read the verified snapshot source above.")
     return excerpt
 
 
