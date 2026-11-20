@@ -1,0 +1,37 @@
+name: C545D reject previous incomplete monitor candidate from saved real MSIX artifact
+on:
+  push:
+    branches: ['investigate/c545d-appinfo-monitor-msix-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-monitor-saved-negative-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay-old-real-msix-failure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44728883123
+          name: c545d-gio-appinfo-monitor-postquery-real-msix-numeric-only
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: artifacts
+      - name: Reject falsely claimed monitor success from actual prior Windows test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_gio_monitor_msix.py --selftest
+          set +e
+          python tests/analyze_gio_monitor_msix.py --input artifacts/real_msix_monitor_output.txt 2> artifacts/previous_invalid_monitor.txt
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo 'C545D_OLD_MONITOR_REPLAY_UNEXPECTEDLY_PASSED'
+            exit 1
+          fi
+          grep -q 'missing or duplicate AppInfo worker monitor signal' artifacts/previous_invalid_monitor.txt
+          echo 'C545D_OLD_MONITOR_NEGATIVE_REAL_MSIX_REPLAY_PASS,first_install_notification_missing=1,raw_package_data_absent=1,Windows_rerun=0'
