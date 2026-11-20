@@ -149,6 +149,22 @@ extern "C" __declspec(dllexport) int c545d_dedicated_ci_set_monitor_sink(
   }
   return callback?3:0;
 }
+/* Deterministic CI-only synthetic completion; never invoked by the
+ * OS/package callback. Used solely to verify unregister/close ordering.
+ */
+extern "C" __declspec(dllexport) int c545d_dedicated_ci_force_terminal(
+    c545d_dedicated_watch* token) {
+  auto watch=c545d_watch_lease(token);
+  if(!watch || !watch->state->active.load(std::memory_order_acquire))return 3;
+  auto p=watch->state;
+  p->generation.fetch_add(1,std::memory_order_acq_rel);
+  {
+    std::lock_guard<std::mutex> guard(p->signal_mutex);
+    ++p->completed_generation;
+  }
+  p->signal_cv.notify_one();
+  return 0;
+}
 extern "C" __declspec(dllexport) int c545d_dedicated_ci_monitor_delivered(
     c545d_dedicated_watch* token,uint64_t* delivered) {
   if(!delivered)return 2;
