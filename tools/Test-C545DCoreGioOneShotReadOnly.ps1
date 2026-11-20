@@ -41,7 +41,9 @@ try {
   $scriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
   $preScript=Join-Path $scriptDir 'Test-C545DCoreGioReadOnly.ps1'
   $graphScript=Join-Path $scriptDir 'Test-C545DCoreGioDependencyGraphReadOnly.ps1'
-  $ps=Join-Path $PSHOME 'powershell.exe'
+  # The wrapper may run under pwsh 7 on CI, but both original scripts are
+  # pinned to the Windows PowerShell 5.1 runtime and its tested semantics.
+  $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   if(-not (Test-Path -LiteralPath $ps -PathType Leaf) -or
      -not (Test-Path -LiteralPath $preScript -PathType Leaf) -or
      -not (Test-Path -LiteralPath $graphScript -PathType Leaf)){
