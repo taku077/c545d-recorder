@@ -51,7 +51,7 @@ jobs:
           & ./tests/Invoke-C545DRealPackageEventCI.ps1 -WatchDll (Resolve-Path artifacts/c545d_dedicated_watch.dll).Path -StubExe (Resolve-Path artifacts/c545d_ci_noop.exe).Path | Tee-Object -FilePath artifacts/real_package_event_summary.txt
           if($LASTEXITCODE -ne 0) { throw "Real Windows PackageCatalog notification test failed: $LASTEXITCODE" }
           $output=Get-Content artifacts/real_package_event_summary.txt -Raw
-          if($output -notmatch 'C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=([1-9][0-9]*),update_delta=([1-9][0-9]*),uninstall_delta=([1-9][0-9]*)') {
+          if($output -notmatch 'C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=([1-9][0-9]*),update_delta=([1-9][0-9]*),uninstall_delta=([1-9][0-9]*),total_delta=([1-9][0-9]*),install_complete=([1-9][0-9]*),update_complete=([1-9][0-9]*),uninstall_complete=([1-9][0-9]*)') {
             throw 'A true Windows install/update/uninstall event was not received'
           }
           if($output -notmatch 'C545D_REAL_APPX_CLEANUP_EXECUTED=true') {
