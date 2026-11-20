@@ -101,8 +101,11 @@ try {
   $env:GST_PLUGIN_SCANNER=$scanner
   $env:GST_PLUGIN_SYSTEM_PATH_1_0=Join-Path $SdkRoot 'lib\gstreamer-1.0'
   $env:GST_REGISTRY=$registry
-  & $installedInspector 'giosink' 1>$null 2>$null
-  if($LASTEXITCODE -ne 0){throw 'C545D_GIO_LOADER_CI_GIOSINK_NOT_INSTALLED'}
+  # Do not run gst-inspect in Windows PowerShell 5.1 with
+  # ErrorActionPreference=Stop: the *optional* SDK gstpython.dll scanner
+  # warning is treated as NativeCommandError even when inspection succeeds.
+  # The actual giosink pipeline plus live-process loaded-DLL verification
+  # below are stricter, and child stderr is kept within disposable CI files.
   # 1. The ORIGINAL installed exe still loads the SDK's GIO although
   #    candidate overlay is first in PATH.
   Invoke-IsolatedProbe 'installed' $installedLauncher $official
