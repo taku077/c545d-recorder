@@ -58,3 +58,24 @@ Additional offline examination of the saved `GIO_HEAPSIZE` numeric histogram: th
 3. Before any host test, build a separate fail-closed release candidate preserving stream1(left), stream6(right), 2560×720@15fps, x264 medium QP24, AAC mono48k192kbps goal, splitmux/EOS and safe shutdown, verify ABI and **dual-media integration**. If Windows10 is indispensable, offer **one consolidated, automated host check** with numeric-only output, no in-place DLL replacement, and never disturb the running recorder.
 
 **Current decision: no Windows10/Tapo recorder deployment or extra user measurement.** The direct test is diagnostic and the Windows-side retained-allocation mechanism cannot be fixed solely by changing C++/WinRT projection, HSTRING release, manager, or thread apartment lifetime.
+
+
+## 2026-11-20 follow-up: saved-only, per-64-cycle residual decomposition (no new Windows run)
+
+The full **three previously saved Windows 2022 numeric-only artifacts** were downloaded (same original run IDs #44533452892, #44537371920, #44545844200). A new strict parser `tests/analyze_gio_cached_residual_epochs.py` checks complete 0/64/128/192/256 records for `GIO_VM`, `GIO_HEAP`, selected **exact-size** `GIO_HEAPSIZE` buckets and **all seven** Win32 AppInfo GObject instance counters. The per-64 net is **(registry-change treatment − no-registry-change control), differenced between successive samples**. All metrics below come from the **cache-enabled** treatment; separate untreated series are also saved in a CSV artifact.
+
+**New reproducible [Linux saved-artifact CI #44726471917 — SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44726471917), numeric artifact 14623104587** downloaded each ORIGINAL Windows Actions artifact using `actions/download-artifact`, and did **not** execute a Windows runner, install packages, touch any registry, or connect to a camera. Strict parser selftest accepted 1 valid and rejected 5 corrupted cases. Initial CI #44726350337 had a trivial missing output directory in the shell `tee` step; all three Windows artifacts were downloaded and successfully parsed; after adding `mkdir -p artifacts`, identical source/data passed in #44726471917.
+
+| Prior Windows source run | Cache net PrivateUsage 0–64 | 64–128 | 128–192 | **192–256** |
+|---|---:|---:|---:|---:|
+| #44533452892 | +946,176 B | +131,072 B | +106,496 B | **+57,344 B** |
+| #44537371920 | +917,504 B | +184,320 B | +131,072 B | **+8,192 B** |
+| #44545844200 | +819,200 B | +204,800 B | +159,744 B | **0 B** |
+
+**Precisely reproduced in 3/3 runs:** the residual cached **24-byte** HeapWalk BUSY bin increased by per64 counts **+26, −13, +39, +3**; the **28-byte** bin **+4, −4, +12, +1** (same four intervals for all three runs). These buckets **do not** demonstrate constant-rate growth; the last64 increments are much smaller than the preceding64. Meanwhile, the **360-byte** exact-size bin increased by **+8 in the final 64** despite being flat in the preceding 128 cycles, so **not every small bucket is monotonically settling**. Sizes 736/912/1936 and the 2048-and-larger overflow bucket are preserved in the artifact; never treat an overflow bucket as exact size or a tracked stack allocation.
+
+The exact counters for **all seven** `GWin32AppInfo`, `GWin32AppInfoApplication`, `GWin32AppInfoFileExtension`, `GWin32AppInfoHandler`, `GWin32AppInfoShellVerb`, `GWin32AppInfoURLSchema`, and `GWin32RegistryKey` show **zero net retained instance-count growth** over cycles **128–256** after subtracting each run's same-run no-registry-change control. This narrows away from a continuously increasing count of those specific registered GObjects, but it does **not** exclude native non-GObject buffers, per-object internals, allocator caches, Windows API allocations or short-lived snapshots.
+
+**Interpretation revision:** earlier last128 positive PrivateUsage was **not evidence of a constant retained-byte slope**. The strongest current hypothesis is *workload-specific warm-up/settling of some residual allocations*, not yet a proven plateau; +57,344 B and +8,192 B in the final64 of two runs remain strictly positive. Since direct standalone `IPackage2_get_DisplayName` retained-heap results were still increasing in their last64, different workloads/COM lifetimes cannot be merged to claim an OS fix. **No zero-leak, infinite-run plateau or recorder-host certification** is established by this run.
+
+**Next gated investigation:** use existing source-level scan/callback isolation and targeted short CI for source ownership of remaining native allocation sizes (particularly 360B late bump and 24/28B recurrent groups). Require actual allocation-stack evidence or a behavior-preserving source A/B before calling any bucket a fixable leak. No user WPR/UMDH or repeated 256/384/512-cycle experiment requested.
