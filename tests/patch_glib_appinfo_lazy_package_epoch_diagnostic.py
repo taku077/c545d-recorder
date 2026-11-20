@@ -4,7 +4,7 @@ AppInfo rebuild when a caller next queries GAppInfo (lazy, no background poll).
 
 Applied AFTER exact GLib 2.82.4 weak-ref/UTF16 and dedicated MTA epoch patches.
 This is NOT a product patch: no monitor signal without a caller query, and
-watcher-unavailable fallback & general Win10 lifecycle remain unqualified.
+watcher-unavailable fallback & general Win10 lifecycle remain unqualified.\nThis single-flight prototype serializes concurrent GAppInfo caller work.
 """
 from pathlib import Path
 import sys
@@ -83,6 +83,17 @@ def patch_appinfo(src: str) -> str:
         "gboolean c545d_ci_package_generation_needs_rescan (void);\n\n"
         "void\ngio_win32_appinfo_init (gboolean do_wait)\n{",
         "declare one-way epoch query")
+    src = replace_exact(
+        src,
+        "static GMutex gio_win32_appinfo_mutex;",
+        "static GMutex gio_win32_appinfo_mutex;\n"
+        "/* CI ONLY: single-flight generation check across GAppInfo callers.\n"
+        " * Never acquired by the AppInfo worker; do not hold parser bridge\n"
+        " * locks when entering this mutex.\n"
+        " */\n"
+        "static GMutex c545d_ci_lazy_singleflight_lock;\n"
+        "static guint c545d_ci_lazy_scheduled_count;",
+        "single-flight gate")
     tail = """      g_mutex_unlock (&gio_win32_appinfo_mutex);
     }
 }
@@ -99,16 +110,29 @@ static void g_win32_app_info_iface_init"""
    * rebuild the graph synchronously on an arbitrary application thread.
    * The regular mutex/condition path below preserves API wait semantics.
    */
-  if (g_getenv ("C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN") != NULL &&
-      c545d_ci_package_generation_needs_rescan ())
+  if (g_getenv ("C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN") != NULL)
     {
-      g_atomic_int_inc (&gio_win32_appinfo_update_counter);
-      g_thread_pool_push (gio_win32_appinfo_threadpool,
-                          (gpointer) keys_updated, NULL);
-      g_mutex_lock (&gio_win32_appinfo_mutex);
-      while (g_atomic_int_get (&gio_win32_appinfo_update_counter) > 0)
-        g_cond_wait (&gio_win32_appinfo_cond, &gio_win32_appinfo_mutex);
-      g_mutex_unlock (&gio_win32_appinfo_mutex);
+      /* Serialize *check + queue + worker completion*. Multiple readers
+       * otherwise observe the same unparsed generation and enqueue many
+       * identical graph rebuilds. Keep native bridge lock outside the
+       * AppInfo mutex to avoid inversion with worker/parser callbacks.
+       * This gate is not entered by the AppInfo worker.
+       */
+      g_mutex_lock (&c545d_ci_lazy_singleflight_lock);
+      if (c545d_ci_package_generation_needs_rescan ())
+        {
+          g_atomic_int_inc (&gio_win32_appinfo_update_counter);
+          c545d_ci_lazy_scheduled_count++;
+          g_print ("C545D_CI_LAZY_RESCAN_QUEUED,seq=%u\\n",
+                   c545d_ci_lazy_scheduled_count);
+          g_thread_pool_push (gio_win32_appinfo_threadpool,
+                              (gpointer) keys_updated, NULL);
+          g_mutex_lock (&gio_win32_appinfo_mutex);
+          while (g_atomic_int_get (&gio_win32_appinfo_update_counter) > 0)
+            g_cond_wait (&gio_win32_appinfo_cond, &gio_win32_appinfo_mutex);
+          g_mutex_unlock (&gio_win32_appinfo_mutex);
+        }
+      g_mutex_unlock (&c545d_ci_lazy_singleflight_lock);
     }
 }
 
