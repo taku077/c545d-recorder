@@ -2,7 +2,7 @@ name: C545D dedicated MTA PackageCatalog watcher C ABI lifecycle (CI only)
 
 on:
   push:
-    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120', 'investigate/c545d-mta-transition-guard-20261120']
     paths:
       - 'tests/c545d_winrt_dedicated_watch.h'
       - 'tests/c545d_winrt_dedicated_watch.cpp'
