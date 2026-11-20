@@ -23,7 +23,7 @@ def png(size):
             + chunk(b"IEND", b""))
 
 
-def build(out, stub, version):
+def build(out, stub, version, versioned_display_name=False):
     if version not in ("1.0.0.0", "1.0.1.0"):
         raise ValueError("Only the two disposable CI fixture versions are permitted")
     if not stub.is_file():
@@ -34,6 +34,8 @@ def build(out, stub, version):
     for file, size in (("StoreLogo.png", 50), ("LargeLogo.png", 150),
                        ("SmallLogo.png", 44)):
         (out / "Assets" / file).write_bytes(png(size))
+    display_name = ("C545D CI Event Probe Upgraded" if versioned_display_name
+                    and version == "1.0.1.0" else "C545D CI Event Probe")
     # One unique synthetic identity; no real installed app or actual customer
     # package names. Signing CN MUST match this manifest Publisher exactly.
     manifest = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -44,7 +46,7 @@ def build(out, stub, version):
   <Identity Name="C545D.CI.PackageEvents" Publisher="CN=C545D CI Event Probe"
             Version="{version}" ProcessorArchitecture="x64"/>
   <Properties>
-    <DisplayName>C545D CI Event Probe</DisplayName>
+    <DisplayName>{display_name}</DisplayName>
     <PublisherDisplayName>C545D CI Event Probe</PublisherDisplayName>
     <Logo>Assets\\StoreLogo.png</Logo>
   </Properties>
@@ -56,7 +58,7 @@ def build(out, stub, version):
   <Applications>
     <Application Id="App" Executable="app.exe"
                  EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="C545D CI Event Probe"
+      <uap:VisualElements DisplayName="{display_name}"
                           Description="Disposable Windows CI package event fixture"
                           BackgroundColor="transparent"
                           Square150x150Logo="Assets\\LargeLogo.png"
@@ -76,5 +78,7 @@ if __name__ == "__main__":
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--stub", type=Path, required=True)
     ap.add_argument("--version", choices=("1.0.0.0", "1.0.1.0"), required=True)
+    ap.add_argument("--versioned-display-name", action="store_true",
+                    help="CI-only v2 title differs from v1; no real package")
     a=ap.parse_args()
-    build(a.out, a.stub, a.version)
+    build(a.out, a.stub, a.version, a.versioned_display_name)
