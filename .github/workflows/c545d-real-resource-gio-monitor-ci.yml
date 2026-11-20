@@ -97,7 +97,7 @@ jobs:
           # MakePri emits UTF-16 console text into this shared stdout, which
           # makes GNU grep classify the stream as binary. Remove NUL and CR
           # BEFORE the numeric-only allowlist; never upload raw OS log lines.
-          tr -d '\\000\\r' < artifacts/resource_gio_run.txt | grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_)' > artifacts/resource_gio_numeric.txt
+          tr -d '\000\r' < artifacts/resource_gio_run.txt | grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_)' > artifacts/resource_gio_numeric.txt
           python - <<'PY'
           from pathlib import Path
           import re
