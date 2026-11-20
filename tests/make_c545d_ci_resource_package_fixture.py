@@ -16,6 +16,16 @@ def build(out: Path, existing_main_layout: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "Assets").mkdir(exist_ok=True)
     shutil.copyfile(logo, out / "Assets" / "StoreLogo.png")
+    (out / "Strings" / "fr-fr").mkdir(parents=True, exist_ok=True)
+    (out / "Strings" / "fr-fr" / "Resources.resw").write_text(
+        """<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="C545DResourceProbe" xml:space="preserve">
+    <value>French synthetic resource value</value>
+  </data>
+</root>
+""", encoding="utf-8",
+    )
     (out / "resource.txt").write_text(
         "CI-only French resource fixture. No media or user content.\n",
         encoding="utf-8",
@@ -35,6 +45,7 @@ def build(out: Path, existing_main_layout: Path) -> None:
 [Files]
 "Assets\\StoreLogo.png" "Assets\\StoreLogo.png"
 "resource.txt" "resource.txt"
+"resources.pri" "resources.pri"
 """
     (out / "mapping.txt").write_text(mapping, encoding="utf-8")
     print("C545D_RESOURCE_FIXTURE_CREATED,resource_id=French,"
