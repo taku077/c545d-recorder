@@ -30,7 +30,13 @@ static int enumerate_and_release(void)
 __declspec(dllexport) int __cdecl c545d_ci_scan_real_msix_stage(int stage)
 {
   LONG rc;
-  if (stage < 0 || stage > 4) return -1;
+  /* Natural package-notification observation: stages 5/6/7 enumerate
+   * AFTER genuine install/update/uninstall, BEFORE any CI registry stimulus.
+   * They never write a registry value or disable existing callbacks.
+   * The existing 0..4 positive-control path remains unchanged.
+   */
+  if (stage < 0 || stage > 7) return -1;
+  if (stage >= 5 && stage <= 7) Sleep(1300);
   if (!ci_started) {
     _snwprintf(ci_value_name,95,L"C545D_RealMSIX_CI_%lu",
                (unsigned long)GetCurrentProcessId());
