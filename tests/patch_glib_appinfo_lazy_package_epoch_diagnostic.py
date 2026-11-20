@@ -88,7 +88,7 @@ c545d_ci_package_generation_needs_rescan (void)
 static gint c545d_ci_forced_scan_failure_once;
 
 static gboolean
-c545d_ci_package_scan_finished (gboolean success)
+c545d_ci_package_scan_finished (gboolean success, GError **error)
 {
   /* CI-only fault: turn ONE actual successful enumeration into a reported
    * unsuccessful parse. No package, registry or user state is modified.
@@ -99,6 +99,12 @@ c545d_ci_package_scan_finished (gboolean success)
       g_atomic_int_compare_and_exchange (&c545d_ci_forced_scan_failure_once,
                                          0, 1))
     {
+      /* Match the contract of g_win32_package_parser_enum_packages():
+       * its caller reads (*error)->message on failure. A bare FALSE
+       * without GError crashes the original GLib error-report path.
+       */
+      g_set_error_literal (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                           "C545D CI-only injected package enumeration failure");
       g_print ("C545D_CI_PACKAGE_PARSE_FAULT,once=1\n");
       success = FALSE;
     }
@@ -120,7 +126,7 @@ c545d_ci_package_scan_finished (gboolean success)
         "insert generation-only query before real package parser")
     return replace_exact(
         src, "  return result;\n}\n\nstatic gboolean\nparse_manifest_file",
-        "  return c545d_ci_package_scan_finished (result);\n"
+        "  return c545d_ci_package_scan_finished (result, error);\n"
         "}\n\nstatic gboolean\nparse_manifest_file",
         "commit generation only on parser success")
 
