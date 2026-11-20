@@ -1,0 +1,69 @@
+name: C545D real resource-only MSIX event provenance Windows CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-real-resource-package-event-ci.yml'
+      - 'tests/make_c545d_ci_resource_package_fixture.py'
+      - 'tests/Invoke-C545DResourcePackageEventCI.ps1'
+      - 'tests/patch_c545d_winrt_status_only_listener_ci.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-resource-event:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Prepare signed disposable main/resource package event monitor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          & cl.exe /nologo /W4 /MD /O2 tests/c545d_ci_package_noop.c /Fe:artifacts/c545d_resource_noop.exe /link /SUBSYSTEM:WINDOWS
+          if($LASTEXITCODE -ne 0){throw 'CI-only no-op executable build failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native PackageCatalog event patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native PackageStatus event attribution patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_resource_events_watch.dll /link /IMPLIB:artifacts/c545d_resource_events_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'Native WinRT watcher build failed'}
+      - name: Perform real Windows resource install/remove without changing main FullName
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $watch=(Resolve-Path artifacts/c545d_resource_events_watch.dll).Path
+          $noop=(Resolve-Path artifacts/c545d_resource_noop.exe).Path
+          $output=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DResourcePackageEventCI.ps1 -WatchDll $watch -StubExe $noop 2>&1)
+          $rc=$LASTEXITCODE
+          # Artifact contains only selected whitelisted numeric probe lines,
+          # not the MSIX image, signing material, source strings or raw logs.
+          @($output | ForEach-Object {$_ -as [string]} | Where-Object {
+            $_ -match '^C545D_(RESOURCE_OS_ADD_OBSERVATION|RESOURCE_OS_REMOVE_OBSERVATION|RESOURCE_PACKAGE_PROBE_COMPLETE|RESOURCE_CI_CLEANUP_EXECUTED|RESOURCE_CI_FAILURE|RESOURCE_CI_RESOURCE_MISSING|RESOURCE_CI_PARENT_FULLNAME_CHANGED)'
+          }) | Set-Content -Path artifacts/resource_event_numeric.txt -Encoding ascii
+          if($rc -ne 0) {
+            $output | Select-Object -Last 20 | ForEach-Object {Write-Host $_}
+            throw "Windows resource-only package operation not qualified: $rc"
+          }
+          $text=Get-Content artifacts/resource_event_numeric.txt -Raw
+          if($text -notmatch 'C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,synthetic_events=0,CI_only=1') {
+            throw 'Missing genuine resource ADD provenance record'
+          }
+          if($text -notmatch 'C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=\d+,genuine_status_callbacks_delta=\d+,synthetic_events=0,CI_only=1') {
+            throw 'Missing genuine resource REMOVE provenance record'
+          }
+          if($text -notmatch 'C545D_RESOURCE_CI_CLEANUP_EXECUTED=1,runner_only=1'){
+            throw 'Ephemeral signing/certificate cleanup not confirmed'
+          }
+          Get-Content artifacts/resource_event_numeric.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-real-resource-msix-callback-numeric-only
+          path: artifacts/resource_event_numeric.txt
+          retention-days: 7
+          if-no-files-found: warn
