@@ -2,6 +2,14 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-20 JST — FULL real MSIX to GLib E2E Windows PASS (not only saved reanalysis)
+
+- The previously IN-PROGRESS genuine real MSIX PackageCatalog→same-process GIO cache Windows-2022 run [#44689597193](https://github.com/taku077/c545d-recorder/actions/runs/44689597193) **COMPLETED SUCCESS** at commit `b0bbfdd319be503fbee9059db3dcd2de9f923ef7`, numeric-only artifact **14608550950**. Full code and native execution + strict 5-snapshot analyzer PASS. Real install/update/uninstall PackageCatalog events **+9/+7/+2** total **18**, terminal IsComplete callbacks **1/1/1**, GIO app counts **39→40→40→39→39**, cumulative original-value DisplayName misses **32→65→98→130→130**, cumulative cache evictions **0→1→2→3→3**, watcher scans5, injections0, bridge errors0, final entries32. Exactly the prior Windows raw behavior; this time overall workflow SUCCESS. No customer data/camera contact. CI-only temporary signed package and certificate removed inside disposable runner. This supersedes uncertainty in earlier handoff section where #44689597193 was in progress. Related short Linux reanalysis of previous Windows artifact [#44689686603](https://github.com/taku077/c545d-recorder/actions/runs/44689686603) also PASS, 6 corrupt-evidence cases rejected.
+- **Latest complete MSVC GStreamer regression remains [#44688343719](https://github.com/taku077/c545d-recorder/actions/runs/44688343719) SUCCESS**: official SDK and updated dedicated watcher GIO parity 2047/2047 missing0, bridge loaded ready1 errors0; synthetic dual RTP/H264 avdec_h264 plus AAC 48k mono, 2560×720@15 x264 medium QP24, 5 individually decodable split MP4 fragments 6.231 s + EOS both candidate and SDK. NO Tapo/Windows10 24x7 proof.
+- **Next actual blockers:** native package/catalog events and per-thread locale correctness now validated in disposable Windows CI, but real long-lived Win10 recorder resource slope, concurrent watch shutdown/restart/in-flight WinRT callback races, and repeated invalidation with memory/handle plateau are NOT yet certified. Existing 384/512-cycle isolated memory data must be reused before any new long measurement. Diagnostic cache remains **NOT release-qualified**, no user machine action or DLL replacement requested.
+
+
+
 ### UPDATE 2026-11-20 JST — real MSIX to GIO cache full-path evidence verified, latest SDK/MSVC media PASS
 
 - **AUTHORITATIVE CURRENT NEWEST experimental branch** `investigate/c545d-winrt-watch-dedicated-thread-20261120`; main auto-generated `docs/ACTIVE_HANDOFF.md` points only to central open PR #54 HEAD `cd12b570a29c0ec7992f7c23aa878a12181e080c` and must NOT override this newer unmerged branch.
