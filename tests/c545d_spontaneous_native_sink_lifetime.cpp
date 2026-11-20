@@ -111,6 +111,9 @@ int main(int argc,char** argv) {
     require(set(token,fast_sink,nullptr)!=0,"closed_watch_token_reused");
   }
   std::atomic<int> count{0};
+  DWORD handle_epochs[25]{};
+  require(GetProcessHandleCount(GetCurrentProcess(),&handle_epochs[0])!=FALSE,
+          "handle_census_after_races");
   for(int i=0;i<24;i++) {
     Watch token=nullptr;
     require(open(&token)==0&&token!=nullptr,"loop_watch_open");
@@ -120,6 +123,8 @@ int main(int argc,char** argv) {
     require(wait_count(count,previous+1,5000),"loop_notify_missing");
     require(set(token,nullptr,nullptr)==0,"loop_unregister");
     close(token);
+    require(GetProcessHandleCount(GetCurrentProcess(),&handle_epochs[i+1])!=FALSE,
+            "handle_census_each_completed_cycle");
   }
   leave();
   uint32_t refs=1,opening=1,closing=1,registered=1;
@@ -130,8 +135,21 @@ int main(int argc,char** argv) {
   require(regs==revs&&errs==0,"COM_event_revocation_or_errors");
   require(GetProcessHandleCount(GetCurrentProcess(),&end_handles)!=FALSE,"handle_count_end");
   const int delta=static_cast<int>(end_handles)-static_cast<int>(start_handles);
-  // Allow small one-time COM/runtime initialization retained by Windows.
-  require(delta<=8,"handle_count_growth_above_lazy_init_allowance");
+  const int last8=static_cast<int>(handle_epochs[24])
+                -static_cast<int>(handle_epochs[16]);
+  const int middle8=static_cast<int>(handle_epochs[16])
+                  -static_cast<int>(handle_epochs[8]);
+  std::printf("C545D_NATIVE_SINK_HANDLE_TREND,initial=%lu,after_races=%lu,"
+              "cycle8=%lu,cycle16=%lu,cycle24=%lu,after_leave=%lu,"
+              "middle8_delta=%d,last8_delta=%d,total_delta=%d\n",
+              (unsigned long)start_handles,(unsigned long)handle_epochs[0],
+              (unsigned long)handle_epochs[8],(unsigned long)handle_epochs[16],
+              (unsigned long)handle_epochs[24],(unsigned long)end_handles,
+              middle8,last8,delta);
+  std::fflush(stdout);
+  // Differentiate one-time Windows COM/runtime warmup from ongoing leaks.
+  // Both late windows must be stable within the small measurement jitter.
+  require(last8<=1 && middle8<=1,"repeated_watch_handle_growth_in_late_8_cycle_windows");
   std::printf("C545D_NATIVE_SINK_LIFETIME_PASS,scans=26,inflight_detach_waits=1,"
               "inflight_close_waits=1,stale_token_rejected=1,"
               "fast_deliveries=%d,registered=%llu,revoked=%llu,"
