@@ -11,9 +11,13 @@ param(
   [string]$GioScanDll='',
   [switch]$InjectCallbackException,
   [switch]$ObserveNaturalGioRefresh,
-  [switch]$StressConcurrentGio
+  [switch]$StressConcurrentGio,
+  [switch]$InjectParserFailureOnce
 )
 $ErrorActionPreference='Stop'
+if($InjectParserFailureOnce -and -not $StressConcurrentGio) {
+  throw 'C545D_PACKAGE_PARSE_FAILURE_REQUIRES_CONCURRENT_GIO_MODE'
+}
 if($StressConcurrentGio -and -not $ObserveNaturalGioRefresh) {
   throw 'C545D_CONCURRENT_GIO_REQUIRES_NATURAL_REFRESH_MODE'
 }
@@ -93,6 +97,11 @@ function Scan-NaturalGio([int]$stage) {
   if(-not $ObserveNaturalGioRefresh) { return }
   # Same process and same event subscriber, but no synthetic RegisteredApplications
   # mutation yet. Native scan stages 5..7 only wait and enumerate current GIO.
+  if($InjectParserFailureOnce -and $stage -eq 1) {
+    # Change environment only after initial GIO baseline build. The native
+    # parser converts exactly one subsequent successful result to a failure.
+    $env:C545D_CI_PACKAGE_PARSE_FAIL_ONCE='1'
+  }
   $result=if($StressConcurrentGio) {
     [C545DGioRealMSIX]::ScanConcurrent($stage)
   } else {
@@ -259,6 +268,7 @@ finally {
       Remove-Item -LiteralPath ($store+'\'+$cert.Thumbprint) -Force -ErrorAction SilentlyContinue
     }
   }
+  Remove-Item Env:C545D_CI_PACKAGE_PARSE_FAIL_ONCE -ErrorAction SilentlyContinue
   Remove-Item Env:C545D_CI_EVENT_PACKAGE_NAME -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
   "C545D_REAL_APPX_CLEANUP_EXECUTED=true,runner_only=true"
