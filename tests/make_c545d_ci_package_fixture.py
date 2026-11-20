@@ -46,7 +46,7 @@ def build(out, stub, version):
   <Properties>
     <DisplayName>C545D CI Event Probe</DisplayName>
     <PublisherDisplayName>C545D CI Event Probe</PublisherDisplayName>
-    <Logo>Assets\StoreLogo.png</Logo>
+    <Logo>Assets\\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0"
@@ -59,8 +59,8 @@ def build(out, stub, version):
       <uap:VisualElements DisplayName="C545D CI Event Probe"
                           Description="Disposable Windows CI package event fixture"
                           BackgroundColor="transparent"
-                          Square150x150Logo="Assets\LargeLogo.png"
-                          Square44x44Logo="Assets\SmallLogo.png"/>
+                          Square150x150Logo="Assets\\LargeLogo.png"
+                          Square44x44Logo="Assets\\SmallLogo.png"/>
     </Application>
   </Applications>
   <Capabilities><rescap:Capability Name="runFullTrust"/></Capabilities>
