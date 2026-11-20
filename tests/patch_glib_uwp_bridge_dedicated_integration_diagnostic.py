@@ -56,7 +56,7 @@ def main():
   c545d_bridge_watch = NULL;
   if (c545d_bridge_leave != NULL)
     c545d_bridge_leave ();""",
-      """  fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_bridge_lock\n"); fflush (stderr);
+      r"""  fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_bridge_lock\n"); fflush (stderr);
   g_mutex_lock (&c545d_bridge_lock);
   fprintf (stderr, "C545D_GIO_EXIT_STAGE=before_watch_close\n"); fflush (stderr);
   if (c545d_bridge_watch != NULL)
