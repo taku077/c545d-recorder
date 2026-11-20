@@ -10,9 +10,13 @@ param(
   [Parameter(Mandatory=$true)][string]$StubExe,
   [string]$GioScanDll='',
   [switch]$InjectCallbackException,
-  [switch]$ObserveNaturalGioRefresh
+  [switch]$ObserveNaturalGioRefresh,
+  [switch]$StressConcurrentGio
 )
 $ErrorActionPreference='Stop'
+if($StressConcurrentGio -and -not $ObserveNaturalGioRefresh) {
+  throw 'C545D_CONCURRENT_GIO_REQUIRES_NATURAL_REFRESH_MODE'
+}
 if($ObserveNaturalGioRefresh -and -not $GioScanDll) {
   throw 'C545D_NATURAL_GIO_OBSERVATION_REQUIRES_GIO_SCANNER'
 }
@@ -89,7 +93,11 @@ function Scan-NaturalGio([int]$stage) {
   if(-not $ObserveNaturalGioRefresh) { return }
   # Same process and same event subscriber, but no synthetic RegisteredApplications
   # mutation yet. Native scan stages 5..7 only wait and enumerate current GIO.
-  $result=[C545DGioRealMSIX]::Scan(4+$stage)
+  $result=if($StressConcurrentGio) {
+    [C545DGioRealMSIX]::ScanConcurrent($stage)
+  } else {
+    [C545DGioRealMSIX]::Scan(4+$stage)
+  }
   if($result -le 0) {
     throw "C545D_NATURAL_GIO_SCAN_FAILED,stage=$stage,status=$result"
   }
@@ -172,6 +180,8 @@ using System.Runtime.InteropServices;
 public static class C545DGioRealMSIX {
   [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_real_msix_stage", CallingConvention=CallingConvention.Cdecl)]
   public static extern int Scan(int stage);
+  [DllImport(@"__DLL__", EntryPoint="c545d_ci_scan_parallel_stage", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int ScanConcurrent(int stage);
 }
 '@
     Add-Type -TypeDefinition $gio.Replace('__DLL__',$GioScanDll.Replace('"','""')) -ErrorAction Stop
