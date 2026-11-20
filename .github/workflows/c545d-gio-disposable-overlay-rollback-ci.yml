@@ -1,0 +1,89 @@
+name: C545D disposable app-local GIO real process and rollback CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/Invoke-C545DGioDisposableOverlayCI.ps1'
+      - '.github/workflows/c545d-gio-disposable-overlay-rollback-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  isolated-app-local-rollback:
+    runs-on: windows-2022
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - name: Install exact official SDK on disposable Windows CI runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk-1.28.8.exe'
+          Invoke-WebRequest -Uri 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item -LiteralPath $installer).Length -lt 15000000){throw 'SDK download incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'SDK setup failed'}
+          "C545D_TEST_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Validate strict temp ownership, reject tampering and prove app-local real loading followed by deletion
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=(Resolve-Path tests/Invoke-C545DGioDisposableOverlayCI.ps1).Path
+          $tok=$null;$errs=$null
+          [Management.Automation.Language.Parser]::ParseFile($source,[ref]$tok,[ref]$errs) | Out-Null
+          if($errs.Count -ne 0){throw 'Disposable overlay script parse error'}
+          $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $candidate=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          $candidateManifest=(Resolve-Path artifacts/core-rc/manifest.txt).Path
+          $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
+          $sdk=$env:C545D_TEST_SDK
+          $sdkGio=Join-Path $sdk 'bin\gio-2.0-0.dll'
+          $beforeSdk=(Get-FileHash -LiteralPath $sdkGio -Algorithm SHA256).Hash
+          $beforeCandidate=(Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+          New-Item -ItemType Directory -Path artifacts/numeric -Force | Out-Null
+          function Check([string]$label,[string]$dll,[string]$scratch,[int]$expectExit,[string]$expected) {
+            $rows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/Invoke-C545DGioDisposableOverlayCI.ps1 -SdkRoot $sdk -CandidateDll $dll -CandidateManifest $candidateManifest -ReferenceManifest $ref -ScratchRoot $scratch)
+            $code=$LASTEXITCODE
+            if($code -ne $expectExit -or $rows.Count -ne 1){throw "Incorrect subprocess exit/rows for $label"}
+            if($rows[0] -cne $expected){throw "Incorrect strict outcome for $label"}
+            $rows[0] | Add-Content artifacts/numeric/disposable_ci_numeric.txt
+          }
+          $bad=Join-Path $env:RUNNER_TEMP 'bad-candidate-copy.dll'
+          Copy-Item -LiteralPath $candidate -Destination $bad
+          $handle=[IO.File]::Open($bad,[IO.FileMode]::Append)
+          try{$handle.WriteByte(0)}finally{$handle.Dispose()}
+          $negative=Join-Path $env:RUNNER_TEMP 'c545d-ci-owned-overlay-BadCopy111'
+          Check 'bad_candidate' $bad $negative 3 'C545D_DISPOSABLE_GIO_CI,module_paths_verified=0,rollback_deleted=1,host_modified=0,install_approved=0,reason=BLOCKED'
+          if(Test-Path -LiteralPath $negative){throw 'Invalid candidate created an overlay'}
+          # SDK bin is deliberately not a test root; even the correct
+          # candidate must never touch or delete this directory.
+          Check 'sdk_folder_not_disposable' $candidate (Join-Path $sdk 'bin') 3 'C545D_DISPOSABLE_GIO_CI,module_paths_verified=0,rollback_deleted=0,host_modified=0,install_approved=0,reason=BLOCKED'
+          if(-not (Test-Path -LiteralPath $sdkGio)){throw 'SDK folder was altered'}
+          $positive=Join-Path $env:RUNNER_TEMP 'c545d-ci-owned-overlay-Positive123'
+          Check 'isolated_real_process_and_rollback' $candidate $positive 0 'C545D_DISPOSABLE_GIO_CI,module_paths_verified=1,rollback_deleted=1,host_modified=0,install_approved=0,reason=ISOLATION_AND_ROLLBACK_PASS'
+          if(Test-Path -LiteralPath $positive){throw 'Private overlay was not removed'}
+          if((Get-FileHash -LiteralPath $sdkGio -Algorithm SHA256).Hash -ne $beforeSdk -or
+             (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $beforeCandidate){
+            throw 'Original exact SDK or candidate bytes changed'
+          }
+          if((Get-Content artifacts/numeric/disposable_ci_numeric.txt).Count -ne 3){throw 'Missing one strict scenario'}
+          Write-Host 'C545D_DISPOSABLE_ISOLATION_AND_ROLLBACK_CI_PASS,real_module_path=1,both_audio_outputs=1,rollback=1,tampered_candidate_rejected=1,sdk_directory_protected=1,originals_unchanged=1,recording_host_modified=0'
+          $global:LASTEXITCODE=0
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-disposable-gio-app-local-and-rollback-numeric-only
+          path: artifacts/numeric/disposable_ci_numeric.txt
+          retention-days: 7
+          if-no-files-found: error
