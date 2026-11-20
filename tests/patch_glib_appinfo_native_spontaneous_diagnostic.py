@@ -54,6 +54,7 @@ static C545DMonitorSinkRegister c545d_bridge_set_monitor_sink;
 static C545DWatch *c545d_bridge_watch;""","GIO parser C ABI sink symbol")
     before="""  if (c545d_bridge_watch != NULL)
     c545d_bridge_close (c545d_bridge_watch);
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=after_watch_close\\n"); fflush (stderr);
   c545d_bridge_watch = NULL;"""
     after="""  if (c545d_bridge_watch != NULL)
     {
@@ -65,6 +66,7 @@ static C545DWatch *c545d_bridge_watch;""","GIO parser C ABI sink symbol")
         c545d_bridge_set_monitor_sink (c545d_bridge_watch, NULL, NULL);
       c545d_bridge_close (c545d_bridge_watch);
     }
+  fprintf (stderr, "C545D_GIO_EXIT_STAGE=after_watch_close\\n"); fflush (stderr);
   c545d_bridge_watch = NULL;"""
     s=once(s,before,after,"process-exit watcher teardown")
     before="""  return TRUE;
