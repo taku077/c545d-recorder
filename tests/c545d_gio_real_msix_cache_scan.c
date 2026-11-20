@@ -10,6 +10,67 @@
 #include <wchar.h>
 #include <stdint.h>
 
+/* CI ONLY: GAppInfoMonitor contract/observability probe. Creates one monitor
+ * in the same GLib default main context as the PowerShell host's GIO caller.
+ * No registry mutations are performed by these monitor functions.
+ * Post-query notification cannot be called 'spontaneous'; each is recorded
+ * separately from the interval before calling any g_app_info_* API.
+ */
+static GAppInfoMonitor *ci_monitor = NULL;
+static GMainContext *ci_monitor_context = NULL;
+static volatile gint ci_monitor_changed_count = 0;
+
+static void ci_monitor_changed (GAppInfoMonitor *monitor, gpointer user_data)
+{
+  (void)monitor;
+  (void)user_data;
+  g_atomic_int_inc (&ci_monitor_changed_count);
+}
+__declspec(dllexport) int __cdecl c545d_ci_monitor_start (void)
+{
+  if (ci_monitor != NULL) return -40;
+  ci_monitor_context = g_main_context_ref_thread_default ();
+  ci_monitor = g_app_info_monitor_get ();
+  if (!ci_monitor || !ci_monitor_context) return -41;
+  g_signal_connect (ci_monitor, "changed", G_CALLBACK(ci_monitor_changed), NULL);
+  g_atomic_int_set (&ci_monitor_changed_count, 0);
+  puts ("C545D_APPINFO_MONITOR_STARTED,context_ready=1");
+  fflush (stdout);
+  return 0;
+}
+__declspec(dllexport) int __cdecl c545d_ci_monitor_observe (int stage)
+{
+  if (!ci_monitor || !ci_monitor_context || stage < 0 || stage > 33) return -42;
+  /* Dispatch pending notifications only; no GAppInfo query here.
+   * A count observed during 11/12/13 precedes the next natural query.
+   */
+  gint64 limit = g_get_monotonic_time () + 450000;
+  do {
+    while (g_main_context_pending (ci_monitor_context))
+      g_main_context_iteration (ci_monitor_context, FALSE);
+    g_usleep (10000);
+  } while (g_get_monotonic_time () < limit);
+  int count = g_atomic_int_get (&ci_monitor_changed_count);
+  printf ("C545D_APPINFO_MONITOR_OBSERVATION,stage=%d,changed=%d\n", stage, count);
+  fflush (stdout);
+  return count;
+}
+__declspec(dllexport) int __cdecl c545d_ci_monitor_stop (void)
+{
+  if (!ci_monitor || !ci_monitor_context) return -43;
+  while (g_main_context_pending (ci_monitor_context))
+    g_main_context_iteration (ci_monitor_context, FALSE);
+  int count = g_atomic_int_get (&ci_monitor_changed_count);
+  g_signal_handlers_disconnect_by_func (ci_monitor, G_CALLBACK(ci_monitor_changed), NULL);
+  g_object_unref (ci_monitor);
+  ci_monitor = NULL;
+  g_main_context_unref (ci_monitor_context);
+  ci_monitor_context = NULL;
+  printf ("C545D_APPINFO_MONITOR_FINAL,changed=%d,clean_stop=1\n", count);
+  fflush (stdout);
+  return count;
+}
+
 static HKEY ci_key;
 static wchar_t ci_value_name[96];
 static int ci_started;

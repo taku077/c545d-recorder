@@ -1,0 +1,39 @@
+name: C545D saved real MSIX worker-monitor six-signal replay (NO WINDOWS RERUN)
+on:
+  push:
+    branches: ['investigate/c545d-appinfo-monitor-msix-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-monitor-saved-worker-replay-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay-positive-worker-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44729908943
+          name: c545d-gio-appinfo-monitor-postquery-real-msix-numeric-only
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: artifacts
+      - name: Classify old saved Windows worker signals with synthetic-registry control kept explicit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_gio_monitor_msix.py --selftest
+          python tests/analyze_gio_monitor_msix.py --input artifacts/real_msix_monitor_output.txt | tee artifacts/c545d_saved_worker_result.txt
+          grep -q 'post_stage_changed_cumulative=1;3;5,changed_total=6' artifacts/c545d_saved_worker_result.txt
+          grep -q 'CI_registry_stimulus_disabled=0' artifacts/c545d_saved_worker_result.txt
+          grep -q 'PackageCatalog_only_spontaneous_NOT_proven=1' artifacts/c545d_saved_worker_result.txt
+          echo 'C545D_SAVED_WORKER_REPLAY_CI_PASS,old_Windows_2022_MSIX_reused=1,no_Windows_rerun=1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-saved-worker-monitor-numeric-only
+          path: artifacts/c545d_saved_worker_result.txt
+          if-no-files-found: warn
+          retention-days: 7
