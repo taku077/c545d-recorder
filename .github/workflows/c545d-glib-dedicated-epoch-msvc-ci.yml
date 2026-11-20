@@ -17,7 +17,6 @@ jobs:
     env:
       C545D_DIAG_UWP_CACHE_DISPLAYNAME: '1'
       C545D_DIAG_UWP_CACHE_EVENT_BRIDGE: '1'
-      C545D_DIAG_UWP_C_BRIDGE_DLL: "${{ runner.temp }}\\c545d_winrt_dedicated_watch.dll"
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
@@ -31,6 +30,7 @@ jobs:
           $implib=Join-Path $env:RUNNER_TEMP 'c545d_winrt_dedicated_watch.lib'
           & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp "/Fe:$dll" /link "/IMPLIB:$implib" windowsapp.lib runtimeobject.lib
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path $dll)) { throw 'Dedicated WinRT MTA watcher DLL compile failed' }
+          "C545D_DIAG_UWP_C_BRIDGE_DLL=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install native build dependencies and fetch exact upstream GLib tag
         shell: pwsh
         run: |
