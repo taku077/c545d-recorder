@@ -41,10 +41,10 @@ def parse(data: str) -> dict[str, int | str]:
         return dict(matches)
 
     natural = checked_map(NATURAL, {1, 2, 3})
-    control = checked_map(CONTROL, {0, 1, 2, 3})
+    control = checked_map(CONTROL, {0, 1, 2, 3, 4})
     baseline = control[0]
     if (control[1] != baseline + 1 or control[2] != baseline + 1
-            or control[3] != baseline):
+            or control[3] != baseline or control[4] != baseline):
         raise ValueError("explicit registry-change positive control did not track package lifecycle")
     if natural[1] not in {baseline, baseline + 1}:
         raise ValueError("natural install observation outside expected population")
@@ -77,6 +77,7 @@ def selftest() -> None:
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=2,apps=40",
         "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=3,apps=40",
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=3,apps=39",
+        "C545D_GIO_REAL_MSIX_STEP_OK,stage=4,apps=39",
         "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=9,update_delta=7,"
         "uninstall_delta=2,total_delta=18,install_complete=1,"
         "update_complete=1,uninstall_complete=1,no_synthetic_notifications=true,"
