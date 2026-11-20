@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6898b8e0411627cab1431b1ee43aac80507e8ea0`
-- **PR updated at (UTC):** `2026-11-20T16:16:20Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6898b8e0411627cab1431b1ee43aac80507e8ea0/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `869625c0cf2d52c6fe2064337b7b9898b1e4208c`
+- **PR updated at (UTC):** `2026-11-20T16:17:57Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/869625c0cf2d52c6fe2064337b7b9898b1e4208c/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44771694822](https://github.com/taku077/c545d-recorder/actions/runs/44771694822) |
-| C545D GIO exact MSVC SDK whole-plugin static import closure (CI ONLY) | in_progress | [#44771685940](https://github.com/taku077/c545d-recorder/actions/runs/44771685940) |
+| C545D active development handoff auto-refresh | in_progress | [#44771978088](https://github.com/taku077/c545d-recorder/actions/runs/44771978088) |
+| C545D GIO exact MSVC SDK whole-plugin static import closure (CI ONLY) | in_progress | [#44771968941](https://github.com/taku077/c545d-recorder/actions/runs/44771968941) |
 
 ## Current development findings from the active PR
 
