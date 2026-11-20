@@ -62,7 +62,7 @@ jobs:
           if($json.schema -ne 1 -or $json.install_approved -ne $false -or
              $json.sdk -cne 'gstreamer-1.0-msvc-x86_64-1.28.8' -or
              ([string]$json.candidate_sha256).ToUpperInvariant() -cne $wantCandidate -or
-             $json.dll_sha256.PSObject.Properties.Count -ne 6){throw 'Reference metadata invalid'}
+             @($json.dll_sha256.PSObject.Properties.Name).Count -ne 6){throw 'Reference metadata invalid'}
           foreach($key in $pinned.Keys){
             if(([string]$json.dll_sha256.PSObject.Properties[$key].Value).ToUpperInvariant() -cne $pinned[$key]){throw 'Reference hash is not pinned'}
           }
