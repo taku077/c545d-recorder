@@ -6,7 +6,8 @@ No camera, production DLL, or user's registry/system is touched.
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$WatchDll,
-      [Parameter(Mandatory=$true)][string]$StubExe)
+      [Parameter(Mandatory=$true)][string]$StubExe,
+      [string]$GioScanDll='')
 $ErrorActionPreference='Stop'
 $name='C545D.CI.PackageEvents'
 $root=Join-Path $env:RUNNER_TEMP ('c545d_resource_'+[guid]::NewGuid().ToString('N'))
@@ -16,6 +17,7 @@ $entered=$false
 $cert=$null
 $installedParent=$null
 $resourceFullName=$null
+$gioStarted=$false
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 function Tool([string]$exe) {
   $base=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
@@ -148,6 +150,26 @@ public static class C545DResourceWatch {
 }
 '@
   Add-Type -TypeDefinition $native.Replace('__DLL__',$WatchDll.Replace('"','""'))
+  if($GioScanDll) {
+    $gionative=@'
+using System;
+using System.Runtime.InteropServices;
+public static class C545DResourceGio {
+  [DllImport(@"__DLL__",EntryPoint="c545d_ci_scan_real_msix_stage",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Scan(int stage);
+  [DllImport(@"__DLL__",EntryPoint="c545d_ci_monitor_start",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Start();
+  [DllImport(@"__DLL__",EntryPoint="c545d_ci_monitor_observe",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Observe(int stage);
+  [DllImport(@"__DLL__",EntryPoint="c545d_ci_monitor_stop",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int Stop();
+}
+'@
+    Add-Type -TypeDefinition $gionative.Replace('__DLL__',$GioScanDll.Replace('"','""'))
+    if([C545DResourceGio]::Scan(0) -le 0){throw 'C545D_RESOURCE_CI_GIO_BASELINE_FAILED'}
+    if([C545DResourceGio]::Start() -ne 0){throw 'C545D_RESOURCE_CI_GIO_MONITOR_START_FAILED'}
+    $gioStarted=$true
+  }
   $env:C545D_CI_EVENT_PACKAGE_NAME=$name
   $ret=[C545DResourceWatch]::Enter()
   if($ret -ne 0){throw "C545D_RESOURCE_CI_ENTER_FAILED=$ret"}
@@ -162,6 +184,10 @@ public static class C545DResourceWatch {
   [UInt64]$g1=Await $g0
   if($g1 -le $g0){throw 'C545D_RESOURCE_CI_MAIN_EVENT_MISSING'}
   [UInt64]$s1=Status
+  if($gioStarted){
+    $changed=[C545DResourceGio]::Observe(11)
+    "C545D_RESOURCE_GIO_PREQUERY,stage=main_add,changed=$changed,CI_only=1"
+  }
   $c1=Completion
   Add-AppxPackage -Path $resMsix -ErrorAction Stop
   $same=@(Get-AppxPackage -Name $name -PackageTypeFilter Main -ErrorAction Stop)
@@ -175,15 +201,24 @@ public static class C545DResourceWatch {
   [UInt64]$g2=Await $g1
   [UInt64]$s2=Status
   $c2=Completion
+  if($gioStarted){
+    $changed=[C545DResourceGio]::Observe(12)
+    "C545D_RESOURCE_GIO_PREQUERY,stage=resource_add,changed=$changed,CI_only=1"
+  }
   "C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=$($g2-$g1),genuine_status_callbacks_delta=$($s2-$s1),install_terminal_delta=$($c2.inst-$c1.inst),update_terminal_delta=$($c2.upd-$c1.upd),uninstall_terminal_delta=$($c2.uninst-$c1.uninst),synthetic_events=0,CI_only=1"
   Remove-AppxPackage -Package $resourceFullName -ErrorAction Stop
   $resourceFullName=$null
   [UInt64]$g3=Await $g2
   [UInt64]$s3=Status
   $c3=Completion
+  if($gioStarted){
+    $changed=[C545DResourceGio]::Observe(13)
+    "C545D_RESOURCE_GIO_PREQUERY,stage=resource_remove,changed=$changed,CI_only=1"
+  }
   "C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=$($g3-$g2),genuine_status_callbacks_delta=$($s3-$s2),install_terminal_delta=$($c3.inst-$c2.inst),update_terminal_delta=$($c3.upd-$c2.upd),uninstall_terminal_delta=$($c3.uninst-$c2.uninst),synthetic_events=0,CI_only=1"
   'C545D_RESOURCE_PACKAGE_PROBE_COMPLETE,parent_fullname_stable=1,resource_add_remove=1,runner_only=1'
 } finally {
+  if($gioStarted){try{[void][C545DResourceGio]::Stop()}catch{'C545D_RESOURCE_CI_MONITOR_STOP_FAILED=1'}}
   if($watch -ne [IntPtr]::Zero){[C545DResourceWatch]::Close($watch)}
   if($entered){[C545DResourceWatch]::Leave()}
   try {
