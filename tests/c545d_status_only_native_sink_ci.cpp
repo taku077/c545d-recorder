@@ -15,6 +15,7 @@ using Close=void (__cdecl*)(Watch);
 using SetSink=int (__cdecl*)(Watch,void (__cdecl*)(void*),void*);
 using Status=int (__cdecl*)(Watch);
 using Delivered=int (__cdecl*)(Watch,uint64_t*);
+using GenuineStatusCount=int (__cdecl*)(Watch,uint64_t*);
 using Lifetimes=int (__cdecl*)(uint32_t*,uint32_t*,uint32_t*,uint32_t*);
 using Globals=void (__cdecl*)(uint64_t*,uint64_t*,uint64_t*);
 
@@ -54,6 +55,7 @@ int main(int argc,char**argv) {
   auto set=symbol<SetSink>(dll,"c545d_dedicated_ci_set_monitor_sink");
   auto status=symbol<Status>(dll,"c545d_dedicated_ci_force_status_only");
   auto delivered=symbol<Delivered>(dll,"c545d_dedicated_ci_monitor_delivered");
+  auto genuineStatus=symbol<GenuineStatusCount>(dll,"c545d_dedicated_ci_status_event_count");
   auto lifetime=symbol<Lifetimes>(dll,"c545d_dedicated_ci_lifetime_counters");
   auto global=symbol<Globals>(dll,"c545d_dedicated_global_counters");
   DWORD before=0,after=0;
@@ -66,6 +68,8 @@ int main(int argc,char**argv) {
   require(status(w)==0,"status_only");
   require(await(state.count,1),"missing_status_only_signal");
   uint64_t n=0;require(delivered(w,&n)==0&&n==1,"first_delivery_count");
+  uint64_t osCount=99;
+  require(genuineStatus(w,&osCount)==0&&osCount==0,"synthetic_misclassified_as_OS");
   require(set(w,nullptr,nullptr)==0,"detach");
   require(status(w)==0,"status_without_sink");
   Sleep(40);
@@ -79,6 +83,8 @@ int main(int argc,char**argv) {
   require(set(second,blocked,&slow)==0,"register_blocking_sink");
   require(status(second)==0,"status_with_blocking_sink");
   require(await(slow.entered,1),"blocking_sink_not_entered");
+  osCount=99;
+  require(genuineStatus(second,&osCount)==0&&osCount==0,"blocked_synthetic_misclassified_as_OS");
   std::atomic<int> detached{0};
   std::thread t([&]{
     detached.store(set(second,nullptr,nullptr)==0?1:-1,std::memory_order_release);
@@ -100,6 +106,7 @@ int main(int argc,char**argv) {
   std::printf("C545D_STATUS_ONLY_SYNTHETIC_CI_PASS,"
               "synthetic_status_notifications=2,no_listener_callback_after_detach=1,"
               "stale_token_rejected=1,inflight_detach_waited=1,"
+              "synthetic_not_counted_as_genuine_OS=1,"
               "COM_registered=%llu,COM_revoked=%llu,shutdown_errors=0,"
               "refs=0,pending_opens=0,pending_closes=0,live_watches=0,"
               "initial_handles=%lu,final_handles=%lu,"
