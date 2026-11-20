@@ -4,14 +4,15 @@
 
 - **Active PR:** [#57](https://github.com/taku077/c545d-recorder/pull/57) / state `open`
 - **Exact branch HEAD:** `investigate/c545d-mta-transition-guard-20261120` / `0822653d9d3667392adbebc72f90b4b1f1d569ab`
-- **PR updated at (UTC):** `2026-11-20T09:23:17Z`
+- **PR updated at (UTC):** `2026-11-20T09:23:54Z`
 - **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/0822653d9d3667392adbebc72f90b4b1f1d569ab/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44710379076](https://github.com/taku077/c545d-recorder/actions/runs/44710379076) |
+| C545D active development handoff auto-refresh | success | [#44710287553](https://github.com/taku077/c545d-recorder/actions/runs/44710287553) |
 
 ## Current development findings from the active PR
 
