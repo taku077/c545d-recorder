@@ -11,6 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
+| C545D active development handoff auto-refresh | in_progress | [#44795133059](https://github.com/taku077/c545d-recorder/actions/runs/44795133059) |
 | C545D future Win10 app-local GIO smoke safety CI ONLY | in_progress | [#44795127770](https://github.com/taku077/c545d-recorder/actions/runs/44795127770) |
 
 ## Current development findings from the active PR
