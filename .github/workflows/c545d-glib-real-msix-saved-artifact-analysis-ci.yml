@@ -1,0 +1,36 @@
+name: C545D saved real MSIX to GIO numeric evidence strict reanalysis (NO REBUILD)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - '.github/workflows/c545d-glib-real-msix-saved-artifact-analysis-ci.yml'
+      - 'tests/analyze_gio_real_package_events.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze-saved-real-event:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run strict malformed-evidence checks before reading Windows output
+        run: python3 tests/analyze_gio_real_package_events.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-glib-real-msix-event-numeric-only
+          run-id: 44688737357
+          github-token: \${{ github.token }}
+          path: artifacts
+      - name: Verify actual previous Windows MSIX-to-GIO five stage measurements
+        run: |
+          python3 tests/analyze_gio_real_package_events.py | tee artifacts/real_msix_gio_saved_analysis.txt
+          test -s artifacts/real_msix_gio_saved_analysis.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-real-msix-to-gio-reanalysis-summary-only
+          path: artifacts/real_msix_gio_saved_analysis.txt
+          retention-days: 7
+          if-no-files-found: warn
