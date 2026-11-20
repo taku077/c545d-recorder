@@ -32,16 +32,28 @@ def patch_parser(src: str) -> str:
         src, "static guint64 c545d_bridge_generation, c545d_bridge_locale;",
         "static guint64 c545d_bridge_generation, c545d_bridge_locale;\n"
         "/* Last package generation for which GIO's AppInfo parse was queued. */\n"
-        "static guint64 c545d_ci_last_parsed_package_generation;",
+        "static guint64 c545d_ci_last_parsed_package_generation;\n"
+        "/* Start snapshot owned by the one AppInfo worker; only publish on\n"
+        " * a successful full g_win32_package_parser_enum_packages() return.\n"
+        " */\n"
+        "static guint64 c545d_ci_scan_started_package_generation;",
         "last parsed generation state")
     src = replace_exact(
         src, "  c545d_bridge_scans++;\n",
-        "  /* The AppInfo worker is now scanning the current package catalog. */\n"
+        "  /* Record the generation at parse START, not successful completion.\n"
+        "   * An event in the middle of enumeration must remain pending.\n"
+        "   */\n"
         "  g_mutex_lock (&c545d_bridge_lock);\n"
-        "  c545d_ci_last_parsed_package_generation = c545d_bridge_generation;\n"
+        "  c545d_ci_scan_started_package_generation = c545d_bridge_generation;\n"
         "  g_mutex_unlock (&c545d_bridge_lock);\n"
         "  c545d_bridge_scans++;\n",
-        "mark current parse generation")
+        "capture pre-enumeration package generation")
+    src = replace_exact(
+        src, "  if (!c545d_bridge_poll ())\n    return;\n  /* Record the generation",
+        "  c545d_ci_scan_started_package_generation = 0;\n"
+        "  if (!c545d_bridge_poll ())\n    return;\n"
+        "  /* Record the generation",
+        "clear prior failed native generation snapshot")
     helper = r"""/* DIAGNOSTIC ONLY: do not change the calling thread's UI-language epoch.
  * The dedicated MTA watcher already owns the package generation counter;
  * this read-only bridge snapshot is used ONLY to request a GLib rebuild.
@@ -61,7 +73,6 @@ c545d_ci_package_generation_needs_rescan (void)
   g_mutex_lock (&c545d_bridge_lock);
   if (c545d_bridge_ready && c545d_bridge_watch != NULL &&
       c545d_bridge_snapshot_func != NULL &&
-      c545d_ci_last_parsed_package_generation != 0 &&
       c545d_bridge_snapshot_func (c545d_bridge_watch, &generation,
                                   &ignored_locale) == 0)
     changed = generation != c545d_ci_last_parsed_package_generation;
@@ -70,10 +81,32 @@ c545d_ci_package_generation_needs_rescan (void)
 }
 
 """
-    return replace_exact(
+    helper += r"""/* Called by the exact parser exit path, not from the middle of enumeration.
+ * No commit on false: the next public GAppInfo query will retry the same
+ * package epoch. A concurrent event after start also remains pending.
+ */
+static void
+c545d_ci_package_scan_finished (gboolean success)
+{
+  if (!success)
+    return;
+  g_mutex_lock (&c545d_bridge_lock);
+  if (c545d_ci_scan_started_package_generation != 0)
+    c545d_ci_last_parsed_package_generation =
+      c545d_ci_scan_started_package_generation;
+  g_mutex_unlock (&c545d_bridge_lock);
+}
+
+"""
+    src = replace_exact(
         src, "gboolean\ng_win32_package_parser_enum_packages",
         helper + "gboolean\ng_win32_package_parser_enum_packages",
         "insert generation-only query before real package parser")
+    return replace_exact(
+        src, "  return result;\n}\n\nstatic gboolean\nparse_manifest_file",
+        "  c545d_ci_package_scan_finished (result);\n"
+        "  return result;\n}\n\nstatic gboolean\nparse_manifest_file",
+        "commit generation only on parser success")
 
 
 def patch_appinfo(src: str) -> str:
