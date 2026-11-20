@@ -8,7 +8,8 @@ The no-op packaged executable is NEVER launched.
 param(
   [Parameter(Mandatory=$true)][string]$WatchDll,
   [Parameter(Mandatory=$true)][string]$StubExe,
-  [string]$GioScanDll=''
+  [string]$GioScanDll='',
+  [switch]$InjectCallbackException
 )
 $ErrorActionPreference='Stop'
 $name='C545D.CI.PackageEvents'
@@ -133,6 +134,10 @@ public static class C545DWatchInterop {
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_completion_counters", CallingConvention=CallingConvention.Cdecl)]
   public static extern int Completion(IntPtr watch, out UInt64 installing,
                                       out UInt64 updating, out UInt64 uninstalling);
+  [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_arm_callback_exception", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int ArmCallbackException(IntPtr watch);
+  [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_callback_exception_count", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int CallbackExceptions(IntPtr watch, out UInt64 count);
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_global_counters", CallingConvention=CallingConvention.Cdecl)]
   public static extern void Counters(out UInt64 registered, out UInt64 revoked, out UInt64 errors);
 }
@@ -160,6 +165,10 @@ public static class C545DGioRealMSIX {
     $gioReady=$true
   }
   [UInt64]$g0=Read-Epoch
+  if($InjectCallbackException) {
+    $arm=[C545DWatchInterop]::ArmCallbackException($watch)
+    if($arm -ne 0) {throw "C545D_REAL_APPX_FAULT_ARM_FAILED,status=$arm"}
+  }
 
   Add-AppxPackage -Path $v1 -ErrorAction Stop
   $installed=@(Get-AppxPackage -Name $name -ErrorAction Stop)
@@ -168,6 +177,16 @@ public static class C545DGioRealMSIX {
   }
   [UInt64]$g1=Await-Event $g0 'install'
   [UInt64]$doneInstall=Await-Completion 'install'
+  if($InjectCallbackException) {
+    [UInt64]$faults=0
+    $read=[C545DWatchInterop]::CallbackExceptions($watch,[ref]$faults)
+    if($read -ne 0 -or $faults -ne 1) {
+      throw "C545D_REAL_APPX_CALLBACK_EXCEPTION_NOT_HANDLED,status=$read,count=$faults"
+    }
+    # The genuine package event advanced generation despite the injected
+    # projected-accessor exception. Subscription continues normally.
+    "C545D_WINRT_CALLBACK_EXCEPTION_FAILCLOSED_PASS,count=$faults,install_delta=$($g1-$g0),install_complete=$doneInstall,CI_only=true"
+  }
   Scan-Gio 1
 
   Add-AppxPackage -Path $v2 -ErrorAction Stop
