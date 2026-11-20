@@ -25,11 +25,11 @@ public static class C545DHostGioSmokeQuery {
 }
 '@
 try {
-  $home=Split-Path -Parent $MyInvocation.MyCommand.Path
-  if(-not $CandidateDll){$CandidateDll=Join-Path $home 'gio-2.0-0.dll'}
-  if(-not $CandidateManifest){$CandidateManifest=Join-Path $home 'manifest.txt'}
-  if(-not $ReferenceManifest){$ReferenceManifest=Join-Path $home 'CORE_GIO_SDK_1288_REFERENCE.json'}
-  $check=Join-Path $home 'Get-C545DGStreamerHostFingerprintReadOnly.ps1'
+  $scriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
+  if(-not $CandidateDll){$CandidateDll=Join-Path $scriptDir 'gio-2.0-0.dll'}
+  if(-not $CandidateManifest){$CandidateManifest=Join-Path $scriptDir 'manifest.txt'}
+  if(-not $ReferenceManifest){$ReferenceManifest=Join-Path $scriptDir 'CORE_GIO_SDK_1288_REFERENCE.json'}
+  $check=Join-Path $scriptDir 'Get-C545DGStreamerHostFingerprintReadOnly.ps1'
   $isCi=($CiRunnerOnly -and $env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows' -and $env:RUNNER_TEMP)
   if($CiRunnerOnly -and -not $isCi){throw 'NOT_CI'}
   if(-not (Test-Path -LiteralPath $check -PathType Leaf)){throw 'MISSING_CHECKER'}
