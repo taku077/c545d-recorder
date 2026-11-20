@@ -54,7 +54,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           p=Path("glib-src/gio/gwin32packageparser.c")
-          src=p.read_text(encoding="utf-8")
+          raw=p.read_bytes()
+          nl="\r\n" if b"\r\n" in raw else "\n"
+          src=raw.decode("utf-8").replace("\r\n","\n")
           before="  c545d_bridge_scan_start ();\n\n  /* Synthetic event delivery only."
           assert src.count(before)==1,"GIO worker enum hook anchor changed"
           after=r"""  static gint c545d_ci_worker_locale_scans;
@@ -72,7 +74,7 @@ jobs:
             c545d_bridge_scan_start ();
           
             /* Synthetic event delivery only."""
-          p.write_text(src.replace(before,after,1),encoding="utf-8")
+          p.write_bytes(src.replace(before,after,1).replace("\n",nl).encode("utf-8"))
           PY
           git -C glib-src diff --check
           meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
