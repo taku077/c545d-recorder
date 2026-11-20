@@ -15,6 +15,7 @@
 #include <mutex>
 #include <new>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -84,10 +85,28 @@ struct c545d_dedicated_watch {
       auto catalog=PackageCatalog::OpenForCurrentUser();
       if (!catalog) throw std::runtime_error("current-user catalog absent");
       std::weak_ptr<WatchState> weak=state;
-      auto callback=[weak](auto const&,auto const&) noexcept {
+      // CI-only event provenance control. If unset, preserve original
+      // production-like semantics of reacting to ANY current-user package.
+      // With a filter, only the ephemeral synthetic package can advance
+      // the observed generation; unrelated runner activity is excluded.
+      wchar_t ci_name_buf[160] = {};
+      const DWORD ci_len=GetEnvironmentVariableW(
+          L"C545D_CI_EVENT_PACKAGE_NAME",ci_name_buf,160);
+      if(ci_len>=160)throw std::runtime_error("CI event filter too long");
+      const std::wstring ci_name(ci_name_buf,ci_len);
+      auto callback=[weak,ci_name](auto const&,auto const& args) noexcept {
         if(auto p=weak.lock()) {
-          if(p->active.load(std::memory_order_acquire))
-            p->generation.fetch_add(1,std::memory_order_acq_rel);
+          if(!p->active.load(std::memory_order_acquire)) return;
+          if(!ci_name.empty()) {
+            try {
+              const auto pkg=args.Package();
+              if(!pkg || std::wstring(pkg.Id().Name().c_str())!=ci_name)
+                return;
+            } catch(...) {
+              return; // Never attribute an unknown package to our CI fixture.
+            }
+          }
+          p->generation.fetch_add(1,std::memory_order_acq_rel);
         }
       };
       // Partial subscription failures are safely revoked in stack unwind.
