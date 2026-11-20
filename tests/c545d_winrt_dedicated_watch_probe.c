@@ -25,6 +25,24 @@ static DWORD WINAPI injector(LPVOID arg) {
   }
   return 0;
 }
+/* UI language is thread-specific. Exercise the REAL thread-language API,
+ * not merely a synthetic package-generation event. Only this short-lived
+ * disposable CI worker changes its preferred languages; no OS setting or
+ * registry value is modified.
+ */
+static DWORD WINAPI locale_reader(LPVOID arg) {
+  Worker *w=(Worker*)arg;
+  uint64_t g0=0,g1=0,l0=0,l1=0;
+  ULONG count=0;
+  const WCHAR preferred[]=L"fr-FR\0";
+  if(c545d_dedicated_snapshot(w->watch,&g0,&l0)!=0 ||
+     !SetThreadPreferredUILanguages(MUI_LANGUAGE_NAME,preferred,&count) ||
+     count==0 ||
+     c545d_dedicated_snapshot(w->watch,&g1,&l1)!=0 ||
+     g0!=g1 || l0==l1)
+    InterlockedIncrement(&w->failures);
+  return 0;
+}
 static int fail(int n) {fprintf(stderr,"C545D_DEDICATED_FAILED_STEP=%d\n",n);return n;}
 int main(void) {
   uint64_t open_count=0,close_count=0,errors=0,gen=0,lang=0;
@@ -74,6 +92,15 @@ int main(void) {
   // A clean final snapshot after all readers and injector finish.
   if(c545d_dedicated_snapshot(watch,&gen,&lang)!=0 || gen-before!=1000)
      return fail(16);
+  /* Detect a true caller-thread locale change while keeping the package
+   * generation constant. The test thread exits without changing any user
+   * profile or system-wide setting. */
+  Worker locale_test={watch,0,1};
+  HANDLE locale_thread=CreateThread(NULL,0,locale_reader,&locale_test,0,NULL);
+  if(!locale_thread)return fail(22);
+  DWORD locale_wait=WaitForSingleObject(locale_thread,15000);
+  CloseHandle(locale_thread);
+  if(locale_wait!=WAIT_OBJECT_0 || locale_test.failures!=0)return fail(23);
   c545d_dedicated_close(watch);watch=NULL;
   Sleep(300);
   c545d_dedicated_global_counters(&open_count,&close_count,&errors);
@@ -86,7 +113,7 @@ int main(void) {
   p1=mem.PrivateUsage;
   int handles=(int)h1-(int)h0;
   long long private_delta=(long long)p1-(long long)p0;
-  printf("C545D_DEDICATED_WINRT_WATCH_PASS,watch_cycles=64,registrations=%llu,revocations=%llu,synthetic_notifications=1000,concurrent_readers=4,reader_snapshots=4000,handles_delta=%d,private_usage_delta=%lld,shutdown_errors=%llu,real_package_update_events=0,CI_only=true\n",
+  printf("C545D_DEDICATED_WINRT_WATCH_PASS,watch_cycles=64,registrations=%llu,revocations=%llu,synthetic_notifications=1000,concurrent_readers=4,reader_snapshots=4000,handles_delta=%d,private_usage_delta=%lld,shutdown_errors=%llu,real_package_update_events=0,caller_thread_locale_change_verified=1,CI_only=true\n",
        (unsigned long long)open_count,(unsigned long long)close_count,handles,
        private_delta,(unsigned long long)errors);
   if(handles>8)return fail(19);
