@@ -91,10 +91,13 @@ static uint64_t enumerate(
 
 int main(int argc, char** argv) {
   if (argc != 2 || (strcmp(argv[1],"control") &&
-      strcmp(argv[1],"projected") && strcmp(argv[1],"raw")))
+      strcmp(argv[1],"projected") && strcmp(argv[1],"raw") &&
+      strcmp(argv[1],"freshcontrol") && strcmp(argv[1],"freshraw")))
     return 2;
   const int mode = strcmp(argv[1],"control") == 0 ? 0 :
-                   strcmp(argv[1],"projected") == 0 ? 1 : 2;
+                   strcmp(argv[1],"projected") == 0 ? 1 :
+                   strcmp(argv[1],"raw") == 0 ? 2 :
+                   strcmp(argv[1],"freshcontrol") == 0 ? 3 : 4;
   try {
     const PCWSTR empty_from_null = WindowsGetStringRawBuffer(nullptr, nullptr);
     if (empty_from_null == nullptr || empty_from_null[0] != L'\0') {
@@ -102,14 +105,27 @@ int main(int argc, char** argv) {
       return 7;
     }
     winrt::init_apartment(winrt::apartment_type::single_threaded);
-    winrt::Windows::Management::Deployment::PackageManager manager;
+    using winrt::Windows::Management::Deployment::PackageManager;
+    // In the control/projected/raw modes one PackageManager stays alive
+    // until the process exits. In freshcontrol/freshraw modes it is
+    // constructed/destroyed once per enumeration, like GLib's per-scan
+    // package parser. Keep a matched identity-only "fresh" control.
+    PackageManager manager{nullptr};
+    if (mode < 3) manager = PackageManager();
     uint32_t packages = 0, errors = 0;
+    auto one_pass = [&]() -> uint64_t {
+      if (mode >= 3) {
+        PackageManager fresh;
+        return enumerate(fresh, mode == 3 ? 0 : 2, packages, errors);
+      }
+      return enumerate(manager, mode, packages, errors);
+    };
     volatile uint64_t checksum = 0;
     for (int i=0; i<8; ++i)
-      checksum = checksum + enumerate(manager, mode, packages, errors);
+      checksum = checksum + one_pass();
     Sleep(500);
     for (int i=0; i<=128; ++i) {
-      if (i) checksum = checksum + enumerate(manager, mode, packages, errors);
+      if (i) checksum = checksum + one_pass();
       if (i%32 == 0) {
         auto mem = get_snapshot();
         printf("WINRT_ABI,%s,%d,%llu,%llu,%llu,%lu,%u,%u,%lu\n",
