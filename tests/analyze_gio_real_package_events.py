@@ -42,11 +42,11 @@ def verify(text):
     # enumerate-and-release stage. Compare each stage, rather than treating
     # those five valid snapshots as duplicate final records.
     bridges = [tuple(map(int, v)) for v in re.findall(
-        r"^C545D_WINRT_BRIDGE,scans=(\\d+),injections=(\\d+),"
-        r"evictions=(\\d+),errors=(\\d+),ready=(\\d+)$",
+        r"^C545D_WINRT_BRIDGE,scans=(\d+),injections=(\d+),"
+        r"evictions=(\d+),errors=(\d+),ready=(\d+)$",
         text, re.MULTILINE)]
     caches = [tuple(map(int, v)) for v in re.findall(
-        r"^C545D_DISPLAY_CACHE,hits=(\\d+),misses=(\\d+),entries=(\\d+)$",
+        r"^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$",
         text, re.MULTILINE)]
     if len(bridges) != 5 or len(caches) != 5:
         raise ValueError(f"expected five GIO stage snapshots, bridge={len(bridges)},cache={len(caches)}")
@@ -113,7 +113,7 @@ def selftest():
             f"C545D_GIO_REAL_MSIX_STEP_OK,stage={stage},apps={39 + (stage in (1,2))}",
         ]
     lines.append("C545D_REAL_APPX_CLEANUP_EXECUTED=true,runner_only=true")
-    valid="\\n".join(lines)+"\\n"
+    valid="\n".join(lines)+"\n"
     verify(valid)
     corrupt = (
         ("evictions=2", "evictions=0"),
