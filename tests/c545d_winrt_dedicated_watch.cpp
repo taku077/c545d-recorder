@@ -56,6 +56,10 @@ struct WatchState {
   std::atomic<uint64_t> ci_install_complete{0};
   std::atomic<uint64_t> ci_update_complete{0};
   std::atomic<uint64_t> ci_uninstall_complete{0};
+  // Diagnostic-only fault injection and fail-closed exception observability.
+  // Normal production-like operation keeps the injector false.
+  std::atomic<bool> ci_throw_on_next_matching_event{false};
+  std::atomic<uint64_t> ci_callback_exceptions{0};
 };
 
 bool hash_language_list(bool user, uint64_t& digest) {
@@ -125,10 +129,9 @@ struct c545d_dedicated_watch {
         if(auto p=weak.lock()) {
           if(!p->active.load(std::memory_order_acquire)) return;
           if(!ci_name.empty()) {
+            // A test filter may only attribute events for a verifiable
+            // identity. Never count unrelated runner package events.
             try {
-              // Unlike Installing/Uninstalling/StatusChanged, the WinRT
-              // UpdatingEventArgs API exposes TargetPackage/SourcePackage,
-              // not Package(). Match the updated target identity.
               using Args=std::decay_t<decltype(args)>;
               const auto pkg=[&]() {
                 if constexpr(std::is_same_v<
@@ -140,26 +143,34 @@ struct c545d_dedicated_watch {
               if(!pkg || std::wstring(pkg.Id().Name().c_str())!=ci_name)
                 return;
             } catch(...) {
-              return; // Never attribute an unknown package to our CI fixture.
+              p->ci_callback_exceptions.fetch_add(1,std::memory_order_relaxed);
+              return; // Attribution unavailable, never claim a CI package.
             }
           }
-          // Record real terminal notifications separately from mere progress.
-          // Keep invalidating on every event so any concurrent cache use can
-          // discard stale epochs immediately. Completion provides a second
-          // chance to invalidate once package deployment has finished.
-          using ArgsType=std::decay_t<decltype(args)>;
-          if constexpr(std::is_same_v<
-              ArgsType,winrt::Windows::ApplicationModel::PackageInstallingEventArgs>) {
-            if(args.IsComplete())
-              p->ci_install_complete.fetch_add(1,std::memory_order_relaxed);
-          } else if constexpr(std::is_same_v<
-              ArgsType,winrt::Windows::ApplicationModel::PackageUpdatingEventArgs>) {
-            if(args.IsComplete())
-              p->ci_update_complete.fetch_add(1,std::memory_order_relaxed);
-          } else if constexpr(std::is_same_v<
-              ArgsType,winrt::Windows::ApplicationModel::PackageUninstallingEventArgs>) {
-            if(args.IsComplete())
-              p->ci_uninstall_complete.fetch_add(1,std::memory_order_relaxed);
+          // C++/WinRT projected IsComplete accessors can throw hresult_error.
+          // NEVER allow an exception to escape this noexcept OS callback.
+          // Even on a failed property read, advance the cache generation:
+          // the package may have changed and returning an old name is unsafe.
+          try {
+            if(p->ci_throw_on_next_matching_event.exchange(
+                  false,std::memory_order_acq_rel))
+              throw winrt::hresult_error(E_FAIL); // opt-in CI fault only
+            using ArgsType=std::decay_t<decltype(args)>;
+            if constexpr(std::is_same_v<
+                ArgsType,winrt::Windows::ApplicationModel::PackageInstallingEventArgs>) {
+              if(args.IsComplete())
+                p->ci_install_complete.fetch_add(1,std::memory_order_relaxed);
+            } else if constexpr(std::is_same_v<
+                ArgsType,winrt::Windows::ApplicationModel::PackageUpdatingEventArgs>) {
+              if(args.IsComplete())
+                p->ci_update_complete.fetch_add(1,std::memory_order_relaxed);
+            } else if constexpr(std::is_same_v<
+                ArgsType,winrt::Windows::ApplicationModel::PackageUninstallingEventArgs>) {
+              if(args.IsComplete())
+                p->ci_uninstall_complete.fetch_add(1,std::memory_order_relaxed);
+            }
+          } catch(...) {
+            p->ci_callback_exceptions.fetch_add(1,std::memory_order_relaxed);
           }
           p->generation.fetch_add(1,std::memory_order_acq_rel);
         }
@@ -325,6 +336,26 @@ extern "C" int c545d_dedicated_ci_completion_counters(
   *install_done=state->ci_install_complete.load(std::memory_order_acquire);
   *update_done=state->ci_update_complete.load(std::memory_order_acquire);
   *uninstall_done=state->ci_uninstall_complete.load(std::memory_order_acquire);
+  return 0;
+}
+
+extern "C" int c545d_dedicated_ci_arm_callback_exception(
+    c545d_dedicated_watch* p) {
+  auto watch=c545d_watch_lease(p);
+  if(!watch || !watch->state->active.load(std::memory_order_acquire))
+    return 3;
+  watch->state->ci_throw_on_next_matching_event.store(
+      true,std::memory_order_release);
+  return 0;
+}
+
+extern "C" int c545d_dedicated_ci_callback_exception_count(
+    c545d_dedicated_watch* p, uint64_t* faults) {
+  if(!faults)return 2;
+  auto watch=c545d_watch_lease(p);
+  if(!watch)return 3;
+  *faults=watch->state->ci_callback_exceptions.load(
+      std::memory_order_acquire);
   return 0;
 }
 
