@@ -1,5 +1,15 @@
 # C545D core GIO MSVC candidate — release safety gate (DRAFT, NOT FOR INSTALL)
 
+
+## 2026-11-21 JST: real Windows 10 **read-only host inventory** matched; recorder remained active
+
+- The user voluntarily ran the exact three-file read-only fingerprint and returned **one sanitized numeric result**. Its reported fields: manifest valid, installed GStreamer executables found, **six core DLLs present / six of six public pinned SHA-256 matches**, per-DLL `gio/glib/gobject/gmodule/intl/zlib` match **1/1/1/1/1/1**, missing 0, PE-x64 failures 0, `windows10=1`, `recorder_active=1`, `pinned_sdk_match=1`, normal tool exit **0**. This is **user-supplied host measurement**, not CI and not an independently accessed physical machine.
+- Result resolves the prior **six-core local baseline UNKNOWN** for the SDK directory that `Record.ps1` would select. It **does not identify loaded DLLs inside the already-running recorder process**; the probe only enumerates process names. The earlier user-reported GStreamer component version `1.28.8.1` is not a reason to ignore the observed exact six binary matches. No runtime plugin tree/CRT/API-set or dynamically loaded module compatibility is established by these six files.
+- **No** candidate binary was copied, executed or loaded on the user Win10 machine; the active recorder was not stopped. The single result deliberately returns `install_approved=0,live_test_authorized=0`. This does **not** prove real two RTSP streams, synchronized audio, hour-boundary MP4, Win10 candidate operation, resource slopes or leak-zero. Existing isolated Windows2022 64-cycle corrected findings remain **CI only**.
+- Official loader and GStreamer docs support a **future separately launched app-local process** with a separate `GST_REGISTRY` and plugin paths, but this is not a field-tested rollback. **Never** replace installed DLLs or adjust production `Record.ps1`/registry; PATH alone is insufficient to select GIO reliably. A real host trial needs a previously qualified, explicitly approved one-click package: exact candidate and SDK integrity checks, no running recorder before any test action, private app-local exe+GIO, observability of **actual loaded** GIO, graceful EOS, final output inspection and cleanup constrained to a test-owned directory after all test children exit. Any missing/changed file or active recorder must refuse to proceed, not stop it.
+- **Decision:** Baseline six-DLL host identity gate **PASS (read-only only)**. Candidate release/installation **HOLD**. Next AI-only work: prepare/CI-test the fail-closed future host trial and one consolidated set of minimally disruptive RTSP/MP4/CPU/PrivateUsage/Key metrics; request a natural safe recording stop and separate user approval only after offline gates. Do not repeat the user host fingerprint, WPA/UMDH, 4-hour experiments, or archived tests.
+
+
 **This is a development-only safety checklist, not an instruction to modify the recorder.**
 The current Windows 10 Tapo recording PC has **not** received this candidate. No user action is requested.
 
