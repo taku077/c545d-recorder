@@ -30,15 +30,27 @@ try {
   $ref=Get-Content -LiteralPath $ReferenceManifest -Raw | ConvertFrom-Json
   $names=@('gio-2.0-0.dll','glib-2.0-0.dll','gobject-2.0-0.dll',
            'gmodule-2.0-0.dll','intl-8.dll','z-1.dll')
+  # Fail closed if the bundled reference itself is edited. Pin ALL six
+  # public SDK hashes independently of JSON, not merely GIO + hash syntax.
+  $pinnedSha=@{
+    'gio-2.0-0.dll'='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
+    'glib-2.0-0.dll'='CAF29CFC1467E3A3E5E91F0F649BD7A501107D9B3C32A2866B08E2ECFA209E3E'
+    'gobject-2.0-0.dll'='811DAB4B420E520D91AC3FE5202975CC90CAF2C53EF2F8F0FCE8F8588A735C7A'
+    'gmodule-2.0-0.dll'='86BE81A7011EC07E1992CE7A742AD881A80AE38583BBCFFBF973498D4748DAC5'
+    'intl-8.dll'='2EF6A23F712FD7B9BF72B2FEF1A1FD5CDE27BA88F7D164E9E6DE18936C1F51B0'
+    'z-1.dll'='B84851F9084247F466C076EE993BD5A92F3462466C4877B5C4ECC4125743A060'
+  }
   if($ref.schema -ne 1 -or $ref.install_approved -ne $false -or
      $ref.sdk -ne 'gstreamer-1.0-msvc-x86_64-1.28.8' -or
-     @($ref.dll_sha256.PSObject.Properties.Name).Count -ne 6 -or
-     ([string]$ref.dll_sha256.PSObject.Properties['gio-2.0-0.dll'].Value).ToUpperInvariant() -ne 'A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'){
+     @($ref.dll_sha256.PSObject.Properties.Name).Count -ne 6){
     throw 'bad pinned public reference'
   }
   foreach($name in $names){
-    $hash=([string]$ref.dll_sha256.PSObject.Properties[$name].Value).ToUpperInvariant()
-    if($hash -notmatch '^[A-F0-9]{64}$'){throw 'bad public SHA'}
+    $property=$ref.dll_sha256.PSObject.Properties[$name]
+    if($null -eq $property -or
+       ([string]$property.Value).ToUpperInvariant() -cne $pinnedSha[$name]){
+      throw 'public SDK reference digest was altered'
+    }
   }
   $manifestValid=1
 
