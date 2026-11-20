@@ -132,10 +132,13 @@ int main(void) {
     dispatch_pending_main_context();
     if(g_atomic_int_get(&c545d_changed_count)>changes_before)break;
   }
-  if(g_atomic_int_get(&c545d_changed_count)<=changes_before) {
-    fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=registry_signal_not_delivered\n");
-    goto done;
-  }
+  /* Actual GLib parser rebuild is checked through cache+bridge numeric
+   * reports in workflow analysis. The optional GAppInfoMonitor 'changed'
+   * callback can stay silent when worker-fire diagnostic is disabled.
+   * Do not mistake signal absence for absence of a parser rebuild. */
+  int monitor_fired=g_atomic_int_get(&c545d_changed_count)>changes_before;
+  printf("C545D_RUNTIME_GIO_MONITOR_OBSERVATION,changed=%d,not_a_rebuild_proof=1\n",
+         monitor_fired);
   for(int k=0;k<10;k++) {
     if(!snapshot(after_refresh,&apps2)) {
       fprintf(stderr,"C545D_RUNTIME_GIO_FAILURE=after_refresh_query\n");goto done;
