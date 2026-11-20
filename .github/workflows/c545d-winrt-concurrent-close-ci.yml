@@ -1,0 +1,53 @@
+name: C545D concurrent WinRT watcher close/snapshot lifetime (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-winrt-watch-dedicated-thread-20261120']
+    paths:
+      - 'tests/c545d_winrt_concurrent_close_probe.c'
+      - '.github/workflows/c545d-winrt-concurrent-close-ci.yml'
+      - 'tests/c545d_winrt_dedicated_watch.cpp'
+      - 'tests/c545d_winrt_dedicated_watch.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  concurrent-close:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile current WinRT watcher and pure-C concurrent close regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0) {throw 'C++/WinRT watch compilation failed'}
+          & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_winrt_concurrent_close_probe.c /Fe:artifacts/c545d_winrt_concurrent_close_probe.exe /link artifacts/c545d_dedicated_watch.lib psapi.lib
+          if($LASTEXITCODE -ne 0) {throw 'Pure C concurrent teardown probe compile failed'}
+      - name: Race snapshot lease against synchronous close, reject stale and reused handles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & artifacts/c545d_winrt_concurrent_close_probe.exe 1> artifacts/concurrent_close_numeric.txt 2> artifacts/concurrent_close_errors.txt
+          if($LASTEXITCODE -ne 0) {
+            Get-Content artifacts/concurrent_close_errors.txt
+            throw "Concurrent close safety regression $LASTEXITCODE"
+          }
+          $s=Get-Content artifacts/concurrent_close_numeric.txt -Raw
+          if($s -notmatch 'C545D_WATCH_CONCURRENT_CLOSE_PASS,rounds=16,readers=6,.+stale_tokens_rejected=1,double_close_safe=1,live_watch_early_runtime_leave_safe=1') {
+            throw 'Concurrent lifetime regression lacked complete success invariants'
+          }
+          Get-Content artifacts/concurrent_close_numeric.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-concurrent-watch-close-numeric-only
+          path: |
+            artifacts/concurrent_close_numeric.txt
+            artifacts/concurrent_close_errors.txt
+          retention-days: 7
+          if-no-files-found: warn
