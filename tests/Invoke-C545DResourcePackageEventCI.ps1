@@ -150,6 +150,9 @@ public static class C545DResourceWatch {
 }
 '@
   Add-Type -TypeDefinition $native.Replace('__DLL__',$WatchDll.Replace('"','""'))
+  # Filter both independent native watchers (this one and GIO's) before
+  # GIO initializes its own PackageCatalog subscriptions.
+  $env:C545D_CI_EVENT_PACKAGE_NAME=$name
   if($GioScanDll) {
     $gionative=@'
 using System;
@@ -170,7 +173,6 @@ public static class C545DResourceGio {
     if([C545DResourceGio]::Start() -ne 0){throw 'C545D_RESOURCE_CI_GIO_MONITOR_START_FAILED'}
     $gioStarted=$true
   }
-  $env:C545D_CI_EVENT_PACKAGE_NAME=$name
   $ret=[C545DResourceWatch]::Enter()
   if($ret -ne 0){throw "C545D_RESOURCE_CI_ENTER_FAILED=$ret"}
   $entered=$true
