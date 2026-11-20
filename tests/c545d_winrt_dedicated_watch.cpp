@@ -33,9 +33,20 @@ unsigned g_mta_references=0;
 // lease under the mutex before accessing native state. Closing removes the
 // token first, so concurrent calls fail closed rather than dereference freed
 // memory. Tokens cannot suffer allocator address-reuse ABA after close.
-std::mutex g_watch_table_lock;
-std::unordered_map<uintptr_t,std::shared_ptr<c545d_dedicated_watch>> g_watch_table;
-std::atomic<uintptr_t> g_next_watch_token{1};
+struct WatchTable {
+  std::mutex lock;
+  std::unordered_map<uintptr_t,std::shared_ptr<c545d_dedicated_watch>> watches;
+  std::atomic<uintptr_t> next{1};
+};
+// The GIO bridge currently invokes close from a process-exit handler in
+// another DLL. A destructible DLL-global unordered_map can already have
+// completed CRT teardown when that late close arrives. Keep only this tiny
+// empty-by-close registry alive until OS process reclamation, avoiding a
+// static-destruction-order UAF. Never allocate one table per open/close.
+WatchTable& watch_table() {
+  static WatchTable* const table=new WatchTable;
+  return *table;
+}
 
 struct WatchState {
   std::atomic<uint64_t> generation{1};
@@ -214,9 +225,9 @@ struct c545d_dedicated_watch {
 static std::shared_ptr<c545d_dedicated_watch>
 c545d_watch_lease(c545d_dedicated_watch* token) {
   if(!token)return {};
-  std::lock_guard<std::mutex> guard(g_watch_table_lock);
-  const auto it=g_watch_table.find(reinterpret_cast<uintptr_t>(token));
-  return it==g_watch_table.end()?std::shared_ptr<c545d_dedicated_watch>{}:it->second;
+  std::lock_guard<std::mutex> guard(watch_table().lock);
+  const auto it=watch_table().watches.find(reinterpret_cast<uintptr_t>(token));
+  return it==watch_table().watches.end()?std::shared_ptr<c545d_dedicated_watch>{}:it->second;
 }
 
 extern "C" int c545d_dedicated_runtime_enter(void) {
@@ -234,8 +245,8 @@ extern "C" void c545d_dedicated_runtime_leave(void) {
   if(g_mta_references==1) {
     // A mistaken early leave must NOT retire COM while a live watcher
     // depends on it. Caller still owes leave after its final watch close.
-    std::lock_guard<std::mutex> watches(g_watch_table_lock);
-    if(!g_watch_table.empty())return;
+    std::lock_guard<std::mutex> watches(watch_table().lock);
+    if(!watch_table().watches.empty())return;
   }
   if(--g_mta_references==0) {
     CoDecrementMTAUsage(g_mta_cookie);
@@ -254,10 +265,10 @@ extern "C" int c545d_dedicated_open(c545d_dedicated_watch** out) {
   *out=nullptr;
   try {
     auto owned=std::make_shared<c545d_dedicated_watch>();
-    std::lock_guard<std::mutex> guard(g_watch_table_lock);
-    const auto id=g_next_watch_token.fetch_add(1,std::memory_order_relaxed);
+    std::lock_guard<std::mutex> guard(watch_table().lock);
+    const auto id=watch_table().next.fetch_add(1,std::memory_order_relaxed);
     if(id==0)return 3; // fail closed on impossible token counter rollover
-    const auto inserted=g_watch_table.emplace(id,std::move(owned));
+    const auto inserted=watch_table().watches.emplace(id,std::move(owned));
     if(!inserted.second)return 3;
     *out=reinterpret_cast<c545d_dedicated_watch*>(id);
     return 0;
@@ -293,11 +304,11 @@ extern "C" void c545d_dedicated_close(c545d_dedicated_watch* p) {
   if(!p)return;
   std::shared_ptr<c545d_dedicated_watch> owned;
   {
-    std::lock_guard<std::mutex> guard(g_watch_table_lock);
-    const auto it=g_watch_table.find(reinterpret_cast<uintptr_t>(p));
-    if(it==g_watch_table.end())return;
+    std::lock_guard<std::mutex> guard(watch_table().lock);
+    const auto it=watch_table().watches.find(reinterpret_cast<uintptr_t>(p));
+    if(it==watch_table().watches.end())return;
     owned=std::move(it->second);
-    g_watch_table.erase(it);
+    watch_table().watches.erase(it);
   }
   // All new calls reject the retired token. Existing readers hold leases
   // and can safely finish; callbacks are deactivated and revoked before close
