@@ -15,9 +15,8 @@ $started=0;$observed=0;$wav=0;$cleanExit=0;$cleanup=0;$originals=0;$reason='BLOC
 $owned=$false;$stage=$null;$child=$null;$childExited=$true;$handle=[IntPtr]::Zero
 $prior=@{}
 $phase='BEGIN'
-# Pure read-only cleanup gate. Any junction/symlink/reparse-point anywhere in
-# the disposable tree prevents recursive deletion, even when its root has an
-# otherwise valid owner marker. No attempt to follow linked directories.
+# Read-only cleanup guard: if any descendant is a junction, symlink, or
+# other reparse point, refuse recursive removal of the private stage.
 function Test-C545DStageHasNoReparse([string]$Root) {
   foreach($entry in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -ErrorAction Stop)) {
     if(($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -207,20 +206,7 @@ try {
       if($item.PSIsContainer -and
          ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and
          [string]::Equals($parent,$temp,[StringComparison]::OrdinalIgnoreCase) -and
-         [IO.Path]::GetFileName($stage) -match '^c545d-private-gio-[a-f0-9]{32}
-        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
-        $cleanup=[int](-not (Test-Path -LiteralPath $stage))
-      }
-    } catch {$cleanup=0}
-  }
-}
-$passed=[int]($started -eq 1 -and $observed -eq 1 -and $wav -eq 1 -and
-              $cleanExit -eq 1 -and $originals -eq 1 -and $cleanup -eq 1)
-if($passed -ne 1 -and $reason -in @('CI_SYNTHETIC_PASS','WIN10_SYNTHETIC_PASS_NOT_LIVE_APPROVAL')){$reason='BLOCKED'}
-Write-Output "C545D_GIO_ISOLATED_SMOKE,started=$started,loaded_expected=$observed,wav_ok=$wav,exit_ok=$cleanExit,rollback_ok=$cleanup,originals_unchanged=$originals,install_approved=0,live_tapo_authorized=0,reason=$reason"
-if($passed -eq 1){exit 0}
-exit 3
- -and
+         [IO.Path]::GetFileName($stage) -match '^c545d-private-gio-[a-f0-9]{32}$' -and
          [IO.File]::ReadAllText((Join-Path $stage '.c545d-owned')) -ceq 'C545D_ISOLATED_GIO_SMOKE' -and
          (Test-C545DStageHasNoReparse -Root $stage)){
         Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
