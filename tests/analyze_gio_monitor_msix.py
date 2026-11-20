@@ -53,21 +53,25 @@ def classify(raw: str, no_registry_stimulus: bool = False) -> str:
         raise ValueError(f"wrong stages/order/duplicate monitor observations: {pairs}")
     pre = tuple(n for s,n in pairs if s < 20)
     post = tuple(n for s,n in pairs if s > 20)
-    if post != (1,2,3):
+    expected_post = (1,2,3) if no_registry_stimulus else (1,3,5)
+    expected_final = "3" if no_registry_stimulus else "6"
+    if post != expected_post:
         raise ValueError(f"missing or duplicate AppInfo worker monitor signal {post}")
-    if not all(before in (i,i+1) for i,before in enumerate(pre)):
-        raise ValueError(f"spontaneous notifications outside real stage {pre}")
+    if not all(before in (expected_post[i]-1,expected_post[i])
+               for i,before in enumerate(pre)):
+        raise ValueError(f"unexpected monitor signal before genuine stage {pre}")
     # A monitor signal before each public GAppInfo query is possible only
     # if the ORIGINAL registry-watcher worker rebuilt independently. It
     # is not proof that a PackageCatalog-only event signals GLib.
 
     m = FINAL.findall(raw)
-    if m != ["3"]:
+    if m != [expected_final]:
         raise ValueError(f"monitor cleanup/final count not exact: {m}")
     return ("C545D_APPINFO_MONITOR_CI_PASS,"
             "real_package_events=18,natural_apps_39_40_40_39=1,"
             "pre_query_changed_cumulative=" + ";".join(map(str,pre)) + ","
-            "post_stage_changed_cumulative=1;2;3,changed_total=3,"
+            "post_stage_changed_cumulative=" + ";".join(map(str,post)) + ","
+            "changed_total=" + expected_final + ","
             "worker_rebuild_notification=1,monitor_stopped=1,"
             "CI_registry_stimulus_disabled=" + str(int(no_registry_stimulus)) + ","
             "PackageCatalog_only_spontaneous_NOT_proven=1,"
@@ -82,15 +86,15 @@ def selftest():
         "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=1,apps=40",
         "C545D_APPINFO_MONITOR_OBSERVATION,stage=21,changed=1",
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=1,apps=40",
-        "C545D_APPINFO_MONITOR_OBSERVATION,stage=12,changed=1",
+        "C545D_APPINFO_MONITOR_OBSERVATION,stage=12,changed=2",
         "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=2,apps=40",
-        "C545D_APPINFO_MONITOR_OBSERVATION,stage=22,changed=2",
+        "C545D_APPINFO_MONITOR_OBSERVATION,stage=22,changed=3",
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=2,apps=40",
-        "C545D_APPINFO_MONITOR_OBSERVATION,stage=13,changed=2",
+        "C545D_APPINFO_MONITOR_OBSERVATION,stage=13,changed=4",
         "C545D_GIO_REAL_MSIX_NATURAL_STAGE,stage=3,apps=39",
-        "C545D_APPINFO_MONITOR_OBSERVATION,stage=23,changed=3",
+        "C545D_APPINFO_MONITOR_OBSERVATION,stage=23,changed=5",
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=3,apps=39",
-        "C545D_APPINFO_MONITOR_FINAL,changed=3,clean_stop=1",
+        "C545D_APPINFO_MONITOR_FINAL,changed=6,clean_stop=1",
         "C545D_GIO_REAL_MSIX_STEP_OK,stage=4,apps=39",
         "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=9,update_delta=7,"
         "uninstall_delta=2,total_delta=18,install_complete=1,"
@@ -101,9 +105,9 @@ def selftest():
     assert "C545D_APPINFO_MONITOR_CI_PASS" in classify(fixture)
     broken = [
         fixture.replace("stage=11,changed=0","stage=11,changed=2"),
-        fixture.replace("stage=22,changed=2","stage=22,changed=1"),
-        fixture.replace("stage=23,changed=3","stage=23,changed=4"),
-        fixture.replace("stage=12,changed=1","stage=11,changed=1"),
+        fixture.replace("stage=22,changed=3","stage=22,changed=1"),
+        fixture.replace("stage=23,changed=5","stage=23,changed=6"),
+        fixture.replace("stage=12,changed=2","stage=11,changed=2"),
         fixture.replace("total_delta=18","total_delta=17"),
         fixture.replace("clean_stop=1","clean_stop=0"),
         fixture.replace("apps=39\nC545D_APPINFO_MONITOR_FINAL","apps=38\nC545D_APPINFO_MONITOR_FINAL"),
@@ -115,6 +119,12 @@ def selftest():
     spontaneous = fixture.replace("stage=11,changed=0","stage=11,changed=1")
     assert "C545D_APPINFO_MONITOR_CI_PASS" in classify(spontaneous)
     no_registry=fixture
+    for old,new in (("stage=12,changed=2","stage=12,changed=1"),
+                    ("stage=22,changed=3","stage=22,changed=2"),
+                    ("stage=13,changed=4","stage=13,changed=2"),
+                    ("stage=23,changed=5","stage=23,changed=3"),
+                    ("FINAL,changed=6","FINAL,changed=3")):
+        no_registry=no_registry.replace(old,new)
     for stage in (1,2,3):
         no_registry=no_registry.replace(
             f"C545D_GIO_REAL_MSIX_STEP_OK,stage={stage},apps={40 if stage<3 else 39}",
