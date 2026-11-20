@@ -20,6 +20,10 @@ using System.Runtime.InteropServices;
 public static class C545DRunnerExitCode {
   [DllImport("kernel32.dll", SetLastError=true)]
   public static extern bool GetExitCodeProcess(IntPtr handle,out UInt32 exitCode);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern IntPtr OpenProcess(UInt32 access,bool inherit,int processId);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool CloseHandle(IntPtr handle);
 }
 '@
 $official=Join-Path $SdkRoot 'bin\gio-2.0-0.dll'
@@ -51,6 +55,12 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
   $arguments=@('-e','-q','audiotestsrc','is-live=true','num-buffers=460','wave=sine',
     '!','audioconvert','!','audio/x-raw,format=S16LE,rate=48000,channels=1','!','wavenc','!','giosink',("location="+$uri))
   $script:running=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WorkingDirectory $WorkRoot
+  # Start-Process in Windows PowerShell 5.1 can return a Process object
+  # without a managed Handle/ExitCode. Open a separate QUERY-ONLY native
+  # handle *while the disposable process is alive*, retain through exit,
+  # then CloseHandle on this private query handle. Never touch recorder PIDs.
+  $queryHandle=[C545DRunnerExitCode]::OpenProcess([UInt32]0x1000,$false,$script:running.Id)
+  if($queryHandle -eq [IntPtr]::Zero){throw "C545D_GIO_LOADER_CI_QUERY_OPEN_FAILED=$label"}
   $observed=$false
   $pollErrors=0
   $pollCount=0
@@ -96,7 +106,7 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
     }
     if(-not $script:running.WaitForExit(30000)){throw "C545D_GIO_LOADER_CI_PROCESS_TIMEOUT=$label"}
     [UInt32]$nativeExit=259
-    if(-not [C545DRunnerExitCode]::GetExitCodeProcess($script:running.Handle,[ref]$nativeExit)){
+    if(-not [C545DRunnerExitCode]::GetExitCodeProcess($queryHandle,[ref]$nativeExit)){
       throw "C545D_GIO_LOADER_CI_NATIVE_EXIT_QUERY_FAILED=$label"
     }
     if($nativeExit -ne 0){
@@ -122,6 +132,10 @@ function Invoke-IsolatedProbe([string]$label,[string]$exe,[string]$expectedModul
       }
       $script:running.Dispose()
       $script:running=$null
+    }
+    if($queryHandle -and $queryHandle -ne [IntPtr]::Zero) {
+      [void][C545DRunnerExitCode]::CloseHandle($queryHandle)
+      $queryHandle=[IntPtr]::Zero
     }
   }
 }
