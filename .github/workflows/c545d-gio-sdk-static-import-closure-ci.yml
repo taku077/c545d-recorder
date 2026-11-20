@@ -23,13 +23,16 @@ jobs:
           repository: taku077/c545d-recorder
           github-token: ${{ github.token }}
           path: artifacts/core-rc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Read-only import parser and its ordinal negative controls
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          py -m pip install --disable-pip-version-check --no-input pefile==2024.8.26
+          python -m pip install --disable-pip-version-check --no-input pefile==2024.8.26
           if($LASTEXITCODE -ne 0){throw 'pefile parser installation failed'}
-          py tests/test_analyze_c545d_gio_sdk_imports.py
+          python tests/test_analyze_c545d_gio_sdk_imports.py
           if($LASTEXITCODE -ne 0){throw 'PE/GIO name and ordinal rejection tests failed'}
       - name: Install pinned official SDK on disposable runner (no host recording PC)
         shell: pwsh
@@ -56,7 +59,7 @@ jobs:
             throw 'Original proven CI-only candidate identity not established'
           }
           $output=(Resolve-Path artifacts).Path + '\sdk_gio_static_abi_numeric.json'
-          py tests/analyze_c545d_gio_sdk_imports.py --sdk-root $env:C545D_SDK_STATIC_SCAN_ROOT --candidate $rc --numeric-summary $output
+          python tests/analyze_c545d_gio_sdk_imports.py --sdk-root $env:C545D_SDK_STATIC_SCAN_ROOT --candidate $rc --numeric-summary $output
           if($LASTEXITCODE -ne 0){throw 'Official SDK complete GIO PE static import closure failed'}
           $report=Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
           if($report.sdk_pe_files_scanned -lt 35 -or $report.sdk_modules_importing_gio -lt 1 -or
