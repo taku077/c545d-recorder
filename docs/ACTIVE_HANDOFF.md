@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ae06c0b69c19a157c91ce0106c7de466e55b1716`
-- **PR updated at (UTC):** `2026-11-20T17:04:09Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ae06c0b69c19a157c91ce0106c7de466e55b1716/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4d31c2f71a2faa6d8b0525f9492088c7101f0e04`
+- **PR updated at (UTC):** `2026-11-20T17:04:28Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4d31c2f71a2faa6d8b0525f9492088c7101f0e04/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44779654776](https://github.com/taku077/c545d-recorder/actions/runs/44779654776) |
-| C545D read-only running-recorder host SDK fingerprint one-click bundle CI ONLY | in_progress | [#44779652243](https://github.com/taku077/c545d-recorder/actions/runs/44779652243) |
+| C545D active development handoff auto-refresh | in_progress | [#44779706156](https://github.com/taku077/c545d-recorder/actions/runs/44779706156) |
+| C545D read-only running-recorder host SDK fingerprint one-click bundle CI ONLY | in_progress | [#44779698790](https://github.com/taku077/c545d-recorder/actions/runs/44779698790) |
 
 ## Current development findings from the active PR
 
