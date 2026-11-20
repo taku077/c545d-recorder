@@ -1,0 +1,31 @@
+name: C545D PR57 active handoff exact-HEAD transition test
+on:
+  push:
+    branches: ['docs/active-handoff-pr57-20261120']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+jobs:
+  handoff-pr57-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify source guard and refresh from live PR 57
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_active_handoff.py -v
+          python tools/refresh_active_handoff.py
+          grep -Fq '**Active PR:** [#57]' docs/ACTIVE_HANDOFF.md
+          grep -Fq '## Current development findings from the active PR' docs/ACTIVE_HANDOFF.md
+          grep -Fq 'PR #57' docs/ACTIVE_HANDOFF.md
+          ! grep -Fq '**Active PR:** [#54]' docs/ACTIVE_HANDOFF.md
+          echo 'C545D_ACTIVE_HANDOFF_PR57_READONLY_PASS'
