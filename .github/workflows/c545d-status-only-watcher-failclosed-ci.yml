@@ -1,0 +1,124 @@
+name: C545D newest combined GLib WinRT watcher unavailable fail-closed CI ONLY
+
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-status-only-watcher-failclosed-ci.yml'
+      - 'tests/patch_glib_appinfo_native_spontaneous_diagnostic.py'
+      - 'tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py'
+      - 'tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py'
+      - 'tests/gio_appinfo_displayname_snapshot.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  failclosed-watch:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build independent live and intentionally sink-incomplete watcher DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          # No sink symbol is exported by the UNPATCHED base watcher.
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_missing_sink_watch.dll /link /IMPLIB:artifacts/c545d_missing_sink_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'Base WinRT watcher build failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Spontaneous native patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Status-only native patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_full_watch.dll /link /IMPLIB:artifacts/c545d_full_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'Full native watcher build failed'}
+          foreach($p in @('artifacts/c545d_full_watch.dll','artifacts/c545d_missing_sink_watch.dll')){
+            if(-not (Test-Path $p)){throw 'Missing native test artifact'}
+          }
+      - name: Patch and compile full GLib 2.82.4 WinRT monitor/cache build
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_native_spontaneous_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o ../artifacts/c545d_appinfo_snapshot.exe ../tests/gio_appinfo_displayname_snapshot.c $(pkg-config --cflags --libs gio-2.0)'
+          test -f artifacts/c545d_appinfo_snapshot.exe
+      - name: Compare exact app-info hashes with healthy watch, missing DLL and missing monitor sink
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
+          unset C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE || true
+          unset C545D_DIAG_UWP_CACHE_EVENT_BRIDGE C545D_DIAG_APPINFO_MONITOR_UNSOLICITED C545D_DIAG_UWP_C_BRIDGE_DLL || true
+          meson devenv -C glib-build "$PWD/artifacts/c545d_appinfo_snapshot.exe" > artifacts/baseline.txt 2>&1
+          export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1 C545D_DIAG_APPINFO_MONITOR_UNSOLICITED=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_full_watch.dll")"
+          meson devenv -C glib-build "$PWD/artifacts/c545d_appinfo_snapshot.exe" > artifacts/healthy.txt 2>&1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL='Z:\C545D_NONEXISTENT_CI_ONLY\missing_watch.dll'
+          meson devenv -C glib-build "$PWD/artifacts/c545d_appinfo_snapshot.exe" > artifacts/missing_dll.txt 2>&1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_missing_sink_watch.dll")"
+          meson devenv -C glib-build "$PWD/artifacts/c545d_appinfo_snapshot.exe" > artifacts/missing_sink.txt 2>&1
+          python - <<'PY'
+          import pathlib,re
+          modes=('baseline','healthy','missing_dll','missing_sink')
+          rows={}
+          for mode in modes:
+              data=pathlib.Path('artifacts/'+mode+'.txt').read_text(encoding='utf-8',errors='replace')
+              found=re.findall(r'C545D_APPINFO_DISPLAY_SNAPSHOT,count=(\d+),sha256=([0-9a-fA-F]{64})',data)
+              assert len(found)==1 and int(found[0][0])>0,(mode,'no exact app-info digest')
+              rows[mode]=found[0]
+              if mode!='baseline':
+                  state=re.findall(r'C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=(\d+),ready=(\d+)',data)
+                  assert state,(mode,'bridge status absent')
+                  errors,ready=map(int,state[-1])
+                  if mode=='healthy':
+                      assert ready==1 and errors==0,(mode,state)
+                  else:
+                      assert ready==0 and errors>0,(mode,state)
+              if mode=='missing_sink':
+                  assert 'C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=0' in data,'missing sink was not exercised'
+          assert all(rows[m]==rows['baseline'] for m in modes[1:]),'display names diverged or missing under fallback'
+          print('C545D_WATCHER_FAILCLOSED_CI_PASS,modes=4,hash_parity=1,missing_dll_ready0=1,missing_sink_ready0=1,original_display_getter_fallback=1,synthetic_registry_mutations=0,CI_only=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-watcher-failclosed-sanitized
+          path: |
+            artifacts/baseline.txt
+            artifacts/healthy.txt
+            artifacts/missing_dll.txt
+            artifacts/missing_sink.txt
+          retention-days: 7
+          if-no-files-found: warn
