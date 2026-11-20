@@ -73,6 +73,34 @@ try {
   Checked 'main_fixture'
   & py tests/make_c545d_ci_resource_package_fixture.py --out $resDir --main-layout $mainDir
   Checked 'resource_fixture'
+  # Windows requires a valid base PRI before merging a resource pack PRI.
+  # Create the same key in the parent en-US and in the fr-FR pack.
+  $pri=Tool 'MakePri.exe'
+  $strings=Join-Path $mainDir 'Strings\en-us'
+  New-Item -ItemType Directory -Force -Path $strings | Out-Null
+  @'
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="C545DResourceProbe" xml:space="preserve">
+    <value>English synthetic resource value</value>
+  </data>
+</root>
+'@ | Set-Content -LiteralPath (Join-Path $strings 'Resources.resw') -Encoding utf8
+  $mainCfg=Join-Path $mainDir 'priconfig.xml'
+  $resCfg=Join-Path $resDir 'priconfig.xml'
+  $mainPri=Join-Path $mainDir 'resources.pri'
+  $resPri=Join-Path $resDir 'resources.pri'
+  & $pri createconfig /cf $mainCfg /dq en-US /o
+  Checked 'main_pri_config'
+  & $pri new /pr $mainDir /cf $mainCfg /mn (Join-Path $mainDir 'AppxManifest.xml') /of $mainPri /o
+  Checked 'main_pri_index'
+  & $pri createconfig /cf $resCfg /dq fr-FR /o
+  Checked 'resource_pri_config'
+  & $pri resourcepack /pr $resDir /cf $resCfg /if $mainPri /of $resPri /o
+  Checked 'resource_pri_index'
+  if(-not (Test-Path $mainPri) -or -not (Test-Path $resPri)){
+    throw 'C545D_RESOURCE_CI_PRI_OUTPUT_MISSING'
+  }
   & $make pack /o /d $mainDir /p $mainMsix *> $null
   Checked 'main_pack'
   Push-Location $resDir
