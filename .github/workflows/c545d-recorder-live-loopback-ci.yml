@@ -1,0 +1,73 @@
+name: C545D real Record.ps1 finite localhost RTSP Windows CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-recorder-live-loopback-ci.yml'
+      - 'tests/Assert-C545DRecorderLiveLoopbackCI.ps1'
+      - 'tests/c545d_ci_finite_rtsp_server.c'
+      - 'tools/New-C545DIsolatedProductionMirrorCI.ps1'
+      - 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
+      - 'Record.ps1'
+      - 'CommonSettings.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  actual-recorder-source-finite-rtsp:
+    runs-on: windows-2022
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/pinned-candidate
+      - name: Install official pinned SDK in disposable hosted Windows runner only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'c545d-live-rtsp-sdk'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d-live-rtsp-sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item -LiteralPath $installer).Length -lt 15000000){throw 'Official installer incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'CI SDK setup failed'}
+          "C545D_RTSP_LIVE_SDK=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Parse and execute exact source mirror against ONLY finite localhost RTSP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script=(Resolve-Path tests/Assert-C545DRecorderLiveLoopbackCI.ps1).Path
+          $t=$null;$err=$null
+          [Management.Automation.Language.Parser]::ParseFile($script,[ref]$t,[ref]$err)|Out-Null
+          if($err.Count -ne 0){throw 'CI integration script syntax invalid'}
+          $candidate=(Resolve-Path artifacts/pinned-candidate/gio-2.0-0.dll).Path
+          $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
+          $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_RTSP_LIVE_SDK -CandidateDll $candidate -ReferenceManifest $ref 2>$null)
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_RECORDER_LIVE_RTSP_STAGE,launch=[01],launch_count=[0-9]+,returned=[01],source_stop_marker=[01],policy_stop=[01],eos_message=[01],mp4_count=[0-9]+,rtsp_error=[01],record_exit_nonzero=[01],real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_RECORDER_LIVE_RTSP_FAIL,phase=[A-Z_]+,reason=[A-Z_]+,real_camera=0,host_modified=0$'){
+              Write-Host $row
+            }
+          }
+          $pass=@($rows|Where-Object {$_ -ceq 'C545D_RECORDER_REAL_SOURCE_LOCAL_RTSP_CI_PASS,real_recorder=1,rtsp_two_mounts=1,mp4_h264_aac=1,mp4_decodable=1,inflight_stop_marker=1,source_eos=1,gui_ctrl_c_tested=0,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0,owned_rollback=1'})
+          if($LASTEXITCODE -ne 0 -or $pass.Count -ne 1){throw 'CI-only live recorder RTSP numerical gate not yet qualified'}
+          New-Item -ItemType Directory artifacts/numeric -Force|Out-Null
+          $pass[0] | Set-Content artifacts/numeric/recorder_live_loopback.txt -Encoding ascii
+          Write-Host $pass[0]
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-live-recorder-loopback-NOT-FOR-HOST-numeric
+          path: artifacts/numeric/recorder_live_loopback.txt
+          if-no-files-found: error
+          retention-days: 7
