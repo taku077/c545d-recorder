@@ -3,15 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ce0ec6c9100b6dd9d8699a7c92ad3e7b92769530`
-- **PR updated at (UTC):** `2026-11-21T13:54:14Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ce0ec6c9100b6dd9d8699a7c92ad3e7b92769530/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `22bf45d70b005758095df159568447398dcad22b`
+- **PR updated at (UTC):** `2026-11-21T13:54:28Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/22bf45d70b005758095df159568447398dcad22b/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44911167886](https://github.com/taku077/c545d-recorder/actions/runs/44911167886) |
+| C545D active development handoff auto-refresh | in_progress | [#44911187222](https://github.com/taku077/c545d-recorder/actions/runs/44911187222) |
+| C545D real resource-only MSIX GAppInfoMonitor pre-query regression CI ONLY | in_progress | [#44911184516](https://github.com/taku077/c545d-recorder/actions/runs/44911184516) |
+| C545D real resource-only MSIX event provenance Windows CI ONLY | in_progress | [#44911184508](https://github.com/taku077/c545d-recorder/actions/runs/44911184508) |
 
 ## Current development findings from the active PR
 
