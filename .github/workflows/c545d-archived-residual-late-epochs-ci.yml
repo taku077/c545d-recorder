@@ -1,0 +1,57 @@
+name: C545D archived Windows memory residual late-epoch audit (no rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_cached_residual_plateau_guard.py'
+      - 'tests/analyze_gio_cached_residual_epochs.py'
+      - '.github/workflows/c545d-archived-residual-late-epochs-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-three-saved-runs-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download saved 256-cycle Windows2022 numeric-only record 1
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44533452892
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44533452892
+      - name: Download saved numeric-only record 2
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44537371920
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44537371920
+      - name: Download saved numeric-only record 3
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44545844200
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44545844200
+      - name: Check source evidence and distinct last64 heap vs committed memory outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_cached_residual_epochs.py --selftest
+          python tests/analyze_gio_cached_residual_plateau_guard.py --selftest
+          python tests/analyze_gio_cached_residual_plateau_guard.py --root saved | tee artifacts/numeric/c545d_late_epoch_gate.txt
+          grep -qx 'C545D_LATE_EPOCH_GUARD_PASS,old_windows_runs=3,new_windows_runs=0,control_subtracted=1,private_late_positive=2of3,exact_360_bin_late_positive=3of3,no_proven_zero_leak=1,no_proven_infinite_plateau=1,allocation_stacks_attributed=0,host_validated=0' artifacts/numeric/c545d_late_epoch_gate.txt
+          test "$(grep -c '^C545D_LATE_EPOCH_NUMERIC,' artifacts/numeric/c545d_late_epoch_gate.txt)" -eq 3
+          echo 'C545D_CACHED_LATE_EPOCH_REANALYSIS_PASS,reused_original_windows_artifacts=3,new_windows_runs=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-late-epoch-no-windows-numeric-only
+          path: artifacts/numeric/c545d_late_epoch_gate.txt
+          if-no-files-found: error
+          retention-days: 7
