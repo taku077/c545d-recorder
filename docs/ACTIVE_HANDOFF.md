@@ -3,16 +3,18 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2966034745e8896bedb714e3292126aadd1058e4`
-- **PR updated at (UTC):** `2026-11-21T09:25:58Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2966034745e8896bedb714e3292126aadd1058e4/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2ae60aca7da3943405000ede20b83fad557ff267`
+- **PR updated at (UTC):** `2026-11-21T09:26:51Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2ae60aca7da3943405000ede20b83fad557ff267/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44889559590](https://github.com/taku077/c545d-recorder/actions/runs/44889559590) |
-| C545D original in-stream MP4 event namer with dual synthetic RTSP CI ONLY | in_progress | [#44889557438](https://github.com/taku077/c545d-recorder/actions/runs/44889557438) |
+| C545D active development handoff auto-refresh | in_progress | [#44889626123](https://github.com/taku077/c545d-recorder/actions/runs/44889626123) |
+| C545D real GUI worker Ctrl+C EOS dual localhost RTSP Windows CI ONLY | in_progress | [#44889624282](https://github.com/taku077/c545d-recorder/actions/runs/44889624282) |
+| C545D accelerated splitmux MP4 segments dual localhost RTSP CI ONLY | in_progress | [#44889624256](https://github.com/taku077/c545d-recorder/actions/runs/44889624256) |
+| C545D original in-stream MP4 event namer with dual synthetic RTSP CI ONLY | in_progress | [#44889624247](https://github.com/taku077/c545d-recorder/actions/runs/44889624247) |
 
 ## Current development findings from the active PR
 
