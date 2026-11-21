@@ -22,7 +22,7 @@ $pin=@{
   'intl-8.dll'='2EF6A23F712FD7B9BF72B2FEF1A1FD5CDE27BA88F7D164E9E6DE18936C1F51B0'
   'z-1.dll'='B84851F9084247F466C076EE993BD5A92F3462466C4877B5C4ECC4125743A060'
 }
-$stage=$null; $owned=$false; $child=$null; $preStopChild=$null; $removed=$false
+$stage=$null; $owned=$false; $child=$null; $preStopChild=$null; $preStopHandle=[IntPtr]::Zero; $removed=$false
 $observed=$false; $wavOk=$false; $mediaOk=$false; $preStopOk=$false; $segments=0; $prior=@{}
 try {
   if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
@@ -180,10 +180,43 @@ try {
   $recorder=Join-Path $stage 'Record.ps1'
   $cmdArgs=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
        ('"'+$recorder+'"'),'-StopFile',('"'+$stop+'"'))
+  # Windows PowerShell Start-Process may report null managed ExitCode even
+  # after successful exit. A retained *query-only* handle gives the genuine
+  # Win32 native process exit status; never touch a recorder PID.
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class C545DPreStopNativeExit {
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern IntPtr OpenProcess(UInt32 access, bool inherit, int pid);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool GetExitCodeProcess(IntPtr handle, out UInt32 code);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool CloseHandle(IntPtr handle);
+}
+'@
   $preStopChild=Start-Process -FilePath $ps -ArgumentList $cmdArgs -PassThru -WorkingDirectory $temp -RedirectStandardOutput (Join-Path $stage 'prestop.stdout') -RedirectStandardError (Join-Path $stage 'prestop.stderr')
+  $preStopHandle=[C545DPreStopNativeExit]::OpenProcess([uint32]0x1000,$false,$preStopChild.Id)
+  if($preStopHandle -eq [IntPtr]::Zero){throw 'RECORDER_PRESTOP_NATIVE_QUERY_OPEN_FAILED'}
   if(-not $preStopChild.WaitForExit(180000)){throw 'RECORDER_PRESTOP_TIMEOUT'}
-  if($preStopChild.ExitCode -ne 0){throw 'RECORDER_PRESTOP_FAILURE'}
+  [uint32]$nativeExit=259
+  if(-not [C545DPreStopNativeExit]::GetExitCodeProcess($preStopHandle,[ref]$nativeExit)){
+    throw 'RECORDER_PRESTOP_NATIVE_QUERY_FAILED'
+  }
   $stopOutput=[IO.File]::ReadAllText((Join-Path $stage 'prestop.stdout'))
+  if($nativeExit -ne 0){
+    # Only fixed sanitized booleans, never full stdout/stderr or URLs.
+    $errText=[IO.File]::ReadAllText((Join-Path $stage 'prestop.stderr'))
+    $badSettings=[int]($errText -match 'settings do not exist|Saved settings are incomplete|Saved camera IP address is invalid')
+    $badDpapi=[int]($errText -match 'Cannot decrypt saved password|Saved password is missing')
+    $badElements=[int]($errText -match 'Missing GStreamer elements|GStreamer MSVC x64 Runtime was not found')
+    $badDecoder=[int]($errText -match 'No H.264 decoder passed')
+    $badAac=[int]($errText -match 'No high-quality AAC encoder passed')
+    $graphObserved=[int]$stopOutput.Contains('GStreamer separator validation: PASS')
+    $stopObserved=[int]$stopOutput.Contains('Stop requested; skipping any new RTSP session.')
+    Write-Output "C545D_PRESTOP_FAILURE_DIAG,native_nonzero=1,managed_exit_null=$([int]($null -eq $preStopChild.ExitCode)),settings_error=$badSettings,dpapi_error=$badDpapi,element_error=$badElements,decoder_error=$badDecoder,aac_error=$badAac,graph_observed=$graphObserved,stop_observed=$stopObserved"
+    throw 'RECORDER_PRESTOP_FAILURE'
+  }
   if(-not $stopOutput.Contains('GStreamer separator validation: PASS') -or
      -not $stopOutput.Contains('Stop requested; skipping any new RTSP session.') -or
      $stopOutput.Contains('GStreamer launching (EOS enabled)')){
@@ -203,6 +236,10 @@ try {
   if($preStopChild){
     if(-not $preStopChild.HasExited){try{$preStopChild.Kill();[void]$preStopChild.WaitForExit(5000)}catch{}}
     $preStopChild.Dispose()
+  }
+  if($preStopHandle -and $preStopHandle -ne [IntPtr]::Zero){
+    [void][C545DPreStopNativeExit]::CloseHandle($preStopHandle)
+    $preStopHandle=[IntPtr]::Zero
   }
   if($child){
     if(-not $child.HasExited){try{$child.Kill();[void]$child.WaitForExit(5000)}catch{}}
