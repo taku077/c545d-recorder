@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `fa0b74764c126ffc085a8bc2cefbf5b95287d069`
-- **PR updated at (UTC):** `2026-11-21T15:07:04Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/fa0b74764c126ffc085a8bc2cefbf5b95287d069/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3917a774415597a18474d288215dda742bdb16a8`
+- **PR updated at (UTC):** `2026-11-21T15:12:49Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3917a774415597a18474d288215dda742bdb16a8/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44917458982](https://github.com/taku077/c545d-recorder/actions/runs/44917458982) |
+| C545D active development handoff auto-refresh | in_progress | [#44917979543](https://github.com/taku077/c545d-recorder/actions/runs/44917979543) |
+| C545D native Win32 path plus event-safe DisplayName cache SDK dual AV MP4 EOS CI | in_progress | [#44917976990](https://github.com/taku077/c545d-recorder/actions/runs/44917976990) |
 
 ## Current development findings from the active PR
 
