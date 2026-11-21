@@ -31,23 +31,30 @@ DLLs, run the candidate, or upload video/credentials.**
    true loaded-GIO module path, ownership marker, link/reparse refusal,
    failure cleanup, environment-variable restoration, and safe child exit.
    A created ZIP alone is not host approval.
-3. The future-only launcher remains **camera-free**. The production source
-   mirror plus private output-folder static gate passed Windows CI #44873653092.
-   The NEXT isolated integration gate has also passed: Windows Server 2022
-   [real SDK CI #44874736247](https://github.com/taku077/c545d-recorder/actions/runs/44874736247)
-   used the exact official pinned GStreamer MSVC1.28.8 SDK, staged real
-   GStreamer executables and pinned candidate GIO in the SAME private bin
-   as the cloned production source, observed the actual loaded candidate
-   GIO module for synthetic WAV, produced and independently decoded **five**
-   shorter synthetic dual RTP H264/AAC MP4 fragments, and cleaned its owned
-   private stage. Details: [real SDK source-mirror gate](C545D_PRODUCTION_MIRROR_REAL_SDK_CI_GATE.md).
-   **Neither CI executes the mirrored Record.ps1, authenticates camera RTSP
-   nor verifies the true 3,600-second boundary.** Next qualify a genuine
-   synthetic local RTSP endpoint and a safe private configuration/metrics
-   harness before considering a user-host session. Never change the user's
-   installed SDK DLLs, registry, original Record.ps1 or active recording.
-   If offline source/runtime equivalence cannot be shown, do not request
-   host testing.
+3. The future-only launcher remains **camera-free** and NOT APPROVED.
+   Three **distinct** Windows2022 CI gates are now qualified:
+   (a) [#44874736247 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44874736247)
+       actual official MSVC SDK, pinned candidate GIO module observed, private
+       source mirror and five shortened synthetic dual RTP H264/AAC MP4 fragments
+       independently decoded and rolled back;
+   (b) [#44878301067 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44878301067)
+       genuine localhost-only dual 127.0.0.1:554 /stream1 and /stream6 RTSP
+       TCP media, two synthetic H264 and two PCMA 8kHz tracks all decoded;
+   (c) [#44879915942 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44879915942)
+       the actual cloned production Record.ps1 executed in Windows PowerShell5.1
+       with isolated dummy LOCALAPPDATA/DPAPI and a pre-existing STOP marker,
+       passed original GStreamer startup and graph validation then exited
+       WITHOUT any RTSP launch or MP4 creation, with all originals untouched.
+   These gates do not yet prove an IN-FLIGHT recording by actual Record.ps1
+   with both synthetic RTSP streams, safe Ctrl+C/EOS/GUI stop, reconnect and
+   finalized MP4. Next AI-only: integrate the already-qualified localhost
+   source server with the exact recorder mirror, verify it can start and stop
+   safely and inspect MP4 and CPU/PrivateUsage/handles automatically. No
+   original source or user-installed SDK/registry is to be altered.
+   The 3600s actual MP4 boundary and real Tapo clocks/credentials still
+   require separately approved host verification only after AI gates.
+   Supporting records: [real SDK/recorder pre-stop](C545D_PRODUCTION_MIRROR_REAL_SDK_CI_GATE.md)
+   and [synthetic RTSP CI](C545D_SYNTHETIC_LOOPBACK_RTSP_CI_GATE.md).
 4. Prepare a single self-contained, supervised test script which verifies
    preconditions, collects already-identified metrics automatically,
    preserves any test outputs only in a user-owned private location,
