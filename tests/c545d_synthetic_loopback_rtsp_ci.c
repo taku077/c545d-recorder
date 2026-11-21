@@ -7,6 +7,7 @@
 #include <gst/gst.h>
 #include <gst/rtsp-server/rtsp-server.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -68,16 +69,16 @@ run_server(void)
     "! x264enc speed-preset=ultrafast tune=zerolatency key-int-max=30 "
     "! h264parse ! rtph264pay config-interval=1 pt=96 name=pay0 "
     "audiotestsrc is-live=true wave=sine "
-    "! audio/x-raw,rate=48000,channels=1 "
-    "! audioconvert ! alawenc ! rtppcmapay pt=97 name=pay1 )");
+    "! audio/x-raw,rate=8000,channels=1 "
+    "! audioconvert ! alawenc ! rtppcmapay pt=8 name=pay1 )");
   gst_rtsp_media_factory_set_launch(tele,
     "( videotestsrc is-live=true pattern=ball "
     "! video/x-raw,format=I420,width=1280,height=720,framerate=15/1 "
     "! x264enc speed-preset=ultrafast tune=zerolatency key-int-max=30 "
     "! h264parse ! rtph264pay config-interval=1 pt=96 name=pay0 "
     "audiotestsrc is-live=true wave=sine "
-    "! audio/x-raw,rate=48000,channels=1 "
-    "! audioconvert ! alawenc ! rtppcmapay pt=97 name=pay1 )");
+    "! audio/x-raw,rate=8000,channels=1 "
+    "! audioconvert ! alawenc ! rtppcmapay pt=8 name=pay1 )");
   gst_rtsp_media_factory_set_shared(wide, TRUE);
   gst_rtsp_media_factory_set_shared(tele, TRUE);
   gst_rtsp_mount_points_add_factory(mounts, "/stream1", wide);
@@ -176,6 +177,11 @@ run_client(void)
 int
 main(int argc, char **argv)
 {
+  /* A test-only binary must refuse all non-CI hosts before Gst startup. */
+  const char *ci = getenv("GITHUB_ACTIONS");
+  const char *os = getenv("RUNNER_OS");
+  if (!ci || !os || strcmp(ci, "true") != 0 ||
+      strcmp(os, "Windows") != 0) return 3;
   gst_init(&argc, &argv);
   if (argc != 2) return 3;
   if (strcmp(argv[1], "server") == 0) return run_server();
