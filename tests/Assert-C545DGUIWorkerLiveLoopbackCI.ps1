@@ -477,7 +477,6 @@ try {
     }
   }
   foreach($f in $outFiles){
-    $f=$outFiles[0]
     if($f.Length -lt 30000){throw 'MP4_TOO_SMALL'}
     $uri=([Uri]$f.FullName).AbsoluteUri
     $info=(& (Join-Path $bin 'gst-discoverer-1.0.exe') -v $uri 2>&1 | Out-String)
