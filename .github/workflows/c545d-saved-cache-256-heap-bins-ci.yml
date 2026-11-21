@@ -1,0 +1,55 @@
+name: C545D archived 256-cycle DisplayName cache exact-bin comparison (no rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_saved_cache_bins256.py'
+      - '.github/workflows/c545d-saved-cache-256-heap-bins-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-three-run-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44533452892
+          repository: taku077/c545d-recorder
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: saved/44533452892
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44537371920
+          repository: taku077/c545d-recorder
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: saved/44537371920
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44545844200
+          repository: taku077/c545d-recorder
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: saved/44545844200
+      - name: Evaluate saved numeric-only exact-size trajectories without any Windows runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_saved_cache_bins256.py --selftest
+          python tests/analyze_gio_saved_cache_bins256.py --root saved | tee artifacts/numeric/cache_bin256.txt
+          grep -qx 'C545D_SAVED_CACHE_BIN256_PASS,archived_windows_runs=3,arms=2,modes=2,sizes=6,new_windows_runs=0,cache_not_release_safe=1,zero_leak_proven=0,host_install_approved=0' artifacts/numeric/cache_bin256.txt
+          test "$(grep -c '^C545D_SAVED_CACHE_BIN256,' artifacts/numeric/cache_bin256.txt)" -eq 36
+          echo 'C545D_SAVED_CACHE_BIN256_AUDIT_PASS,saved_windows_runs=3,new_windows_runs=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-cache256-bins-190-194-196
+          path: artifacts/numeric/cache_bin256.txt
+          retention-days: 7
+          if-no-files-found: error
