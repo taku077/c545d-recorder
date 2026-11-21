@@ -1,5 +1,13 @@
 # CI-only GUI worker Ctrl+C EOS integration gate — Tapo C545D
 
+## UPDATE 2026-11-21 JST — GUI namer source-order regression and four MP4 event-watcher integration CI PASS
+
+- **[Windows Server2022 CI #44888137287 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44888137287)**, job136797825899, numeric artifact14700537051. Added a pre-SDK-source-parse/order regression gate in [workflow commit 97b7d801](https://github.com/taku077/c545d-recorder/commit/97b7d8015f231b17de5089acfda1fdbfd586a6bd). It requires the unmodified `C545D_App.ps1` record-start callback to execute `[void](Wait-C545DNamerReady)` before launching `RecordGUIWorker.ps1`, and retains the original watcher Created/Renamed event subscriptions, readiness marker, pending shutdown drain and exclusive file-open gate. Logged `C545D_GUI_NAMER_WIRING_SOURCE_CI_PASS,gui_wait_before_record=1,created_event=1,renamed_event=1,ready_marker=1,shutdown_drain=1,exclusive_lock_gate=1,production_sources_unchanged=1,real_camera=0`.
+- This SAME CI also passed the real original GUI worker / dual localhost synthetic RTSP, private CI-only 8-second splitmux mirror with **4 H264/AAC independently decoded MP4 fragments totaling 9,484,934 bytes**, actual STOP-before-private-console Ctrl+C, EOS, gst exit0, STOP without RECONNECT, and fully cleared staged gst processes; STOP-to-worker complete **997ms**. It again passed real original `SegmentNamerWorker.ps1`/`SegmentNamer.ps1` isolated event-watcher gate: `ready=1,locked_deferred=1,renamed=4,mp4_hashes_intact=1,manual_preserved=1,clean_exit=1,source_unchanged=1,reason=PASS`. Four closed MP4 fixture copies were renamed only after release of the first exclusive lock; sources and host unchanged.
+- Process snapshot over only 24s post-warmup: accelerated CI gst PrivateMemorySize64 **411,897,856→411,746,304 B (−151,552 B)**, total gst handles **767→734 (−33)**, CPU time delta 20,891ms over the nominal 31s test. These short samples are NOT Key-subtype, 1h, 24×365 or proof of zero residual growth.
+- **Precisely scoped**: the GUI namer startup ordering check is a **source-level regression assertion**, not a WinForms user-click execution test; the genuine watcher processed **disposable copies after recording**, not concurrently named live production outputs. The real 3,600-second split, Windows10 Tapo two-camera sync, continuous naming timing, sustained CPU/PrivateUsage/Key and actual Win10 candidate test remain unverified. No new user action, no production installation approval, GIO rollout HOLD.
+
+
 
 ## UPDATE 2026-11-21 JST — real unmodified SegmentNamerWorker event/lock safety CI PASS
 
