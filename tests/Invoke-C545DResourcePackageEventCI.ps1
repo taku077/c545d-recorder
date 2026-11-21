@@ -9,8 +9,12 @@ param([Parameter(Mandatory=$true)][string]$WatchDll,
       [Parameter(Mandatory=$true)][string]$StubExe,
       [string]$GioScanDll='',
       [switch]$AssertLocalizedDisplayName,
+      [switch]$ReverseResourceLanguage,
       [string]$LocalizedProbeExe='')
 $ErrorActionPreference='Stop'
+if($ReverseResourceLanguage -and (-not $AssertLocalizedDisplayName)) {
+  throw 'C545D_RESOURCE_REVERSE_MODE_REQUIRES_LOCALIZED_VALUE_ASSERTION'
+}
 if($AssertLocalizedDisplayName -and (-not $LocalizedProbeExe -or -not(Test-Path -LiteralPath $LocalizedProbeExe))){
   throw 'C545D_RESOURCE_LOCALIZED_TEST_REQUIRES_NATIVE_DISPLAY_PROBE'
 }
@@ -84,40 +88,46 @@ try {
   $resMsix=Join-Path $root 'resource.msix'
   $mainArgs=@('tests/make_c545d_ci_package_fixture.py','--out',$mainDir,'--stub',$StubExe,'--version','1.0.0.0')
   if($AssertLocalizedDisplayName){$mainArgs+='--localized-display-name'}
+  if($ReverseResourceLanguage){$mainArgs+=@('--base-language','fr-fr')}
   & py @mainArgs
   Checked 'main_fixture'
-  & py tests/make_c545d_ci_resource_package_fixture.py --out $resDir --main-layout $mainDir
+  $resLanguage=if($ReverseResourceLanguage){'en-us'}else{'fr-fr'}
+  $baseLanguage=if($ReverseResourceLanguage){'fr-fr'}else{'en-us'}
+  $resourceId=if($ReverseResourceLanguage){'English'}else{'French'}
+  $resourceArgs=@('tests/make_c545d_ci_resource_package_fixture.py',
+                  '--out',$resDir,'--main-layout',$mainDir,'--resource-language',$resLanguage)
+  & py @resourceArgs
   Checked 'resource_fixture'
   # Windows requires a valid base PRI before merging a resource pack PRI.
-  # Create the same key in the parent en-US and in the fr-FR pack.
+  # Create the same key in the parent base PRI and in the reverse-language resource PRI.
   $pri=Tool 'MakePri.exe'
-  $strings=Join-Path $mainDir 'Strings\en-us'
+  $strings=Join-Path $mainDir ('Strings\'+$baseLanguage)
   New-Item -ItemType Directory -Force -Path $strings | Out-Null
   @'
 <?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="C545DResourceProbe" xml:space="preserve">
-    <value>English synthetic resource value</value>
+    <value>__BASE_VALUE__ synthetic resource value</value>
   </data>
 </root>
-'@ | Set-Content -LiteralPath (Join-Path $strings 'Resources.resw') -Encoding utf8
+'@.Replace('__BASE_VALUE__',$(if($ReverseResourceLanguage){'French'}else{'English'})) | Set-Content -LiteralPath (Join-Path $strings 'Resources.resw') -Encoding utf8
   $mainCfg=Join-Path $mainDir 'priconfig.xml'
   $resCfg=Join-Path $resDir 'priconfig.xml'
   $mainPri=Join-Path $mainDir 'resources.pri'
   $resPri=Join-Path $resDir 'resources.pri'
-  & $pri createconfig /cf $mainCfg /dq en-US /o
+  & $pri createconfig /cf $mainCfg /dq $baseLanguage /o
   Checked 'main_pri_config'
   & $pri new /pr $mainDir /cf $mainCfg /mn (Join-Path $mainDir 'AppxManifest.xml') /of $mainPri /o
   Checked 'main_pri_index'
-  & $pri createconfig /cf $resCfg /dq fr-FR /o
+  & $pri createconfig /cf $resCfg /dq $resLanguage /o
   Checked 'resource_pri_config'
   # ResourcePack may only index additional variants of names already in
   # the parent PRI. Keep unrelated PNG/TXT payload out of MakePri's input,
   # although MakeAppx will still package them from the mapping separately.
-  $indexOnly=Join-Path $root 'fr-index-only'
-  $indexStrings=Join-Path $indexOnly 'Strings\fr-fr'
+  $indexOnly=Join-Path $root ($resLanguage+'-index-only')
+  $indexStrings=Join-Path $indexOnly ('Strings\'+$resLanguage)
   New-Item -ItemType Directory -Path $indexStrings -Force | Out-Null
-  Copy-Item -LiteralPath (Join-Path $resDir 'Strings\fr-fr\Resources.resw') -Destination $indexStrings
+  Copy-Item -LiteralPath (Join-Path $resDir ('Strings\'+$resLanguage+'\Resources.resw')) -Destination $indexStrings
   & $pri resourcepack /pr $indexOnly /cf $resCfg /if $mainPri /of $resPri /o
   Checked 'resource_pri_index'
   if(-not (Test-Path $mainPri) -or -not (Test-Path $resPri)){
@@ -194,7 +204,8 @@ public static class C545DResourceGio {
   if($g1 -le $g0){throw 'C545D_RESOURCE_CI_MAIN_EVENT_MISSING'}
   [UInt64]$s1=Status
   if($AssertLocalizedDisplayName){
-    & $LocalizedProbeExe $installedParent main_add
+    if($ReverseResourceLanguage){ & $LocalizedProbeExe $installedParent main_add reverse }
+    else { & $LocalizedProbeExe $installedParent main_add }
     Checked 'localized_main_baseline'
   }
   if($gioStarted){
@@ -208,14 +219,15 @@ public static class C545DResourceGio {
     throw 'C545D_RESOURCE_CI_PARENT_FULLNAME_CHANGED'
   }
   $resource=@(Get-AppxPackage -Name $name -PackageTypeFilter Resource -ErrorAction Stop |
-              Where-Object {$_.ResourceId -eq 'French'})
+              Where-Object {$_.ResourceId -eq $resourceId})
   if($resource.Count -ne 1){throw "C545D_RESOURCE_CI_RESOURCE_MISSING=$($resource.Count)"}
   $resourceFullName=$resource[0].PackageFullName
   [UInt64]$g2=Await $g1
   [UInt64]$s2=Status
   $c2=Completion
   if($AssertLocalizedDisplayName){
-    & $LocalizedProbeExe $installedParent resource_add
+    if($ReverseResourceLanguage){ & $LocalizedProbeExe $installedParent resource_add reverse }
+    else { & $LocalizedProbeExe $installedParent resource_add }
     Checked 'localized_resource_add'
   }
   if($gioStarted){
@@ -229,7 +241,8 @@ public static class C545DResourceGio {
   [UInt64]$s3=Status
   $c3=Completion
   if($AssertLocalizedDisplayName){
-    & $LocalizedProbeExe $installedParent resource_remove
+    if($ReverseResourceLanguage){ & $LocalizedProbeExe $installedParent resource_remove reverse }
+    else { & $LocalizedProbeExe $installedParent resource_remove }
     Checked 'localized_resource_remove'
   }
   if($gioStarted){
