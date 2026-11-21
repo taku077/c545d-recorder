@@ -136,7 +136,8 @@ jobs:
           # count, with the real worker's exit code for correlation.
           foreach($row in $rows){
             if(([string]$row) -cmatch '^C545D_GUI_CONSOLE_HANDLER_STAGE,events_at_gst_return=-?[0-9]+,events_pending_after_record=-?[0-9]+,worker_exit=-?[0-9]+,real_camera=0$' -or
-               ([string]$row) -cmatch '^C545D_GUI_CI_STAGE_CLEANUP,removed=[01],retries=[0-9]+,real_camera=0$'){
+               ([string]$row) -cmatch '^C545D_GUI_CI_STAGE_CLEANUP,removed=[01],retries=[0-9]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_NAMER_PROCESS_STAGE,owned=1,process_exited=1,exit_code=-?[0-9]+,ready_removed=1,real_camera=0$'){
               Write-Host $row
             }
           }
