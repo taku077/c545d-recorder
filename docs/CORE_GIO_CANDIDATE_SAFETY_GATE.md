@@ -1,5 +1,17 @@
 # C545D core GIO MSVC candidate — release safety gate (DRAFT, NOT FOR INSTALL)
 
+## STATUS 2026-11-22 JST — quantitative interpretation, NOT direct end-to-end leak percentage
+
+The *original SDK versus patched core* Windows2022 **matched 64-cycle** resource comparison [#44907202861 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44907202861) measured control-adjusted PrivateUsage **official +91,656,192 B**, **core +1,458,176 B**, a **98.4091%** reduction for that isolated GAppInfo workload. Registry Key effect **official +20,932**, core **+2**. Other runs' baselines may vary.
+
+A *separate* official-SDK-linked Windows2022 **same-run core versus full native+DisplayName-cache combo** [#44917394190 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44917394190) measured **core +1,495,040 B**, combo **+262,144 B**, a further **82.466% reduction relative to that run's core**, with HeapWalk BUSY **+569,202 -> -25,654 B**, Key **+2 -> -1**, and total handles **+30 -> -2** (each registry minus nochange). **Do not multiply 98.4091% and 82.466% or claim a direct current-combo versus untouched-official percentage:** the tests used different Windows runners/dates/source compositions. Neither metric is sustained recording-process PrivateUsage growth.
+
+For this *specific MSVC full combo*, **+262,144 B positive control-adjusted settled PrivateUsage remains** at 64 cycles, but **HeapWalk BUSY at cycle64 is negative relative to control**. This can reflect allocator page retention, cache lifetime or unresolved growth; no allocation-stack owner or plateau is established from one finite comparison. Previous *distinct* 256-cycle MSYS2 cache experiment had late 360-byte bin count +8 over the last 64 cycles even with cache. **Current 256-cycle full MSVC combo [#44918598339](https://github.com/taku077/c545d-recorder/actions/runs/44918598339) was still in progress when checked, so its late-tail numeric effect is unknown.** Use the saved numeric artifact reanalysis rather than repeat the Windows run if the original analyzer rejects valid per-cycle samples.
+
+**NO RELEASE:** all are synthetic app-info/media Windows2022 CI, not Windows10 Japanese Tapo 24×365. No host GIO DLL deployed. The core recorder configuration, 2×RTSP, x264 medium QP24, avdec_h264, AAC and 3600s MP4 split remain unchanged. User action none; `install_approved=0`.
+
+
+
 ## UPDATE 2026-11-22 JST — combined GIO 2xH264/AAC splitmux/EOS PASS; 256-cycle late residual CI STARTED
 
 - **MEDIA ACTUAL SUCCESS:** [Windows2022 official SDK synthetic media #44917976990 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44917976990), exact tested source [3917a77](https://github.com/taku077/c545d-recorder/commit/3917a774415597a18474d288215dda742bdb16a8), sanitized metadata artifact `14712980658`. Native Win32 package path successes **32**, fallback0, mismatch0; dedicated PackageCatalog bridge `scans=1,injections=0,evictions=0,errors=0,ready=1`; official GStreamer1.28.8 SDK GIO exported **2047**, candidate **2047**, missing0. Synthetic two RTP/H264 `avdec_h264` composited left black/right white `2560x720@15`, encoded x264 medium QP24, mono AAC48kHz (192kbps setting), MP4 finalization PASS; actual pixels left_mean0/right_mean253. Reference SDK 5 decodable AV segments **6.231s**, combined candidate 5 decodable AV segments **6.221s**, EOS PASS, no recording host or real camera. Does NOT certify 3600s split/camera audio sync, nor long-term resource slope.
