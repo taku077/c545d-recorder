@@ -38,4 +38,7 @@ jobs:
           test "$(grep -c '^C545D_SAVED256_MONITOR_ALIGNMENT,' /tmp/c545d_saved256_steps.txt)" -eq 16
           test "$(grep -c '^C545D_SAVED256_COUNTER_SCOPE,' /tmp/c545d_saved256_steps.txt)" -eq 2
           grep -Fx 'C545D_SAVED256_MONITOR_ALIGNMENT_PASS,source_run=44918598339,arms=4,windows=4,windows_checked=16,combo_counters=2,new_windows_runs=0,notifications_are_not_alloc_stacks=1,real_device_untested=1' /tmp/c545d_saved256_steps.txt
+          test "$(grep -c '^C545D_SAVED256_CACHE_REBUILD,' /tmp/c545d_saved256_steps.txt)" -eq 2
+          test "$(grep -c '^C545D_SAVED256_CLEANUP_RESOURCE,' /tmp/c545d_saved256_steps.txt)" -eq 4
+          grep -Fx 'C545D_SAVED256_CACHE_REBUILD_PASS,source_run=44918598339,snapshot_order_preserved=1,registry_scans=258,nochange_scans=1,displayname_cache_entries_stay_32=1,allocation_owner_proven=0,new_windows_runs=0' /tmp/c545d_saved256_steps.txt
           echo 'C545D_SAVED256_STEP_CI_PASS,original_windows_run=44918598339,new_windows_runs=0,host_modified=0'
