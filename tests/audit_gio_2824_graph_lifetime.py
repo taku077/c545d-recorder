@@ -95,8 +95,6 @@ def audit(original: str, weak: str, package: str, balanced: str) -> list[str]:
             raise ValueError(f"{name}: root destroy/rebuild missing")
         if rebuild.index(dispose) > new.start():
             raise ValueError(f"{name}: old root overwritten before release")
-    if not order:
-        raise AssertionError("unreachable")
     order(rebuild, "uwp_handler_table =", "g_win32_package_parser_enum_packages",
           "read_uwp_handler_info ();", "g_hash_table_unref (uwp_handler_table);")
     if rebuild.count("g_hash_table_unref (uwp_handler_table);") != 1:
@@ -160,8 +158,8 @@ def audit(original: str, weak: str, package: str, balanced: str) -> list[str]:
     if balanced.count("c545d_ci_com_init_result == S_OK") != 1 or (
             balanced.count("c545d_ci_com_init_result == S_FALSE") != 1):
         raise ValueError("candidate missed S_OK/S_FALSE balance")
-    if "  CoUninitialize ();" in section(
-            balanced, "  cleanup:", "  return result;"):
+    if re.search(r"(?m)^  CoUninitialize \(\);$", section(
+            balanced, "  cleanup:", "  return result;")):
         raise ValueError("candidate still contains unconditional COM uninit")
     if "    CoUninitialize ();" not in balanced:
         raise ValueError("guarded CoUninitialize missing")
