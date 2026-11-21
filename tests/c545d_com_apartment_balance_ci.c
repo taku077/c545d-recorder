@@ -39,7 +39,8 @@ static DWORD WINAPI run_scenario(LPVOID ctx) {
         }
         /* Candidate guard MUST balance even S_FALSE. */
         if (second == S_OK || second == S_FALSE) CoUninitialize();
-        if (!apartment_is(APTTYPE_STA)) {
+        /* The first STA initialized in a process may be MAINSTA, not STA. */
+        if (!apartment_is(APTTYPE_STA) && !apartment_is(APTTYPE_MAINSTA)) {
             CoUninitialize();
             return 12;
         }
