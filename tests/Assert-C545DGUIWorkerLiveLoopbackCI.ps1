@@ -227,7 +227,7 @@ try {
     [Environment]::SetEnvironmentVariable('PSModulePath',$previousModulePath,'Process')
   }
   $readySeen=$false
-  for($i=0;$i -lt 1150;$i++){
+  for($i=0;$i -lt 300;$i++){
     Start-Sleep -Milliseconds 100
     if($worker.HasExited){break}
     if(Test-Path -LiteralPath $ready){
@@ -264,9 +264,28 @@ try {
       @(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue).Count
     }else{0}
     $workerCpuMs=if(-not $worker.HasExited){[int]$worker.TotalProcessorTime.TotalMilliseconds}else{0}
+    $readyCandidates=@(Get-ChildItem -LiteralPath $control -Filter 'session_*.ready' -File -ErrorAction SilentlyContinue)
+    $readyCandidatesCount=$readyCandidates.Count
+    $readyCandidatePidMatch=0
+    $readyCandidateNameMatch=0
+    foreach($candidate in $readyCandidates){
+      if($candidate.Name -ceq [IO.Path]::GetFileName($ready)){$readyCandidateNameMatch=1}
+      if([IO.File]::ReadAllText($candidate.FullName).Trim() -ceq [string]$worker.Id){
+        $readyCandidatePidMatch=1
+      }
+    }
+    $logText=''
+    if($logCount -eq 1){
+      $transcript=(Get-ChildItem -LiteralPath $transcriptFolder -Filter 'Recording_*.txt' -File | Select-Object -First 1).FullName
+      $logText=[IO.File]::ReadAllText($transcript)
+    }
+    $logSessionMatches=[int]$logText.Contains(('stop session='+$session))
+    $logWorkerPidMatches=[int]$logText.Contains(('Worker initialized. PID='+$worker.Id))
+    $logHasRecording=[int]$logText.Contains('GStreamer launching (EOS enabled)')
+    $logReturned=[int]$logText.Contains('Record.ps1 returned; stopMarker=')
     $exited=[int]$worker.HasExited
     $exitNumber=if($worker.HasExited){[int]$worker.ExitCode}else{-999}
-    Write-Output "C545D_GUI_BOOTSTRAP_DIAG,phase=$phaseValue,worker_exited=$exited,worker_exit=$exitNumber,dummy_secret_exists=$existsSecret,ready_exists=$existsReady,control_dir_exists=$controlExists,transcript_count=$logCount,mp4_count=$privateFiles,worker_cpu_ms=$workerCpuMs,real_camera=0"
+    Write-Output "C545D_GUI_BOOTSTRAP_DIAG,phase=$phaseValue,worker_exited=$exited,worker_exit=$exitNumber,dummy_secret_exists=$existsSecret,ready_exists=$existsReady,control_dir_exists=$controlExists,transcript_count=$logCount,mp4_count=$privateFiles,worker_cpu_ms=$workerCpuMs,ready_candidate_count=$readyCandidatesCount,ready_candidate_pid_match=$readyCandidatePidMatch,ready_candidate_name_match=$readyCandidateNameMatch,log_worker_pid_match=$logWorkerPidMatches,log_session_match=$logSessionMatches,log_has_recording=$logHasRecording,log_returned=$logReturned,real_camera=0"
     throw 'REAL_GUI_WORKER_NOT_READY'
   }
   $phase='TWO_MEDIA_MOUNTS'
