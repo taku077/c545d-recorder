@@ -5,13 +5,15 @@
  two synthetic RTSP streams play. Send durable STOP marker THEN CTRL_C_EVENT
  only when the console contains exclusively our worker, gst-launch, sender.
  No camera, user PC, host DLL changes, credentials or registry modifications.
- This verifies GUI-style console stop, not full Win10/Tapo or 3600s split.
+ Optional CI-only eight-second split exercises multiple finalized MP4 fragments,
+ NOT the actual 3600s boundary. Source equivalence applies only in default mode.
 #>
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$SdkRoot,
   [Parameter(Mandatory=$true)][string]$CandidateDll,
-  [Parameter(Mandatory=$true)][string]$ReferenceManifest
+  [Parameter(Mandatory=$true)][string]$ReferenceManifest,
+  [ValidateSet(0,8)][int]$CiSplitSeconds=0
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -90,6 +92,26 @@ try {
       ('$bin = [IO.Path]::GetFullPath('''+$bin.Replace("'","''")+''')'))
   if([IO.File]::ReadAllText((Join-Path $stage 'Record.ps1')) -cne $expected){
     throw 'RECORDER_MIRROR_NOT_EXACT'
+  }
+  # Explicit opt-in, CI-ONLY accelerated segment test. The original mirror
+  # has already passed exact one-statement equivalence. Modify ONLY a private
+  # disposable clone and require a byte-for-byte reversible single token.
+  if($CiSplitSeconds -eq 8){
+    $recorderMirror=Join-Path $stage 'Record.ps1'
+    $originalMirror=[IO.File]::ReadAllText($recorderMirror)
+    $beforeToken="'max-size-time=3600000000000'"
+    $afterToken="'max-size-time=8000000000'"
+    if([regex]::Matches($originalMirror,[regex]::Escape($beforeToken)).Count -ne 1){
+      throw 'CI_SPLIT_ANCHOR_NOT_UNIQUE'
+    }
+    $shortMirror=$originalMirror.Replace($beforeToken,$afterToken)
+    if($shortMirror.Replace($afterToken,$beforeToken) -cne $expected){
+      throw 'CI_SPLIT_MIRROR_NOT_REVERSIBLE'
+    }
+    $tok=$null;$parseErr=$null
+    [void][Management.Automation.Language.Parser]::ParseInput($shortMirror,[ref]$tok,[ref]$parseErr)
+    if($parseErr.Count -ne 0){throw 'CI_SPLIT_SOURCE_SYNTAX'}
+    [IO.File]::WriteAllText($recorderMirror,$shortMirror,(New-Object System.Text.UTF8Encoding($false)))
   }
   # The actual GUI worker source is copied byte-for-byte, not patched.
   Copy-Item -LiteralPath $workerSource -Destination (Join-Path $stage 'RecordGUIWorker.ps1')
@@ -412,7 +434,8 @@ try {
   $markerAtReturn=[int]($nativeMatches.Count -gt 0 -and $nativeMatches[$nativeMatches.Count-1].Groups[2].Value -ceq 'True')
   $mp4=@(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue)
   $filesCount=$mp4.Count
-  $mp4Bytes=if($filesCount -eq 1){[long]$mp4[0].Length}else{0}
+  $mp4Bytes=if($filesCount -gt 0){[long](($mp4|Measure-Object -Property Length -Sum).Sum)}else{0}
+  $mp4CountOk=if($CiSplitSeconds -eq 8){$filesCount -ge 3 -and $filesCount -le 8}else{$filesCount -eq 1}
   $stopExists=[int](Test-Path -LiteralPath $stop)
   $readyRemoved=[int](-not (Test-Path -LiteralPath $ready))
   $launchCount=[regex]::Matches($text,'GStreamer launching \(EOS enabled\); attempt=').Count
@@ -422,7 +445,7 @@ try {
      $markerAtReturn -ne 1 -or $nativeExit -ne 0 -or
      $policyStop -ne 1 -or $unexpectedReconnect -ne 0 -or
      $eosObserved -ne 1 -or $returned -ne 1 -or
-     $filesCount -ne 1 -or $mp4Bytes -lt 30000 -or
+     -not $mp4CountOk -or $mp4Bytes -lt 30000 -or
      $stopExists -ne 1 -or $readyRemoved -ne 1){
     throw 'GUI_REAL_WORKER_STOP_POLICY_FAILED'
   }
@@ -440,26 +463,41 @@ try {
   Write-Output "C545D_GUI_RESOURCE_STAGE,samples=11,nominal_total_s=31,steady_window_s=24,worker_private_first_b=$($resourceFirst.worker_private_b),worker_private_last_b=$($resourceLast.worker_private_b),worker_handles_first=$($resourceFirst.worker_handles),worker_handles_last=$($resourceLast.worker_handles),gst_private_first_b=$($resourceFirst.gst_private_b),gst_private_steady_first_b=$($resourceSteadyFirst.gst_private_b),gst_private_last_b=$($resourceLast.gst_private_b),gst_handles_first=$($resourceFirst.gst_handles),gst_handles_steady_first=$($resourceSteadyFirst.gst_handles),gst_handles_last=$($resourceLast.gst_handles),gst_cpu_delta_ms=$cpuDeltaMs,gio_stage_module_observed=$gioStageModuleObserved,gio_module_query_error=$gioModuleQueryError,staged_gst_remaining=0,real_camera=0"
   $outFiles=$mp4
   $phase='MP4_VERIFY'
-  $f=$outFiles[0]
-  if($f.Length -lt 30000){throw 'MP4_TOO_SMALL'}
-  $uri=([Uri]$f.FullName).AbsoluteUri
-  $info=(& (Join-Path $bin 'gst-discoverer-1.0.exe') -v $uri 2>&1 | Out-String)
-  if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DISCOVER_FAILED'}
-  foreach($term in @('(?i)h\.?264|video/x-h264','(?i)aac|audio/mpeg',
-      '(?i)width:\s*2560','(?i)height:\s*720',
-      '(?i)(frame rate|framerate):\s*15/1',
-      '(?i)(sample rate|rate):\s*48000',
-      '(?i)channels:\s*1\b')){
-    if($info -notmatch $term){throw 'LIVE_MP4_CAPS_INVALID'}
+  # Every accelerated fragment must be independently finalized and decodable.
+  # Confirm splitmux numeric suffixes 00000..N without gaps or duplicates.
+  if($CiSplitSeconds -eq 8){
+    $indices=@()
+    foreach($f in $outFiles){
+      if($f.Name -cnotmatch '_([0-9]{5})\.mp4$'){throw 'CI_SPLIT_FILENAME_INVALID'}
+      $indices += [int]$Matches[1]
+    }
+    $indices=@($indices | Sort-Object)
+    for($i=0;$i -lt $indices.Count;$i++){
+      if($indices[$i] -ne $i){throw 'CI_SPLIT_SEQUENCE_INVALID'}
+    }
   }
-  $dec=@('-q','filesrc',("location="+$f.FullName.Replace('\','/')),
-      '!','qtdemux','name=d',
-      'd.video_0','!','queue','!','h264parse','!','avdec_h264',
-      '!','fakesink','sync=false',
-      'd.audio_0','!','queue','!','aacparse','!','avdec_aac',
-      '!','fakesink','sync=false')
-  $decodeOutput=@(& (Join-Path $bin 'gst-launch-1.0.exe') @dec 2>&1)
-  if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DECODE_FAILED'}
+  foreach($f in $outFiles){
+    $f=$outFiles[0]
+    if($f.Length -lt 30000){throw 'MP4_TOO_SMALL'}
+    $uri=([Uri]$f.FullName).AbsoluteUri
+    $info=(& (Join-Path $bin 'gst-discoverer-1.0.exe') -v $uri 2>&1 | Out-String)
+    if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DISCOVER_FAILED'}
+    foreach($term in @('(?i)h\.?264|video/x-h264','(?i)aac|audio/mpeg',
+        '(?i)width:\s*2560','(?i)height:\s*720',
+        '(?i)(frame rate|framerate):\s*15/1',
+        '(?i)(sample rate|rate):\s*48000',
+        '(?i)channels:\s*1\b')){
+      if($info -notmatch $term){throw 'LIVE_MP4_CAPS_INVALID'}
+    }
+    $dec=@('-q','filesrc',("location="+$f.FullName.Replace('\','/')),
+        '!','qtdemux','name=d',
+        'd.video_0','!','queue','!','h264parse','!','avdec_h264',
+        '!','fakesink','sync=false',
+        'd.audio_0','!','queue','!','aacparse','!','avdec_aac',
+        '!','fakesink','sync=false')
+    $decodeOutput=@(& (Join-Path $bin 'gst-launch-1.0.exe') @dec 2>&1)
+    if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DECODE_FAILED'}
+  }
   $mp4Decoded=1
   foreach($src in $snapshot.Keys){
     if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $snapshot[$src]){
@@ -481,7 +519,9 @@ try {
     'GUI_REAL_WORKER_STOP_POLICY_FAILED',
     'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
     'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
-    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP')
+    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
+    'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
+    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
   Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
@@ -521,4 +561,8 @@ try {
 if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
   throw 'GUI_CTRL_C_EOS_NOT_QUALIFIED'
 }
-Write-Output 'C545D_GUI_WORKER_REAL_SOURCE_CTRL_C_CI_PASS,original_worker=1,original_recorder_mirror=1,two_local_rtsp=1,gui_ctrlc_event=1,worker_survived=1,gst_eos=1,mp4_h264_aac_decoded=1,owned_rollback=1,real_camera=0,real_hourly_split_tested=0,install_approved=0'
+if($CiSplitSeconds -eq 8){
+  Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
+} else {
+  Write-Output 'C545D_GUI_WORKER_REAL_SOURCE_CTRL_C_CI_PASS,original_worker=1,original_recorder_mirror=1,two_local_rtsp=1,gui_ctrlc_event=1,worker_survived=1,gst_eos=1,mp4_h264_aac_decoded=1,owned_rollback=1,real_camera=0,real_hourly_split_tested=0,install_approved=0'
+}
