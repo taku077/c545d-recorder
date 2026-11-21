@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `dcf28aec2f5735e92e569b173097565034dfd159`
-- **PR updated at (UTC):** `2026-11-21T19:22:16Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/dcf28aec2f5735e92e569b173097565034dfd159/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4985ad101b56e880b44a76a66c1af58bb3a8c4bb`
+- **PR updated at (UTC):** `2026-11-21T19:23:22Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4985ad101b56e880b44a76a66c1af58bb3a8c4bb/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44940581746](https://github.com/taku077/c545d-recorder/actions/runs/44940581746) |
-| C545D archived Windows memory residual late-epoch audit (no rerun) | in_progress | [#44940579269](https://github.com/taku077/c545d-recorder/actions/runs/44940579269) |
+| C545D active development handoff auto-refresh | in_progress | [#44940676249](https://github.com/taku077/c545d-recorder/actions/runs/44940676249) |
+| C545D archived Windows memory residual late-epoch audit (no rerun) | in_progress | [#44940674474](https://github.com/taku077/c545d-recorder/actions/runs/44940674474) |
 
 ## Current development findings from the active PR
 
