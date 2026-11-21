@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/analyze_gio_combo_msvc256_trend.py'
+      - 'tests/audit_gio_2824_registry_apc_cleanup.py'
       - '.github/workflows/c545d-saved256-trend-ci.yml'
   workflow_dispatch:
 permissions:
@@ -20,6 +21,28 @@ jobs:
           set -euo pipefail
           python3 tests/analyze_gio_combo_msvc256_trend.py --selftest
           echo 'C545D_SAVED256_STEP_PREFLIGHT_PASS,windows_runs=0,host_modified=0'
+      - name: Read exact public GNOME GLib 2.82.4 sources for APC/worker audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/c545d_glib_2824
+          curl -fsSL --retry 3 --max-time 30 'https://raw.githubusercontent.com/GNOME/glib/2.82.4/gio/gwin32appinfo.c' -o /tmp/c545d_glib_2824/gwin32appinfo.c
+          curl -fsSL --retry 3 --max-time 30 'https://raw.githubusercontent.com/GNOME/glib/2.82.4/gio/gwin32registrykey.c' -o /tmp/c545d_glib_2824/gwin32registrykey.c
+          test -s /tmp/c545d_glib_2824/gwin32appinfo.c
+          test -s /tmp/c545d_glib_2824/gwin32registrykey.c
+      - name: Fail-closed source-order audit for deferred registry APC cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_gio_2824_registry_apc_cleanup.py --selftest
+          python3 tests/audit_gio_2824_registry_apc_cleanup.py \
+            --appinfo /tmp/c545d_glib_2824/gwin32appinfo.c \
+            --registry /tmp/c545d_glib_2824/gwin32registrykey.c \
+            --probe tests/gio_appinfo_key_handle_probe.c \
+            --monitor-patch tests/patch_glib_appinfo_monitor_worker_diagnostic.py \
+            --workflow .github/workflows/c545d-core-gio-msvc-native-cache-ab256-ci.yml | tee /tmp/c545d_apc_source.txt
+          grep -Fx 'C545D_GIO_APC_SOURCE_AUDIT_PASS,new_windows_runs=0,user_host_modified=0,leak_owner_known=0,release_approved=0' /tmp/c545d_apc_source.txt
+          test "$(grep -c '^C545D_GIO_.*SOURCE_AUDIT,' /tmp/c545d_apc_source.txt)" -eq 4
       - name: Retrieve only original Windows2022 run 44918598339 sanitized NUMERIC archive
         uses: actions/download-artifact@v4
         with:
