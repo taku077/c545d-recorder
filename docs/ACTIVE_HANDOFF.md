@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `237117b05eda9e759fa66885eeaa05d2db8cd25d`
-- **PR updated at (UTC):** `2026-11-21T11:07:15Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/237117b05eda9e759fa66885eeaa05d2db8cd25d/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2bbd62d13867f699b96cab7c4a78463a9811bd9a`
+- **PR updated at (UTC):** `2026-11-21T11:07:24Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2bbd62d13867f699b96cab7c4a78463a9811bd9a/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44897571887](https://github.com/taku077/c545d-recorder/actions/runs/44897571887) |
-| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#44897569991](https://github.com/taku077/c545d-recorder/actions/runs/44897569991) |
+| C545D active development handoff auto-refresh | in_progress | [#44897584145](https://github.com/taku077/c545d-recorder/actions/runs/44897584145) |
+| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#44897581700](https://github.com/taku077/c545d-recorder/actions/runs/44897581700) |
 
 ## Current development findings from the active PR
 
