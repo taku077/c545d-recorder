@@ -32,12 +32,19 @@ DLLs, run the candidate, or upload video/credentials.**
    failure cleanup, environment-variable restoration, and safe child exit.
    A created ZIP alone is not host approval.
 3. The current future-only launcher is **camera-free**; it does not launch
-   production-equivalent 2xRTSP capture. Before live host testing, implement
-   and CI-qualify a separate isolated production-equivalent launch path
-   that does NOT edit the installed GStreamer DLLs, registry or production
-   Record.ps1. It must prove the exact private gst-launch binary + candidate
-   loaded GIO and keep all production video/audio/EOS/segment/file invariants.
-   If equivalence cannot be proven offline, DO NOT request host testing.
+   production-equivalent 2xRTSP capture. CI-only
+   [production source-mirror/isolated output gate](C545D_ISOLATED_PRODUCTION_MIRROR_CI_GATE.md)
+   is now implemented and [Windows CI #44873653092](https://github.com/taku077/c545d-recorder/actions/runs/44873653092)
+   passed: it mirrors all `Record.ps1` text except the one executable-bin
+   assignment and redirects only the *cloned* settings' output folder to an
+   empty private child. This is still a **static/no-execution gate** with
+   non-runnable EXE placeholders, not a finished host runner. Next integrate
+   the exact source mirror with actual official MSVC SDK executables and
+   pinned candidate GIO on disposable Windows2022, verify real loaded DLL
+   identity, synthetic two-video/one-audio MP4/EOS and isolated cleanup.
+   Do NOT edit the user's installed GStreamer DLLs, registry or original
+   Record.ps1. If runtime equivalence cannot be proven offline, DO NOT
+   request host testing.
 4. Prepare a single self-contained, supervised test script which verifies
    preconditions, collects already-identified metrics automatically,
    preserves any test outputs only in a user-owned private location,
