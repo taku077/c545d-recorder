@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | queued | [#44898418053](https://github.com/taku077/c545d-recorder/actions/runs/44898418053) |
+| C545D active development handoff auto-refresh | in_progress | [#44898420262](https://github.com/taku077/c545d-recorder/actions/runs/44898420262) |
+| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#44898418053](https://github.com/taku077/c545d-recorder/actions/runs/44898418053) |
 
 ## Current development findings from the active PR
 
