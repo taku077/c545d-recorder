@@ -15,6 +15,21 @@ MODES = ("core", "combo")
 ARMS = ("nochange", "registry")
 
 
+def require_cache(cache: list[tuple[int, int, int]], arm: str) -> None:
+    """Nochange must populate the cache; registry must actually reuse it.
+
+    A non-mutating control legitimately has zero hits from its only scan.
+    Fail closed if the cache was not populated or grew beyond its hard cap.
+    """
+    if not cache or not any(misses > 0 and 0 < entries <= 1024
+                            for hits, misses, entries in cache):
+        raise ValueError("combined DisplayName cache never populated")
+    if any(entries > 1024 for hits, misses, entries in cache):
+        raise ValueError("combined DisplayName cache exceeded cap")
+    if arm == "registry" and not any(hits > 0 for hits, misses, entries in cache):
+        raise ValueError("combined DisplayName cache not reused in registry arm")
+
+
 def read(root: Path, mode: str, arm: str):
     raw = (root / f"{mode}-{arm}-64.txt").read_text(encoding="utf-8-sig")
     record = parse(raw, arm == "registry")
@@ -45,8 +60,7 @@ def read(root: Path, mode: str, arm: str):
             r"^C545D_WINRT_BRIDGE,scans=(\d+),injections=(\d+),"
             r"evictions=(\d+),errors=(\d+),ready=(\d+)$",
             raw, re.M)]
-        if not cache or max(row[0] for row in cache) <= 0:
-            raise ValueError("combined DisplayName cache not exercised")
+        require_cache(cache, arm)
         if not bridge or not any(row[0] > 0 and row[4] == 1 for row in bridge):
             raise ValueError("native watcher bridge missing/not ready")
         if any(row[3] for row in bridge):
@@ -100,6 +114,18 @@ def analyze(root: Path):
 
 def selftest():
     assert SIZES[-1] == 360 and len(CHECKS) == 7
+    require_cache([(0, 32, 32)], "nochange")
+    require_cache([(0, 32, 32), (2080, 32, 32)], "registry")
+    for bad, arm in (([], "nochange"),
+                     ([(0, 0, 0)], "nochange"),
+                     ([(0, 32, 32)], "registry"),
+                     ([(0, 32, 1025)], "nochange")):
+        try:
+            require_cache(bad, arm)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid cache evidence accepted")
     assert not re.findall(r"^GIO_NATIVE_PATH,(\d+),(\d+),(\d+),(\d+)$",
                           "GIO_NATIVE_PATH,1,0,1,not_numeric", re.M)
     try:
