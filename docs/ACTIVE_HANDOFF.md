@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2a138fe52063147b103e6a05c09e412416d420e6`
-- **PR updated at (UTC):** `2026-11-21T10:45:48Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2a138fe52063147b103e6a05c09e412416d420e6/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a8bc6069373a927dfe6c1d100697aaa96d56aecc`
+- **PR updated at (UTC):** `2026-11-21T10:47:14Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a8bc6069373a927dfe6c1d100697aaa96d56aecc/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44895873502](https://github.com/taku077/c545d-recorder/actions/runs/44895873502) |
-| C545D genuine WinForms button event dispatch (no RTSP CI ONLY) | in_progress | [#44895870962](https://github.com/taku077/c545d-recorder/actions/runs/44895870962) |
+| C545D active development handoff auto-refresh | in_progress | [#44895985081](https://github.com/taku077/c545d-recorder/actions/runs/44895985081) |
 
 ## Current development findings from the active PR
 
