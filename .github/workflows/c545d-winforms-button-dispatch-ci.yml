@@ -1,0 +1,55 @@
+name: C545D genuine WinForms button event dispatch (no RTSP CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-winforms-button-dispatch-ci.yml'
+      - 'tests/Assert-C545DWinFormsButtonDispatchCI.ps1'
+      - 'C545D_App.ps1'
+      - 'CommonSettings.ps1'
+      - 'SegmentNamer.ps1'
+      - 'SegmentNamerWorker.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  private-winforms-click-no-rtsp:
+    runs-on: windows-2022
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original GUI button dispatch and early STOP with CI stub
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=(Resolve-Path tests/Assert-C545DWinFormsButtonDispatchCI.ps1).Path
+          $t=$null;$err=$null
+          [void][Management.Automation.Language.Parser]::ParseFile($src,[ref]$t,[ref]$err)
+          if($err.Count -gt 0){
+            foreach($e in $err){
+              Write-Host "C545D_GUI_EVENT_PARSE_DIAG,line=$($e.Extent.StartLineNumber),id=$($e.ErrorId)"
+            }
+            throw 'GUI CI harness does not parse'
+          }
+          $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $rows=@(& $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $src 2>$null)
+          $expected='C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=1,stop=1,quit=1,namer_ready=1,stub_safe_stop=1,source_unchanged=1,real_rtsp=0,real_camera=0,install_approved=0,reason=PASS'
+          $matches=@($rows|Where-Object {([string]$_) -ceq $expected})
+          if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1){
+            foreach($row in $rows){
+              if(([string]$row) -cmatch '^C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=[01],stop=[01],quit=[01],namer_ready=[01],stub_safe_stop=[01],source_unchanged=[01],real_rtsp=0,real_camera=0,install_approved=0,reason=[A-Z_]+$'){
+                Write-Host $row
+              }
+            }
+            throw 'The actual WinForms event handlers did not pass CI-owned no-RTSP gate'
+          }
+          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
+          $matches[0] | Set-Content artifacts/numeric/winforms_button_dispatch_ci.txt -Encoding ascii
+          Write-Host $matches[0]
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-winforms-button-dispatch-no-rtsp-CI-only
+          path: artifacts/numeric/winforms_button_dispatch_ci.txt
+          if-no-files-found: error
+          retention-days: 7
