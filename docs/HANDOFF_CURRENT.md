@@ -3,7 +3,7 @@
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
 
-### FINAL VERIFIED UPDATE 2026-11-21 JST — actual mirrored Record.ps1 pre-existing stop gate PASS; local dual RTSP and genuine candidate GIO already PASS
+### UPDATE 2026-11-21 JST — FINAL VERIFIED: actual mirrored Record.ps1 pre-existing stop gate PASS, local dual RTSP and candidate GIO PASS
 
 - **AUTHORITATIVE RESUME**: open Draft [PR #62](https://github.com/taku077/c545d-recorder/pull/62) at latest branch HEAD. Check [main ACTIVE_HANDOFF.md](https://github.com/taku077/c545d-recorder/blob/main/docs/ACTIVE_HANDOFF.md) and latest CI, never resume old main-only/PR54 work. No changes to user Windows10 installed GStreamer/registry, active recorder, camera or credentials. User real Win10 official pinned SDK 6 DLL SHA matched 6/6 already; DO NOT ask again.
 - Real pinned candidate SHA256 67b9f7246e4744fef7ee1ead3bed4ce2179c6f0465ec68a92d01dd12b4a3ccad. Prior [real GIO/5 fragment media CI #44874736247 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44874736247), [genuine local dual RTSP H264+PCMA 4-branch CI #44878301067 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44878301067), and fake private LOCALAPPDATA/DPAPI source gate remain valid. RTSP fixture is bound only to 127.0.0.1:554/stream1 and /stream6, with 2 RTP H264 and 2 PCMA audio branches decoded, no camera.
