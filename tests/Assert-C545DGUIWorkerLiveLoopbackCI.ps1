@@ -13,7 +13,8 @@ param(
   [Parameter(Mandatory=$true)][string]$SdkRoot,
   [Parameter(Mandatory=$true)][string]$CandidateDll,
   [Parameter(Mandatory=$true)][string]$ReferenceManifest,
-  [ValidateSet(0,8)][int]$CiSplitSeconds=0
+  [ValidateSet(0,8)][int]$CiSplitSeconds=0,
+  [switch]$CiLiveNamer
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -29,9 +30,12 @@ $stage=$null;$server=$null;$worker=$null;$owned=$false;$signalSent=0;$workerExit
 $phase='PREP';$serverReady=$false;$recordExit=259;$filesCount=0
 $launchObserved=0;$policyStop=0;$eosObserved=0;$mp4Decoded=0
 $metric=@{};$snapshot=@{};$prior=@{}
+$liveNamer=$null;$liveNamerStop='';$liveNamerReady=0;$liveRenamedBeforeStop=0
+$liveNamerClosed=0;$liveRenameCount=0
 try {
   if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
      -not $env:RUNNER_TEMP){throw 'NOT_DISPOSABLE_WINDOWS_CI'}
+  if($CiLiveNamer -and $CiSplitSeconds -ne 8){throw 'LIVE_NAMER_REQUIRES_CI_SPLIT'}
   $temp=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
   $tempObj=Get-Item -LiteralPath $temp -Force
   if(-not $tempObj.PSIsContainer -or
@@ -57,7 +61,9 @@ try {
   $settings=(Resolve-Path -LiteralPath 'CommonSettings.ps1').Path
   $workerSource=(Resolve-Path -LiteralPath 'RecordGUIWorker.ps1').Path
   $guiSource=(Resolve-Path -LiteralPath 'C545D_App.ps1').Path
-  foreach($src in @($source,$settings,$CandidateDll,$workerSource,$guiSource)){
+  $namerSource=(Resolve-Path -LiteralPath 'SegmentNamer.ps1').Path
+  $namerWorkerSource=(Resolve-Path -LiteralPath 'SegmentNamerWorker.ps1').Path
+  foreach($src in @($source,$settings,$CandidateDll,$workerSource,$guiSource,$namerSource,$namerWorkerSource)){
     $snapshot[$src]=(Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
   }
   $stage=Join-Path $temp ('c545d-ci-production-mirror-'+[guid]::NewGuid().ToString('N'))
@@ -196,7 +202,39 @@ try {
   [IO.File]::WriteAllText($bootstrap,($bootstrapText -join [Environment]::NewLine),
       [Text.UTF8Encoding]::new($false))
   $env:LOCALAPPDATA=$localData
-  $phase='COMPILER'
+  if($CiLiveNamer){
+    # Start the REAL unmodified watcher before any recording child. The
+    # source-level GUI Start order is separately verified by the workflow.
+    # This test does not simulate a WinForms button click.
+    $phase='LIVE_NAMER_START'
+    $liveNamerStop=Join-Path $stage 'live-namer.stop'
+    $liveReady=Join-Path $stage 'live-namer.ready'
+    if((Test-Path -LiteralPath $liveNamerStop) -or (Test-Path -LiteralPath $liveReady)){
+      throw 'LIVE_NAMER_MARKER_COLLISION'
+    }
+    $ownedOutput=Join-Path $stage 'private-output'
+    if(-not (Test-Path -LiteralPath $ownedOutput -PathType Container)){
+      throw 'LIVE_NAMER_OUTPUT_MISSING'
+    }
+    $namerArgs=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+      '-File',('"'+$namerWorkerSource+'"'),'-OutputDirectory',('"'+$ownedOutput+'"'),
+      '-OwnerProcessId',$PID,'-ReadyFile',('"'+$liveReady+'"'),
+      '-StopFile',('"'+$liveNamerStop+'"'))
+    $oldPSModulePath=[Environment]::GetEnvironmentVariable('PSModulePath','Process')
+    try {
+      [Environment]::SetEnvironmentVariable('PSModulePath',$null,'Process')
+      $liveNamer=Start-Process -FilePath $ps -ArgumentList $namerArgs -PassThru -WindowStyle Hidden -WorkingDirectory $stage
+    } finally {
+      [Environment]::SetEnvironmentVariable('PSModulePath',$oldPSModulePath,'Process')
+    }
+    for($i=0;$i -lt 160;$i++){
+      if($liveNamer.HasExited){break}
+      if(Test-Path -LiteralPath $liveReady -PathType Leaf){$liveNamerReady=1;break}
+      Start-Sleep -Milliseconds 100
+    }
+    if($liveNamerReady -ne 1){throw 'LIVE_NAMER_NOT_READY'}
+  }
+  $phase='COMPILER
   $lib=Join-Path $SdkRoot 'lib'
   $inc=Join-Path $SdkRoot 'include'
   $exe=Join-Path $stage 'c545d_finite_rtsp_server.exe'
@@ -394,6 +432,12 @@ try {
     $gstProcess.Dispose()
     if($sampleNo -eq 0){$resourceFirst=$resourceSample}
     $resourceLast=$resourceSample
+    if($CiLiveNamer){
+      if($liveNamer.HasExited){throw 'LIVE_NAMER_EARLY_EXIT'}
+      $renamedNow=@(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction Stop |
+        Where-Object {$_.Name -cmatch '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_\d{2}-\d{2}(?:_\d{2})?\.mp4$'})
+      if($renamedNow.Count -gt 0){$liveRenamedBeforeStop=1}
+    }
   }
   if($null -eq $resourceSteadyFirst -or
      $resourceFirst.worker_private_b -le 0 -or
@@ -432,6 +476,35 @@ try {
   $nativeMatches=[regex]::Matches($text,'GStreamer returned; exitCode=(-?[0-9]+); stopMarker=(True|False)')
   $nativeExit=if($nativeMatches.Count -gt 0){[int]$nativeMatches[$nativeMatches.Count-1].Groups[1].Value}else{999}
   $markerAtReturn=[int]($nativeMatches.Count -gt 0 -and $nativeMatches[$nativeMatches.Count-1].Groups[2].Value -ceq 'True')
+  if($CiLiveNamer){
+    $phase='LIVE_NAMER_DRAIN'
+    $finalRx='^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_\d{2}-\d{2}(?:_\d{2})?\.mp4$'
+    $livePending=999
+    for($i=0;$i -lt 280;$i++){
+      if($liveNamer.HasExited){throw 'LIVE_NAMER_EARLY_EXIT'}
+      $liveItems=@(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction Stop)
+      $liveFinal=@($liveItems | Where-Object {$_.Name -cmatch $finalRx})
+      $livePending=@($liveItems | Where-Object {$_.Name -notmatch $finalRx}).Count
+      if($liveFinal.Count -ge 3 -and $liveFinal.Count -le 8 -and $livePending -eq 0){break}
+      Start-Sleep -Milliseconds 100
+    }
+    $liveRenameCount=$liveFinal.Count
+    if($liveRenamedBeforeStop -ne 1){throw 'LIVE_NAMER_NOT_DURING_RECORDING'}
+    if($liveRenameCount -lt 3 -or $liveRenameCount -gt 8 -or $livePending -ne 0){
+      throw 'LIVE_NAMER_NOT_FULLY_DRAINED'
+    }
+    $renameLog=Join-Path $config 'Logs\Filename_Rename.log'
+    if(-not (Test-Path -LiteralPath $renameLog -PathType Leaf)){
+      throw 'LIVE_NAMER_LOG_MISSING'
+    }
+    $renameText=[IO.File]::ReadAllText($renameLog)
+    $entries=[regex]::Matches($renameText,'Renamed \(closed\): (\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d-\d{3}_(\d{5})\.mp4) -> ')
+    $seq=@($entries | ForEach-Object {[int]$_.Groups[2].Value} | Sort-Object)
+    if($entries.Count -ne $liveRenameCount){throw 'LIVE_NAMER_LOG_SEQUENCE'}
+    for($i=0;$i -lt $seq.Count;$i++){
+      if($seq[$i] -ne $i){throw 'LIVE_NAMER_LOG_SEQUENCE'}
+    }
+  }
   $mp4=@(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue)
   $filesCount=$mp4.Count
   $mp4Bytes=if($filesCount -gt 0){[long](($mp4|Measure-Object -Property Length -Sum).Sum)}else{0}
@@ -465,7 +538,7 @@ try {
   $phase='MP4_VERIFY'
   # Every accelerated fragment must be independently finalized and decodable.
   # Confirm splitmux numeric suffixes 00000..N without gaps or duplicates.
-  if($CiSplitSeconds -eq 8){
+  if($CiSplitSeconds -eq 8 -and -not $CiLiveNamer){
     $indices=@()
     foreach($f in $outFiles){
       if($f.Name -cnotmatch '_([0-9]{5})\.mp4$'){throw 'CI_SPLIT_FILENAME_INVALID'}
@@ -498,7 +571,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DECODE_FAILED'}
   }
   $mp4Decoded=1
-  if($CiSplitSeconds -eq 8){
+  if($CiSplitSeconds -eq 8 -and -not $CiLiveNamer){
     # Run the REAL, unmodified event-driven SegmentNamerWorker.ps1 after
     # the four test fragments were individually decoded. It watches only
     # disposable copies in a private fixture, never the original outputs.
@@ -518,6 +591,16 @@ try {
     if($LASTEXITCODE -ne 0 -or $namerRows.Count -ne 1 -or $namerRows[0] -cne $namerExpected){
       throw 'CI_NAMER_GATE_FAILED'
     }
+  }
+  if($CiLiveNamer){
+    $phase='LIVE_NAMER_SHUTDOWN'
+    [IO.File]::WriteAllText($liveNamerStop,'CI_ONLY_STOP')
+    if(-not $liveNamer.WaitForExit(20000) -or $liveNamer.ExitCode -ne 0){
+      throw 'LIVE_NAMER_SHUTDOWN_FAILED'
+    }
+    $liveNamerClosed=1
+    $liveNamerLogLine="C545D_GUI_INSTREAM_NAMER_CI_PASS,ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,watcher_exit_ok=$liveNamerClosed,source_unchanged=1,real_camera=0,install_approved=0"
+    Write-Output $liveNamerLogLine
   }
   foreach($src in $snapshot.Keys){
     if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $snapshot[$src]){
@@ -542,11 +625,22 @@ try {
     'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
     'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
     'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID',
-    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED')
+    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED',
+    'LIVE_NAMER_REQUIRES_CI_SPLIT','LIVE_NAMER_MARKER_COLLISION',
+    'LIVE_NAMER_OUTPUT_MISSING','LIVE_NAMER_NOT_READY','LIVE_NAMER_EARLY_EXIT',
+    'LIVE_NAMER_NOT_DURING_RECORDING','LIVE_NAMER_NOT_FULLY_DRAINED',
+    'LIVE_NAMER_LOG_MISSING','LIVE_NAMER_LOG_SEQUENCE','LIVE_NAMER_SHUTDOWN_FAILED')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
   Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
-} finally {
+ } finally {
+  if($liveNamer){
+    if(-not $liveNamer.HasExited){
+      # CI-only private watcher child. Never stop or signal a user process.
+      try {$liveNamer.Kill();[void]$liveNamer.WaitForExit(5000)}catch {}
+    }
+    $liveNamer.Dispose()
+  }
   if($worker){
     if(-not $worker.HasExited){
       # CI-only failure cleanup of process we personally started.
@@ -582,7 +676,9 @@ try {
 if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
   throw 'GUI_CTRL_C_EOS_NOT_QUALIFIED'
 }
-if($CiSplitSeconds -eq 8){
+if($CiLiveNamer){
+  Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
+} elseif($CiSplitSeconds -eq 8){
   Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
 } else {
   Write-Output 'C545D_GUI_WORKER_REAL_SOURCE_CTRL_C_CI_PASS,original_worker=1,original_recorder_mirror=1,two_local_rtsp=1,gui_ctrlc_event=1,worker_survived=1,gst_eos=1,mp4_h264_aac_decoded=1,owned_rollback=1,real_camera=0,real_hourly_split_tested=0,install_approved=0'
