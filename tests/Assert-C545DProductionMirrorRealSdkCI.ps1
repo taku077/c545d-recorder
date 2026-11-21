@@ -163,8 +163,8 @@ try {
   # with a pre-existing managed stop marker. This permits source startup,
   # decoder/AAC preflights, and pipeline construction; NO RTSP launch.
   # Only disposable CI-local fake config and dummy DPAPI secret are read.
-  $home=Join-Path $stage 'ci-dummy-localappdata'
-  $configDir=Join-Path $home 'C545D_GStreamer'
+  $fixtureLocalAppData=Join-Path $stage 'ci-dummy-localappdata'
+  $configDir=Join-Path $fixtureLocalAppData 'C545D_GStreamer'
   New-Item -ItemType Directory -Path $configDir -Force | Out-Null
   $dummySettings=@{
     camera_ip='127.0.0.1'
@@ -174,7 +174,7 @@ try {
   $dummySettings | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $configDir 'settings.json') -Encoding utf8
   $dummySecret=ConvertTo-SecureString 'dummy_ci_only_password_not_real' -AsPlainText -Force
   ConvertFrom-SecureString $dummySecret | Set-Content -LiteralPath (Join-Path $configDir 'camera_password.dpapi') -Encoding ascii
-  $env:LOCALAPPDATA=$home
+  $env:LOCALAPPDATA=$fixtureLocalAppData
   $stop=Join-Path $stage 'ci-preexisting-stop.marker'
   [IO.File]::WriteAllText($stop,'NO_RTSP_ALLOWED_FOR_PRESTOP_TEST')
   $recorder=Join-Path $stage 'Record.ps1'
