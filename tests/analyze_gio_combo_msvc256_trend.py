@@ -26,6 +26,104 @@ PROBE = re.compile(
 )
 
 
+
+# These counters are genuinely archived for EVERY cycle. This is a timing
+# association ONLY: an AppInfo signal is neither a malloc stack nor proof
+# that the generation-dependent native cache ran in the same cycle.
+MONITOR = re.compile(
+    r"GIO_PROBE,(baseline|cycle),(\d+),(\d+),(\d+),(\d+)$"
+)
+CACHE = re.compile(
+    r"C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$"
+)
+BRIDGE = re.compile(
+    r"C545D_WINRT_BRIDGE,scans=(\d+),injections=(\d+),"
+    r"evictions=(\d+),errors=(\d+),ready=(\d+)$"
+)
+
+
+def monitor_readings(rows: list[str]) -> tuple[dict[int, int], dict[int, int]]:
+    notifications: dict[int, int] = {}
+    private: dict[int, int] = {}
+    for row in rows:
+        if not row.startswith("GIO_PROBE,"):
+            continue
+        m = MONITOR.fullmatch(row)
+        if m is None:
+            if row.startswith(("GIO_PROBE,baseline,", "GIO_PROBE,cycle,")):
+                raise ValueError("malformed monitor-count process sample")
+            continue  # two legitimate after-cleanup records
+        label, index, monitor, _, memory = m.groups()
+        cycle, count, usage = int(index), int(monitor), int(memory)
+        if cycle not in range(N + 1) or (label == "baseline") != (cycle == 0):
+            raise ValueError("incorrect monitor checkpoint phase")
+        if cycle in notifications or count < 0 or usage < 0:
+            raise ValueError("duplicate/negative monitor process sample")
+        notifications[cycle] = count
+        private[cycle] = usage
+    if set(notifications) != set(range(N + 1)):
+        raise ValueError("missing 256-cycle monitor samples")
+    if any(notifications[i] < notifications[i - 1] for i in range(1, N + 1)):
+        raise ValueError("monitor count decreased during the same process")
+    return notifications, private
+
+
+def monitor_alignment(group: dict[str, list[str]]) -> list[str]:
+    # Read the same original-run four arms, with no synthetic cross-run pair.
+    # Explicitly keep 'signal-free memory steps' descriptive: asynchronous
+    # notifications can be delayed and public GAppInfo calls can rescan without
+    # a GAppInfoMonitor callback.
+    out = []
+    for mode in MODES:
+        for arm in ARMS:
+            rows = group[f"{mode}-{arm}-256"]
+            counts, private = monitor_readings(rows)
+            for start, end in zip(POINTS[:-1], POINTS[1:]):
+                increments = [counts[i] - counts[i-1]
+                              for i in range(start+1, end+1)]
+                signaled = sum(n > 0 for n in increments)
+                positive_without_signal = sum(
+                    increments[i-start-1] == 0 and
+                    private[i] > private[i-1]
+                    for i in range(start+1, end+1))
+                out.append(
+                    f"C545D_SAVED256_MONITOR_ALIGNMENT,source_run=44918598339,"
+                    f"mode={mode},arm={arm},window={start}_{end},"
+                    f"monitor_increment={counts[end]-counts[start]},"
+                    f"cycles_with_signal={signaled},"
+                    f"cycles_without_signal={64-signaled},"
+                    f"private_up_without_signal_cycles={positive_without_signal},"
+                    "correlation_only=1,exact_360_owner_proven=0,CI_only=1"
+                )
+            if mode == "combo":
+                cache = [tuple(map(int, m.groups())) for row in rows
+                         if (m := CACHE.fullmatch(row))]
+                bridge = [tuple(map(int, m.groups())) for row in rows
+                          if (m := BRIDGE.fullmatch(row))]
+                if not cache or not bridge:
+                    raise ValueError("missing cumulative cache/bridge summaries")
+                hits, misses, entries = cache[-1]
+                scans, injections, evictions, errors, ready = bridge[-1]
+                if entries > 1024 or errors != 0 or ready != 1:
+                    raise ValueError("invalid cumulative cache/bridge snapshot")
+                out.append(
+                    f"C545D_SAVED256_COUNTER_SCOPE,source_run=44918598339,"
+                    f"arm={arm},cache_records={len(cache)},"
+                    f"bridge_records={len(bridge)},cache_hits_last={hits},"
+                    f"cache_misses_last={misses},cache_entries_last={entries},"
+                    f"bridge_scans_last={scans},bridge_injections_last={injections},"
+                    f"bridge_evictions_last={evictions},"
+                    "counter_cycle_alignment_not_proven=1,CI_only=1"
+                )
+    out.append(
+        "C545D_SAVED256_MONITOR_ALIGNMENT_PASS,source_run=44918598339,"
+        "arms=4,windows=4,windows_checked=16,combo_counters=2,"
+        "new_windows_runs=0,notifications_are_not_alloc_stacks=1,"
+        "real_device_untested=1"
+    )
+    return out
+
+
 def readings(rows: list[str]) -> dict:
     cycles: dict[int, tuple[int, int]] = {}
     cleanup: dict[str, tuple[int, int]] = {}
@@ -143,6 +241,7 @@ def analyze(group: dict[str, list[str]]) -> list[str]:
        measurements["core", "handles"][1] != 38 or \
        measurements["combo", "handles"][1] != -7:
         raise ValueError("pinned original settled memory/handle effect mismatch")
+    output.extend(monitor_alignment(group))
     print("\n".join(output))
     return output
 
@@ -187,7 +286,34 @@ def selftest() -> None:
         else:
             raise AssertionError("corrupted timeline accepted")
     clean[tag] = baseline
-    print("C545D_SAVED256_STEP_SELFTEST_PASS,negative_cases=5,original_windows_runs=0")
+    # Synthetic, independent of the real WinRT/registry runner.
+    fake_monitor = [
+        "GIO_PROBE,baseline,0,0,100,1000"
+    ] + [
+        f"GIO_PROBE,cycle,{i},{i//10},100,{1000+4096*(i//16)}"
+        for i in range(1, N + 1)
+    ]
+    count, usage = monitor_readings(fake_monitor)
+    assert count[256] == 25 and usage[256] == 1000 + 16 * 4096
+    bad_monitor = [
+        fake_monitor[:-1],
+        fake_monitor + [fake_monitor[100]],
+        [r.replace("GIO_PROBE,cycle,128,12,",
+                   "GIO_PROBE,cycle,128,0,") for r in fake_monitor],
+        [r.replace("GIO_PROBE,cycle,64,6,",
+                   "GIO_PROBE,cycle,64,-6,") for r in fake_monitor],
+    ]
+    rejected = 0
+    for candidate in bad_monitor:
+        try:
+            monitor_readings(candidate)
+        except ValueError:
+            rejected += 1
+        else:
+            raise AssertionError("invalid monitor series accepted")
+    assert rejected == 4
+    print("C545D_SAVED256_STEP_SELFTEST_PASS,negative_cases=5,"
+          "monitor_negative_cases=4,original_windows_runs=0")
 
 
 if __name__ == "__main__":
