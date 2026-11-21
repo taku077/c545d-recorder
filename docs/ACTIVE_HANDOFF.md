@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b0ffaed74a0132656edf461cad2db40f6b22d7cf`
-- **PR updated at (UTC):** `2026-11-21T13:02:39Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b0ffaed74a0132656edf461cad2db40f6b22d7cf/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1a0d5aad3c99f5c0a1781c4d5a6d1e4d43b78adf`
+- **PR updated at (UTC):** `2026-11-21T13:03:34Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1a0d5aad3c99f5c0a1781c4d5a6d1e4d43b78adf/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44906868638](https://github.com/taku077/c545d-recorder/actions/runs/44906868638) |
-| C545D saved GIO 360-byte bin early-vs-late cross-mode analysis CI ONLY | success | [#44906866332](https://github.com/taku077/c545d-recorder/actions/runs/44906866332) |
+| C545D active development handoff auto-refresh | in_progress | [#44906946548](https://github.com/taku077/c545d-recorder/actions/runs/44906946548) |
 
 ## Current development findings from the active PR
 
