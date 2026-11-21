@@ -1,0 +1,236 @@
+name: C545D isolate combined MSVC GIO late360 UMDH stack evidence (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-combo-gio-umdh-late360-ci.yml'
+      - 'tests/gio_appinfo_umdh_gate_probe.c'
+      - 'tests/Invoke-C545DGioUmdhStackGate.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  combo-late360-umdh:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Check analyzer negative fixtures before long Windows comparisons
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_combo_msvc256.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Invalid 256-cycle analyzer selftest'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core
+      - name: Build native+event-epoch DisplayName cache GLib from upstream 2.82.4 via MSVC x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $core=(Resolve-Path artifacts/core/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core/manifest.txt -Raw
+          $hash=(Get-FileHash $core -Algorithm SHA256).Hash
+          if($hash -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$hash") -or
+             $manifest -notmatch 'STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){
+            throw 'Core-only candidate provenance mismatch'
+          }
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if($LASTEXITCODE -ne 0){throw 'Meson tools failed'}
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $src
+          if($LASTEXITCODE -ne 0){throw 'Source clone failed'}
+          py tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'Core weakref patch failed'}
+          py tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'Core UTF16 patch failed'}
+          py tests/patch_glib_msvc_gio_sdk_export.py "$src/gio/meson.build"
+          if($LASTEXITCODE -ne 0){throw 'SDK export patch failed'}
+          py tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'UWP staging source patch failed'}
+          py tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native path patch failed'}
+          py tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Owned DisplayName cache source patch failed'}
+          py tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Dedicated WinRT epoch bridge source patch failed'}
+          py tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Generation lazy rescan source patch failed'}
+          py tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'GAppInfoMonitor worker source patch failed'}
+          py tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher signal source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher status source patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC native PackageCatalog sidecar build failed'}
+          git -C $src diff --check
+          if($LASTEXITCODE -ne 0){throw 'Source diff whitespace invalid'}
+          $changed=@(git -C $src diff --name-only | Sort-Object)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32packageparser.c','gio/gwin32registrykey.c','gio/meson.build')
+          $expected=@($expected | Sort-Object)
+          if($changed.Count -ne 4 -or (Compare-Object $changed $expected)){throw 'Unexpected source changes'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){throw 'SDK provenance mismatch'}
+          $env:LIB="$sdk/lib;$env:LIB"; $env:INCLUDE="$sdk/include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdk/lib/pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdk;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdk/bin;$env:PATH"
+          $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path configure failed'}
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path compile failed'}
+          $built=@(Get-ChildItem $build -Recurse -Filter gio-2.0-0.dll -File)
+          if($built.Count -ne 1){throw 'Built GIO DLL not unique'}
+          function GetExports($path){
+            $rows=@(& dumpbin.exe /nologo /exports $path)
+            if($LASTEXITCODE -ne 0){throw 'dumpbin export inventory failed'}
+            return ,@($rows | ForEach-Object {
+              if($_ -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)'){$Matches[1]}
+            } | Sort-Object -Unique)
+          }
+          $official=GetExports "$sdk/bin/gio-2.0-0.dll"
+          $new=GetExports $built[0].FullName
+          if($official.Count -ne 2047 -or $new.Count -ne 2047 -or
+             @($official | Where-Object {$_ -notin $new}).Count){throw 'SDK 2047-export ABI mismatch'}
+          foreach($mode in @('core','combo')){
+            $dir=Join-Path (Resolve-Path artifacts).Path "overlay-$mode"
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            if($mode -eq 'core'){$file=$core}else{$file=$built[0].FullName}
+            Copy-Item $file (Join-Path $dir 'gio-2.0-0.dll')
+          }
+          $zip=Join-Path $env:RUNNER_TEMP 'handle.zip'
+          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 60
+          $dir=Join-Path $env:RUNNER_TEMP 'handle'
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          if(-not (Test-Path "$dir/handle64.exe")){throw 'Handle64 missing'}
+          "C545D_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "C545D_HANDLE_EXE=$dir/handle64.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+          "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'C545D_COMBO_MSVC_BUILD_PASS,pinned_source=1,provenance=1,exports2047=1,watcher_compiled=1,host_modified=0'
+      - name: Extract pinned Windows 10 Debugging Tools side-by-side in disposable CI folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # The MSVC runner already contains 26100 UMDH, and even the signed
+          # Win10 SDK feature installer does not replace it. Use a side-by-side
+          # layout + MSI administrative extraction, documented by Microsoft.
+          $sdkUrl='https://go.microsoft.com/fwlink/?linkid=2164145'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d_msft_win10_sdk.exe'
+          $layout=Join-Path $env:RUNNER_TEMP 'c545d_sdk20348_layout'
+          $target=Join-Path $env:RUNNER_TEMP 'c545d_sdk20348_extracted'
+          try {
+            Invoke-WebRequest -Uri $sdkUrl -OutFile $installer -TimeoutSec 180
+            if((Get-Item $installer).Length -lt 500000){throw 'Official SDK bootstrap too small'}
+            $signature=Get-AuthenticodeSignature -FilePath $installer
+            if($signature.Status -ne 'Valid' -or
+               $signature.SignerCertificate.Subject -notmatch 'Microsoft'){
+              throw 'Windows10 SDK signature not trusted'
+            }
+            New-Item -ItemType Directory -Force -Path $layout | Out-Null
+            $p=Start-Process -FilePath $installer -ArgumentList @(
+              '/layout', ('"'+$layout+'"'), '/features', 'OptionId.WindowsDesktopDebuggers',
+              '/quiet', '/norestart'
+            ) -Wait -PassThru
+            if($p.ExitCode -notin @(0,3010)){throw 'MSFT Windows10 SDK layout failed'}
+            $msis=@(Get-ChildItem -Path $layout -Filter '*.msi' -Recurse -File |
+              Where-Object {$_.Name -match '(?i)debuggers.*x64|x64.*debuggers'})
+            if($msis.Count -ne 1){
+              throw "Expected one signed x64 Debuggers MSI in layout; found $($msis.Count)"
+            }
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            $p=Start-Process -FilePath 'msiexec.exe' -ArgumentList @(
+              '/a', ('"'+$msis[0].FullName+'"'), ('TARGETDIR="'+$target+'"'),
+              '/qn', '/norestart'
+            ) -Wait -PassThru
+            if($p.ExitCode -notin @(0,3010)){throw 'Debuggers MSI administrative extraction failed'}
+            $old=@(Get-ChildItem -Path $target -Filter 'umdh.exe' -Recurse -File |
+              Where-Object {
+                $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($_.FullName)
+                $v.FileBuildPart -gt 0 -and $v.FileBuildPart -lt 22000
+              })
+            if($old.Count -ne 1){throw 'Exactly one Win10 UMDH not found in extracted x64 SDK'}
+            $toolSignature=Get-AuthenticodeSignature -FilePath $old[0].FullName
+            if($toolSignature.Status -ne 'Valid' -or
+               $toolSignature.SignerCertificate.Subject -notmatch 'Microsoft'){
+              throw 'Extracted Win10 UMDH signature could not be verified'
+            }
+            $ver=[Diagnostics.FileVersionInfo]::GetVersionInfo($old[0].FullName)
+            "C545D_LEGACY_UMDH_EXE=$($old[0].FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "C545D_WIN10_UMDH_READY,build=$($ver.FileBuildPart),layout_used=1,side_by_side=1,microsoft_signed=1,CI_only=1,host_modified=0"
+          } finally {
+            Remove-Item $installer -Force -ErrorAction SilentlyContinue
+            # The ephemeral runner retains the extracted tool for the next CI step.
+            # No MSI data, raw SDK payload or symbol logs are uploaded.
+          }
+      - name: Exercise real combined official-SDK GIO and UST snapshots (fail-fast early16)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=$env:C545D_SDK_ROOT
+          $root=(Resolve-Path artifacts).Path
+          $includes=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          $probe=Join-Path $root 'c545d_gio_umdh_probe.exe'
+          $smoke=Join-Path $root 'c545d_gio_umdh_smoke.exe'
+          foreach($pair in @(
+            @('tests/gio_appinfo_umdh_gate_probe.c',$probe),
+            @('tests/gio_msvc_sdk_overlay_smoke.c',$smoke)
+          )){
+            & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$includes+@($pair[0],"/Fe:$($pair[1])",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+            if($LASTEXITCODE -ne 0 -or -not(Test-Path $pair[1])){throw 'Official SDK-linked gated GIO probe compile failed'}
+          }
+          $dbg=Join-Path 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64' 'gflags.exe'
+          $legacy=$env:C545D_LEGACY_UMDH_EXE
+          if(-not(Test-Path $dbg -PathType Leaf) -or -not(Test-Path $legacy -PathType Leaf)){throw 'Verified Debugging Tools unavailable'}
+          $env:PATH="$root/overlay-combo;$sdk/bin;$env:PATH"
+          $env:C545D_EXPECTED_GIO_DLL=(Join-Path $root 'overlay-combo/gio-2.0-0.dll')
+          $env:C545D_DIAG_UWP_NATIVE_PATH='1'
+          $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+          $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
+          $env:C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN='1'
+          $env:C545D_DIAG_APPINFO_MONITOR_UNSOLICITED='1'
+          $env:C545D_CI_EVENT_PACKAGE_NAME='C545D.CI.PackageEvents'
+          $env:OANOCACHE='1'
+          $smokeLog=Join-Path $env:RUNNER_TEMP 'c545d_private_sdk_smoke.txt'
+          & $smoke > $smokeLog 2>$null
+          if($LASTEXITCODE -ne 0){throw 'Exact combined official SDK-linked GIO smoke failed'}
+          $smokeData=[IO.File]::ReadAllText($smokeLog)
+          if($smokeData -notmatch '(?m)^GIO_NATIVE_PATH,([1-9][0-9]*),[0-9]+,[0-9]+,0\s*$'){
+            throw 'Combined GIO native Win32 package path not exercised in actual SDK client'
+          }
+          Write-Host 'C545D_GIO_UMDH_SDK_SMOKE_PASS,official_sdk=1,native_path_exercised=1,host_modified=0'
+          $volatile=Join-Path $env:RUNNER_TEMP 'c545d_volatile_umdh_data'
+          New-Item -ItemType Directory -Force -Path $volatile | Out-Null
+          try {
+            & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 -Probe $probe -Gflags $dbg -Umdh $legacy -WorkRoot $volatile -Cycles 16
+            if($LASTEXITCODE -ne 0){throw 'Early 16-cycle UMDH handshake/snapshot probe failed; longer test canceled'}
+            foreach($arm in @('nochange','registry')){
+              $params=@('-Probe',$probe,'-Gflags',$dbg,'-Umdh',$legacy,'-WorkRoot',$volatile,'-Cycles','256')
+              if($arm -eq 'nochange'){$params+='-NoRegistryChange'}
+              & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 @params
+              if($LASTEXITCODE -ne 0){throw "Matched 256-cycle $arm UMDH stack probe failed"}
+            }
+            Write-Host 'C545D_GIO_UMDH_LATE360_CI_PASS,msvc_official_sdk=1,arms=2,cycles=256,synthetic_only=1,raw_uploaded=0,host_modified=0,release_approved=0'
+          } finally {
+            Remove-Item $volatile -Force -Recurse -ErrorAction SilentlyContinue
+            Remove-Item $smokeLog -Force -ErrorAction SilentlyContinue
+          }
