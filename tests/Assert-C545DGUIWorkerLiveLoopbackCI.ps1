@@ -498,6 +498,27 @@ try {
     if($LASTEXITCODE -ne 0){throw 'LIVE_MP4_DECODE_FAILED'}
   }
   $mp4Decoded=1
+  if($CiSplitSeconds -eq 8){
+    # Run the REAL, unmodified event-driven SegmentNamerWorker.ps1 after
+    # the four test fragments were individually decoded. It watches only
+    # disposable copies in a private fixture, never the original outputs.
+    $phase='SEGMENT_NAMER'
+    $namerTest=(Resolve-Path -LiteralPath 'tests/Assert-C545DSegmentNamerClosedMp4CI.ps1').Path
+    $namerTokens=$null;$namerParseErrors=$null
+    [void][Management.Automation.Language.Parser]::ParseFile(
+      $namerTest,[ref]$namerTokens,[ref]$namerParseErrors)
+    if($namerParseErrors.Count -gt 0){throw 'CI_NAMER_SYNTAX'}
+    $namerRows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $namerTest -StageRoot $stage -SampleMp4 $outFiles[0].FullName 2>$null)
+    foreach($nr in $namerRows){
+      if(([string]$nr) -cmatch '^C545D_SEGMENT_NAMER_CI,ready=[01],locked_deferred=[01],renamed=[0-9]+,mp4_hashes_intact=[01],manual_preserved=[01],clean_exit=[01],source_unchanged=[01],real_camera=0,host_modified=0,reason=[A-Z_]+$'){
+        Write-Output $nr
+      }
+    }
+    $namerExpected='C545D_SEGMENT_NAMER_CI,ready=1,locked_deferred=1,renamed=4,mp4_hashes_intact=1,manual_preserved=1,clean_exit=1,source_unchanged=1,real_camera=0,host_modified=0,reason=PASS'
+    if($LASTEXITCODE -ne 0 -or $namerRows.Count -ne 1 -or $namerRows[0] -cne $namerExpected){
+      throw 'CI_NAMER_GATE_FAILED'
+    }
+  }
   foreach($src in $snapshot.Keys){
     if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $snapshot[$src]){
       throw 'ORIGINAL_BYTES_CHANGED'
@@ -520,7 +541,8 @@ try {
     'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
     'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
     'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
-    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID')
+    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID',
+    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
   Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
