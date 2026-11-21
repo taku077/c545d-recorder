@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4bfe14b97cf7885ff0771ddbe6b3354cad4202f0`
-- **PR updated at (UTC):** `2026-11-21T13:55:31Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4bfe14b97cf7885ff0771ddbe6b3354cad4202f0/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9fa8f6fbb10ee30dc74cd364d5ebc6d7668384d1`
+- **PR updated at (UTC):** `2026-11-21T13:56:18Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9fa8f6fbb10ee30dc74cd364d5ebc6d7668384d1/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44911274856](https://github.com/taku077/c545d-recorder/actions/runs/44911274856) |
-| .github/workflows/c545d-real-resource-localized-display-ci.yml | failure | [#44911272659](https://github.com/taku077/c545d-recorder/actions/runs/44911272659) |
+| C545D active development handoff auto-refresh | in_progress | [#44911338619](https://github.com/taku077/c545d-recorder/actions/runs/44911338619) |
+| C545D real signed same-FullName localized DisplayName resource-refresh CI ONLY | in_progress | [#44911336269](https://github.com/taku077/c545d-recorder/actions/runs/44911336269) |
 
 ## Current development findings from the active PR
 
