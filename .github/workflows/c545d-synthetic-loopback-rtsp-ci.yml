@@ -83,7 +83,7 @@ jobs:
             $env:GST_PLUGIN_SYSTEM_PATH_1_0=Join-Path $sdk 'lib\gstreamer-1.0'
             $so=Join-Path $stage 'server.stdout'
             $se=Join-Path $stage 'server.stderr'
-            $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $stage -RedirectStandardOutput $so -RedirectStandardError $se
+            $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $root -RedirectStandardOutput $so -RedirectStandardError $se
             $ready='C545D_SYNTHETIC_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,real_camera=0'
             $seen=$false
             for($i=0;$i -lt 120;$i++){
@@ -94,7 +94,7 @@ jobs:
             if(-not $seen){throw 'Local RTSP server did not bind'}
             $co=Join-Path $stage 'client.stdout'
             $ce=Join-Path $stage 'client.stderr'
-            $client=Start-Process -FilePath $exe -ArgumentList 'client' -PassThru -WorkingDirectory $stage -RedirectStandardOutput $co -RedirectStandardError $ce
+            $client=Start-Process -FilePath $exe -ArgumentList 'client' -PassThru -WorkingDirectory $root -RedirectStandardOutput $co -RedirectStandardError $ce
             if(-not $client.WaitForExit(40000)){throw 'Local RTSP client timeout'}
             if($client.ExitCode -ne 0){throw 'Synthetic RTSP negotiation failed'}
             $result=@(Get-Content -LiteralPath $co)
@@ -102,6 +102,14 @@ jobs:
             if($result.Count -ne 1 -or $result[0] -cne $expected){throw 'Strict RTSP numeric output mismatch'}
             $passed=$true
             Write-Host 'C545D_SYNTHETIC_LOOPBACK_RTSP_CI_PASS,port554=1,loopback=1,stream1=1,stream6=1,video=2,audio=2,tcp=1,real_camera=0,host_modified=0'
+          } catch {
+            $type='BLOCKED'
+            if($_.Exception.Message -eq 'Local RTSP server did not bind'){$type='SERVER_NOT_READY'}
+            if($_.Exception.Message -eq 'Local RTSP client timeout'){$type='CLIENT_TIMEOUT'}
+            if($_.Exception.Message -eq 'Synthetic RTSP negotiation failed'){$type='MEDIA_REJECTED'}
+            if($_.Exception.Message -eq 'Strict RTSP numeric output mismatch'){$type='NUMERIC_MISMATCH'}
+            Write-Host ("C545D_RTSP_STAGE_CI,reason="+$type+",real_camera=0,host_modified=0")
+            throw 'SANITIZED_RTSP_CI_FAILED'
           } finally {
             if($client){
               if(-not $client.HasExited){try{$client.Kill();[void]$client.WaitForExit(5000)}catch{}}
@@ -112,6 +120,11 @@ jobs:
               $server.Dispose()
             }
             foreach($k in $prior.Keys){[Environment]::SetEnvironmentVariable($k,$prior[$k],'Process')}
+            # A child whose CWD points into the stage can pin the directory
+            # even after process termination. Both child CWDs are now the
+            # trusted RUNNER_TEMP parent, not the deletion target.
+            Start-Sleep -Milliseconds 500
+            Write-Host ("C545D_RTSP_PRE_CLEANUP_CI,media_checks_passed="+[int]$passed+",staged_processes_disposed=1")
             $item=Get-Item -LiteralPath $stage -Force
             $links=@(Get-ChildItem -LiteralPath $stage -Force -Recurse | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
             if(-not $item.PSIsContainer -or
