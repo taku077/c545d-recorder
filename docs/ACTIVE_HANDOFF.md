@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `31af3f12c3ae9f71ef23c297ab6fe95f7bcf84fb`
-- **PR updated at (UTC):** `2026-11-21T06:19:04Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/31af3f12c3ae9f71ef23c297ab6fe95f7bcf84fb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `89cd3f1e203c6fd6744eabcf5dbddc72b3cf33d4`
+- **PR updated at (UTC):** `2026-11-21T06:21:51Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/89cd3f1e203c6fd6744eabcf5dbddc72b3cf33d4/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44874962450](https://github.com/taku077/c545d-recorder/actions/runs/44874962450) |
-| C545D production mirror runtime script fast PowerShell syntax CI ONLY | in_progress | [#44874959906](https://github.com/taku077/c545d-recorder/actions/runs/44874959906) |
+| C545D active development handoff auto-refresh | in_progress | [#44875189678](https://github.com/taku077/c545d-recorder/actions/runs/44875189678) |
 
 ## Current development findings from the active PR
 
