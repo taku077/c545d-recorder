@@ -27,11 +27,18 @@ $proc=$null;$ustChanged=$false
 $oldNoCache=$env:OANOCACHE;$oldPause=$env:C545D_UMDH_PAUSE;$oldEarly=$env:C545D_UMDH_EARLY_GATE
 function Wait-Stage([int]$point) {
   $flag=Join-Path $dir ("stage_"+$point+".signal")
-  for($i=0;$i -lt 2300;$i++){
+  # Original 44927366590: the registry arm remained alive yet did not reach
+  # cycle192 within 230 s; the nochange arm DID finish. Do not classify this
+  # as a GIO crash, and do not rerun the completed nochange control.
+  $pollLimit=if($Cycles -eq 256 -and -not $NoRegistryChange -and $point -eq 192){6000}else{2300}
+  for($i=0;$i -lt $pollLimit;$i++){
     if(Test-Path $flag -PathType Leaf){return}
     if($proc){$proc.Refresh();if($proc.HasExited){throw "Process exited before gated point $point"}}
     Start-Sleep -Milliseconds 100
   }
+  $alive=0
+  if($proc){$proc.Refresh();$alive=[int](-not $proc.HasExited)}
+  Write-Host "C545D_GIO_UMDH_STAGE_TIMEOUT,arm=$arm,cycles=$Cycles,target_cycle=$point,proc_alive=$alive,limit_ticks=$pollLimit,raw_uploaded=0"
   throw "Stage $point handshake missing"
 }
 function Snapshot([int]$point){

@@ -1,4 +1,4 @@
-name: C545D isolate combined MSVC GIO late360 UMDH stack evidence (CI ONLY)
+name: C545D targeted registry-only UMDH late360 recovery using prior control (CI ONLY)
 on:
   push:
     branches: ['investigate/c545d-status-only-monitor-20261120']
@@ -221,15 +221,15 @@ jobs:
           $volatile=Join-Path $env:RUNNER_TEMP 'c545d_volatile_umdh_data'
           New-Item -ItemType Directory -Force -Path $volatile | Out-Null
           try {
-            & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 -Probe $probe -Gflags $dbg -Umdh $legacy -WorkRoot $volatile -Cycles 16
-            if($LASTEXITCODE -ne 0){throw 'Early 16-cycle UMDH handshake/snapshot probe failed; longer test canceled'}
-            foreach($arm in @('nochange','registry')){
-              $params=@('-Probe',$probe,'-Gflags',$dbg,'-Umdh',$legacy,'-WorkRoot',$volatile,'-Cycles','256')
-              if($arm -eq 'nochange'){$params+='-NoRegistryChange'}
-              & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 @params
-              if($LASTEXITCODE -ne 0){throw "Matched 256-cycle $arm UMDH stack probe failed"}
-            }
-            Write-Host 'C545D_GIO_UMDH_LATE360_CAPTURE_COMPLETE,msvc_official_sdk=1,arms=2,cycles=256,stack_owner_not_proven=1,synthetic_only=1,raw_uploaded=0,host_modified=0,release_approved=0'
+            # Run 44927366590 already passed early16, then the FULL 256-cycle
+            # nochange arm on this same source. It returned 360B 46->45 and
+            # no positive UMDH stacks in last64. Do not rerun these controls.
+            # This targeted recovery is a DIFFERENT runner; never represent it
+            # as a same-run paired 256-cycle registry/nochange comparison.
+            Write-Host 'C545D_GIO_UMDH_PRIOR_CONTROL,source_run=44927366590,arm=nochange,cycles=256,cycle192_360=46,cycle256_360=45,late360_delta=-1,positive_stacks_last64=0,same_runner_as_new_arm=0'
+            & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 -Probe $probe -Gflags $dbg -Umdh $legacy -WorkRoot $volatile -Cycles 256
+            if($LASTEXITCODE -ne 0){throw 'Targeted 256-cycle registry-only UMDH stack probe failed'}
+            Write-Host 'C545D_GIO_UMDH_REGISTRY_CAPTURE_COMPLETE,msvc_official_sdk=1,arms_new=1,prior_control_reused=1,paired_same_runner=0,cycles=256,stack_owner_not_proven=1,synthetic_only=1,raw_uploaded=0,host_modified=0,release_approved=0'
           } finally {
             Remove-Item $volatile -Force -Recurse -ErrorAction SilentlyContinue
             Remove-Item $smokeLog -Force -ErrorAction SilentlyContinue
