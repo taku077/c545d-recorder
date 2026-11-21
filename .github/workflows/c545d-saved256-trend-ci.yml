@@ -42,7 +42,7 @@ jobs:
             --monitor-patch tests/patch_glib_appinfo_monitor_worker_diagnostic.py \
             --workflow .github/workflows/c545d-core-gio-msvc-native-cache-ab256-ci.yml | tee /tmp/c545d_apc_source.txt
           grep -Fx 'C545D_GIO_APC_SOURCE_AUDIT_PASS,new_windows_runs=0,user_host_modified=0,leak_owner_known=0,release_approved=0' /tmp/c545d_apc_source.txt
-          test "$(grep -c '^C545D_GIO_.*SOURCE_AUDIT,' /tmp/c545d_apc_source.txt)" -eq 4
+          test "$(grep -Ec '^C545D_GIO_(APC_SOURCE|WORKER_SOURCE|CLEANUP_SOURCE|MONITOR_SCOPE)_AUDIT,' /tmp/c545d_apc_source.txt)" -eq 4
       - name: Retrieve only original Windows2022 run 44918598339 sanitized NUMERIC archive
         uses: actions/download-artifact@v4
         with:
