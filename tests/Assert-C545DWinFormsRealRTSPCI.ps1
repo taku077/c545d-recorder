@@ -326,7 +326,7 @@ $script:ciWinFormsTime.Start()
   [IO.File]::WriteAllText((Join-Path $stage 'C545D_App.ps1'),$guiPrivate,
     (New-Object System.Text.UTF8Encoding($true)))
   foreach($path in @($namerSource,$namerWorkerSource)){
-    $target=Join-Path $stage [IO.Path]::GetFileName($path)
+    $target=Join-Path $stage ([IO.Path]::GetFileName($path))
     Copy-Item -LiteralPath $path -Destination $target
     if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -cne $snapshot[$path]){
       throw 'GUI_NAMER_SOURCE_CHANGED'
@@ -699,6 +699,12 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
     'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
+  $errorClass=[string]$_.Exception.GetType().Name
+  if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
+  $errorCategory=[string]$_.CategoryInfo.Category
+  if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
+  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,real_camera=0"
   Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
  } finally {
