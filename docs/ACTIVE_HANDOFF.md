@@ -3,17 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `24ad93ac9aa667d41e483439ce7194cb6e6d0cd3`
-- **PR updated at (UTC):** `2026-11-21T16:41:22Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/24ad93ac9aa667d41e483439ce7194cb6e6d0cd3/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a0dd1fff08e1c99d8ee4598fd0a03ebae8999ed3`
+- **PR updated at (UTC):** `2026-11-21T16:42:14Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a0dd1fff08e1c99d8ee4598fd0a03ebae8999ed3/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D isolate combined MSVC GIO late360 UMDH stack evidence (CI ONLY) | in_progress | [#44925935468](https://github.com/taku077/c545d-recorder/actions/runs/44925935468) |
+| C545D active development handoff auto-refresh | in_progress | [#44926014413](https://github.com/taku077/c545d-recorder/actions/runs/44926014413) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-22 JST — first actual combined GIO UMDH experiment failed ONLY on PowerShell Compare alias; fixed and isolated retest running
+
+- [Original new GIO stack experiment CI #44925519628](https://github.com/taku077/c545d-recorder/actions/runs/44925519628) **FAILURE**, source `d7b2e56`. **SUCCESSFUL stages:** original pinned GLib2.82.4 MSVC native+cache+MTA candidate build / official SDK ABI 2047, Win10 SDK20348 signed side-by-side extracted UMDH ready, newly compiled GIO gated probe and official SDK-linked native package path smoke (`C545D_GIO_UMDH_SDK_SMOKE_PASS`). **Actual failing step**: 16-cycle fail-fast PowerShell controller `Invoke-C545DGioUmdhStackGate.ps1` used a function named `Compare`, which PowerShell resolves as preexisting alias of Compare-Object instead of custom function, causing `A positional parameter cannot be found that accepts argument ...snap_0.txt`. This is a **controller command name collision**, not evidence of a native GLib/GIO heap failure; 256-cycle arm snapshots were NOT attempted. No UMDH raw heap data uploaded, no real recorder touched.
+- **Fix committed** [24ad93a](https://github.com/taku077/c545d-recorder/commit/24ad93ac9aa667d41e483439ce7194cb6e6d0cd3) renames exact PowerShell function AND call to `Compare-C545DUmdhStacks` to avoid built-in `Compare` alias. Workflow automatic follow-up [CI #44925935468](https://github.com/taku077/c545d-recorder/actions/runs/44925935468) **IN_PROGRESS** at time noted. First verify 16-cycle actual positive stack and strict per-image UST cleanup. If pass, it will do only two paired Combo 256-cycle registry/nochange processes at 0/192/256 for late360; never restart old 4x256 Core/Combo full test.
+- Valid certified synthetic toolchain [#44924655726 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44924655726) Win10 SDK20348, signed, 64×360B HeapAlloc stack capture positive1. **No GIO allocation owner has yet been demonstrated**. Candidate has remaining PrivateUsage +368,640B and late360 +5 per last64 in earlier archived matched 256 result [#44921018494 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44921018494). Difference between process committed memory and HeapWalk 360B block count persists; don't equate. Original SDK→Core64 98.4091% and Core→Combo256 88.7359% improvements remain from separate matched experiments.
+- **Next immediate step** inspect actual status, errors and sanitized logs of #44925935468, update this handoff if completed. No speculative GIO source fix until stack is causally attributable; the UMDH controller currently only reports coarse module-presence heuristic with `exact_360_owner_proven=0`. No user Windows10 Japanese recorder/manual logging, no credentials, no live DLL changes; `install_approved=0`, `live_test_authorized=0`. Release HOLD.
 
 ### UPDATE 2026-11-22 JST — Isolated signed Win10 SDK UMDH 20348 synthetic stack PASS; real GIO targeted 360B allocation attribution now running
 
