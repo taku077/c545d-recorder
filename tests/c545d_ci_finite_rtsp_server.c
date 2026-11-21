@@ -16,6 +16,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Normal CI contract remains 330 H264 frames / 550 PCMA buffers (~22s).
+ * Dedicated GUI resource-observation build extends BOTH tracks to ~60s,
+ * so Ctrl+C occurs while media is still live, never from source EOF. */
+#ifdef C545D_CI_RTSP_STEADY
+#define C545D_VIDEO_BUFFERS "900"
+#define C545D_AUDIO_BUFFERS "1500"
+#else
+#define C545D_VIDEO_BUFFERS "330"
+#define C545D_AUDIO_BUFFERS "550"
+#endif
+
 static void
 on_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media, gpointer user_data)
 {
@@ -35,19 +46,19 @@ static int run_server(void)
   GMainLoop *loop;
   guint id;
   const char *wide_launch =
-    "( videotestsrc is-live=true num-buffers=330 pattern=smpte "
+    "( videotestsrc is-live=true num-buffers=" C545D_VIDEO_BUFFERS " pattern=smpte "
     "! video/x-raw,format=I420,width=1280,height=720,framerate=15/1 "
     "! x264enc speed-preset=ultrafast tune=zerolatency key-int-max=30 "
     "! h264parse ! rtph264pay config-interval=1 pt=96 name=pay0 "
-    "audiotestsrc is-live=true num-buffers=550 samplesperbuffer=320 wave=sine "
+    "audiotestsrc is-live=true num-buffers=" C545D_AUDIO_BUFFERS " samplesperbuffer=320 wave=sine "
     "! audio/x-raw,rate=8000,channels=1 "
     "! audioconvert ! alawenc ! rtppcmapay pt=8 name=pay1 )";
   const char *tele_launch =
-    "( videotestsrc is-live=true num-buffers=330 pattern=ball "
+    "( videotestsrc is-live=true num-buffers=" C545D_VIDEO_BUFFERS " pattern=ball "
     "! video/x-raw,format=I420,width=1280,height=720,framerate=15/1 "
     "! x264enc speed-preset=ultrafast tune=zerolatency key-int-max=30 "
     "! h264parse ! rtph264pay config-interval=1 pt=96 name=pay0 "
-    "audiotestsrc is-live=true num-buffers=550 samplesperbuffer=320 wave=sine "
+    "audiotestsrc is-live=true num-buffers=" C545D_AUDIO_BUFFERS " samplesperbuffer=320 wave=sine "
     "! audio/x-raw,rate=8000,channels=1 "
     "! audioconvert ! alawenc ! rtppcmapay pt=8 name=pay1 )";
   server = gst_rtsp_server_new();
@@ -70,7 +81,7 @@ static int run_server(void)
     g_object_unref(server);
     return 3;
   }
-  g_print("C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=330,pcma_buffers_per_stream=550,real_camera=0\n");
+  g_print("C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=%s,pcma_buffers_per_stream=%s,real_camera=0\n", C545D_VIDEO_BUFFERS, C545D_AUDIO_BUFFERS);
   fflush(stdout);
   loop = g_main_loop_new(NULL,FALSE);
   g_main_loop_run(loop);
