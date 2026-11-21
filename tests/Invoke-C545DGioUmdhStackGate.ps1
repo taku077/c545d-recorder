@@ -41,7 +41,7 @@ function Snapshot([int]$point){
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $path -PathType Leaf)){throw "UMDH failed at stage $point; raw suppressed"}
   return $path
 }
-function Compare([int]$left,[int]$right,[string]$before,[string]$after){
+function Compare-C545DUmdhStacks([int]$left,[int]$right,[string]$before,[string]$after){
   $diff=Join-Path $dir ("diff_"+$left+"_"+$right+".txt")
   & $Umdh $before $after > $diff 2>&1
   if($LASTEXITCODE -ne 0){throw 'UMDH diff failed (raw suppressed)'}
@@ -85,7 +85,7 @@ try {
   $output=[IO.File]::ReadAllText($stdout)
   if(-not $output.Contains("GIO_PROBE_DONE,cycles=$Cycles,")){throw 'GIO probe completion missing'}
   for($j=0;$j -lt ($stages.Count-1);$j++){
-    Compare $stages[$j] $stages[$j+1] $snaps[$stages[$j]] $snaps[$stages[$j+1]]
+    Compare-C545DUmdhStacks $stages[$j] $stages[$j+1] $snaps[$stages[$j]] $snaps[$stages[$j+1]]
   }
   if($Cycles -eq256){
     $m192=[regex]::Match($output,'(?m)^GIO_HEAPSIZE,cycle,192,360,(\d+)$')
