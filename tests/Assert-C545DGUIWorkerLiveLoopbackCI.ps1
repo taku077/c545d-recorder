@@ -182,6 +182,7 @@ try {
     ('/I'+(Join-Path $inc 'gstreamer-1.0')),
     ('/I'+(Join-Path $inc 'glib-2.0')),
     ('/I'+(Join-Path $lib 'glib-2.0\include')),
+    '/DC545D_CI_RTSP_STEADY=1',
     'tests/c545d_ci_finite_rtsp_server.c',('/Fe:'+$exe),
     '/link',('/LIBPATH:'+$lib),
     'gstrtspserver-1.0.lib','gstreamer-1.0.lib','gobject-2.0.lib','glib-2.0.lib')
@@ -193,7 +194,7 @@ try {
   $svrOut=Join-Path $stage 'server.stdout'
   $svrErr=Join-Path $stage 'server.stderr'
   $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $temp -RedirectStandardOutput $svrOut -RedirectStandardError $svrErr
-  $rtspReadyLine='C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=330,pcma_buffers_per_stream=550,real_camera=0'
+  $rtspReadyLine='C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=900,pcma_buffers_per_stream=1500,real_camera=0'
   for($i=0;$i -lt 160;$i++){
     Start-Sleep -Milliseconds 100
     if($server.HasExited){break}
@@ -319,14 +320,21 @@ try {
     if($wideRequested -eq 1 -and $teleRequested -eq 1){break}
   }
   if($wideRequested -ne 1 -or $teleRequested -ne 1){throw 'REAL_WORKER_DUAL_RTSP_NOT_READY'}
-  # Collect four 1-second snapshots from the ONLY private staged gst-launch
-  # and its exact GUI Worker; no host-wide process sampling, raw command
-  # lines, camera secrets, or files are published. A four-second trace is
-  # operational telemetry, never evidence of a zero long-run leak.
+  # Collect 11 isolated samples over ~31 seconds: three one-second
+  # startup intervals then seven four-second intervals after warm-up.
+  # Monitor ONLY our staged gst-launch and its exact worker; no passwords,
+  # paths or host-wide counters are published. Do NOT interpret as leak zero.
   $resourceFirst=$null
+  $resourceSteadyFirst=$null
   $resourceLast=$null
+  $gioStageModuleObserved=0
+  $gioModuleQueryError=0
   $ownedGstExe=[IO.Path]::GetFullPath((Join-Path $bin 'gst-launch-1.0.exe'))
-  for($sampleNo=0;$sampleNo -lt 4;$sampleNo++){
+  for($sampleNo=0;$sampleNo -lt 11;$sampleNo++){
+    if($sampleNo -gt 0){
+      $intervalMs=if($sampleNo -le 3){1000}else{4000}
+      Start-Sleep -Milliseconds $intervalMs
+    }
     if($worker.HasExited){throw 'WORKER_EXITED_DURING_RESOURCE_SAMPLE'}
     $gstOwned=@(Get-Process -Name 'gst-launch-1.0' -ErrorAction SilentlyContinue |
       Where-Object {
@@ -346,12 +354,27 @@ try {
       gst_handles=[int]$gstProcess.HandleCount
       gst_cpu_ms=[long][Math]::Round($gstProcess.TotalProcessorTime.TotalMilliseconds)
     }
+    if($sampleNo -eq 4){
+      $resourceSteadyFirst=$resourceSample
+      try {
+        $loadedGio=@($gstProcess.Modules | Where-Object {$_.ModuleName -ieq 'gio-2.0-0.dll'})
+        if($loadedGio.Count -eq 1){
+          $expectedGio=Join-Path $bin 'gio-2.0-0.dll'
+          $gioStageModuleObserved=[int][string]::Equals(
+             [IO.Path]::GetFullPath($loadedGio[0].FileName),
+             [IO.Path]::GetFullPath($expectedGio),
+             [StringComparison]::OrdinalIgnoreCase)
+        }
+      } catch [System.ComponentModel.Win32Exception] {
+        $gioModuleQueryError=1
+      }
+    }
     $gstProcess.Dispose()
     if($sampleNo -eq 0){$resourceFirst=$resourceSample}
     $resourceLast=$resourceSample
-    Start-Sleep -Milliseconds 1000
   }
-  if($resourceFirst.worker_private_b -le 0 -or
+  if($null -eq $resourceSteadyFirst -or
+     $resourceFirst.worker_private_b -le 0 -or
      $resourceFirst.gst_private_b -le 0 -or
      $resourceFirst.worker_handles -le 0 -or
      $resourceFirst.gst_handles -le 0 -or
@@ -407,7 +430,7 @@ try {
     }).Count
   if($remainingStagedGst -ne 0){throw 'STAGED_GST_REMAINS_AFTER_STOP'}
   $cpuDeltaMs=[long]($resourceLast.gst_cpu_ms-$resourceFirst.gst_cpu_ms)
-  Write-Output "C545D_GUI_RESOURCE_STAGE,samples=4,worker_private_first_b=$($resourceFirst.worker_private_b),worker_private_last_b=$($resourceLast.worker_private_b),worker_handles_first=$($resourceFirst.worker_handles),worker_handles_last=$($resourceLast.worker_handles),gst_private_first_b=$($resourceFirst.gst_private_b),gst_private_last_b=$($resourceLast.gst_private_b),gst_handles_first=$($resourceFirst.gst_handles),gst_handles_last=$($resourceLast.gst_handles),gst_cpu_delta_ms=$cpuDeltaMs,staged_gst_remaining=0,real_camera=0"
+  Write-Output "C545D_GUI_RESOURCE_STAGE,samples=11,nominal_total_s=31,steady_window_s=24,worker_private_first_b=$($resourceFirst.worker_private_b),worker_private_last_b=$($resourceLast.worker_private_b),worker_handles_first=$($resourceFirst.worker_handles),worker_handles_last=$($resourceLast.worker_handles),gst_private_first_b=$($resourceFirst.gst_private_b),gst_private_steady_first_b=$($resourceSteadyFirst.gst_private_b),gst_private_last_b=$($resourceLast.gst_private_b),gst_handles_first=$($resourceFirst.gst_handles),gst_handles_steady_first=$($resourceSteadyFirst.gst_handles),gst_handles_last=$($resourceLast.gst_handles),gst_cpu_delta_ms=$cpuDeltaMs,gio_stage_module_observed=$gioStageModuleObserved,gio_module_query_error=$gioModuleQueryError,staged_gst_remaining=0,real_camera=0"
   $outFiles=$mp4
   $phase='MP4_VERIFY'
   $f=$outFiles[0]
