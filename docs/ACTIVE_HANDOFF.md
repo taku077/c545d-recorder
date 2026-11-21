@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44895873502](https://github.com/taku077/c545d-recorder/actions/runs/44895873502) |
+| C545D genuine WinForms button event dispatch (no RTSP CI ONLY) | in_progress | [#44895870962](https://github.com/taku077/c545d-recorder/actions/runs/44895870962) |
 
 ## Current development findings from the active PR
 
