@@ -50,8 +50,9 @@ jobs:
           mkdir -p artifacts/numeric
           python tests/analyze_gio_heap360_crossmode.py --selftest
           python tests/analyze_gio_heap360_crossmode.py --root saved --old16 saved/old16 | tee artifacts/numeric/c545d_heap360_crossmode.txt
-          grep -qx 'C545D_HEAP360_CROSSMODE_PASS,original_256_runs=3,original_16_runs=1,new_windows_runs=0,late360_equal_default_cache=3of3,early16_all_zero=4of4,heap_size_does_not_identify_owner=1,no_proven_leak_source=1,real_host=0' artifacts/numeric/c545d_heap360_crossmode.txt
+          grep -qx 'C545D_HEAP360_CROSSMODE_PASS,original_256_runs=3,original_16_runs=1,new_windows_runs=0,late360_equal_default_cache=3of3,early16_all_zero=4of4,settled_360_unchanged=6of6,heap_size_does_not_identify_owner=1,no_proven_leak_source=1,real_host=0' artifacts/numeric/c545d_heap360_crossmode.txt
           test "$(grep -c '^C545D_HEAP360_ARCHIVE,' artifacts/numeric/c545d_heap360_crossmode.txt)" -eq 3
+          test "$(grep -c '^C545D_HEAP360_SETTLED,' artifacts/numeric/c545d_heap360_crossmode.txt)" -eq 6
           echo 'C545D_HEAP360_ARCHIVE_CI_PASS,reused_numeric_artifacts=4,new_windows_measurements=0,physical_host=0'
       - uses: actions/upload-artifact@v4
         if: success()
