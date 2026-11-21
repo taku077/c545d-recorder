@@ -33,7 +33,7 @@ int wmain(int argc, wchar_t** argv) {
       puts("C545D_RESOURCE_NAME_PROBE_INCONCLUSIVE,test_package_not_found=1");
       return 3;
     }
-    const std::wstring actual(package.DisplayName());
+    const std::wstring actual(package.DisplayName().c_str());
     const bool english = actual == L"English synthetic resource value";
     const bool french = actual == L"French synthetic resource value";
     const bool expected = (phase == L"resource_add" ? french : english);
