@@ -5,6 +5,8 @@ DLLs, run the candidate, or upload video/credentials.**
 
 ## Evidence already retained — DO NOT rerun
 
+- **NEW accelerated split CI [#44887164124 PASS](https://github.com/taku077/c545d-recorder/actions/runs/44887164124)**: private disposable clone of real Record.ps1 used exactly one reversible 3600s→8s splitmux literal change; same original GUI worker and two synthetic RTSP streams produced **4 consecutive numbered MP4 fragments**, all independently H264/AAC decoded at 2560×720@15fps and AAC mono48k, EOS STOP without RECONNECT, 727ms stop and 0 staged gst processes left. Only CI private mirror was modified; **the genuine 3600-second boundary and actual GUI filename renaming are NOT tested**. Baseline unchanged-source GUI tests [#44887050093](https://github.com/taku077/c545d-recorder/actions/runs/44887050093) and [#44887060368](https://github.com/taku077/c545d-recorder/actions/runs/44887060368) also PASS. First new YAML [#44887115745](https://github.com/taku077/c545d-recorder/actions/runs/44887115745) failed with zero jobs due generated workflow syntax, then repaired; not a runtime failure. CI accelerated 24s postwarmup PrivateMemorySize64 delta **+163,840 B**, handles **−33**: do not claim sustained no-leak. Details: [GUI gate](C545D_GUI_WORKER_CTRL_C_EOS_CI_GATE.md).
+
 - The user reported the read-only Windows 10 official GStreamer 1.28.8 MSVC
   core DLL reference fingerprint: 6/6 exact SHA256, 0 missing/PE errors,
   Windows10=1, existing recorder active=1, check exit=0.
