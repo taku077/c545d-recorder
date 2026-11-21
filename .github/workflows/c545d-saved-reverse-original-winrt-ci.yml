@@ -1,0 +1,32 @@
+name: C545D archived original WinRT reverse resource language value audit (no rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_saved_reverse_language.py'
+      - '.github/workflows/c545d-saved-reverse-original-winrt-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  saved-numeric-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44913033160
+          name: c545d-reverse-language-WinRT-numeric-only
+          github-token: ${{ github.token }}
+          path: saved/44913033160
+      - name: Check original WinRT getter outcomes from exactly one saved Windows run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_c545d_saved_reverse_language.py --selftest
+          python tests/analyze_c545d_saved_reverse_language.py --input saved/44913033160/reverse_numeric_ci_only.txt | tee saved/reverse_analysis.txt
+          grep -q '^C545D_ARCHIVED_REVERSE_ORIGINAL_WINRT_VALUE_PASS,' saved/reverse_analysis.txt
+          echo 'C545D_ARCHIVED_REVERSE_CLASSIFICATION_CI_PASS,saved_windows_run=44913033160,new_windows_runs=0'
