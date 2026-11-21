@@ -22,16 +22,16 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           function Find-DebuggerTool([string]$name) {
-            $c=Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-            if($c){return $c.Source}
+            # Prefer 64-bit Debugging Tools for 64-bit MSVC target.
             foreach($folder in @(
               "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64",
-              "$env:ProgramFiles\Windows Kits\10\Debuggers\x64",
-              "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x86"
+              "$env:ProgramFiles\Windows Kits\10\Debuggers\x64"
             )) {
               $path=Join-Path $folder $name
               if(Test-Path $path -PathType Leaf){return $path}
             }
+            $c=Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+            if($c){return $c.Source}
             return $null
           }
           $g=Find-DebuggerTool 'gflags.exe'
@@ -65,8 +65,23 @@ jobs:
             $proc=Start-Process -FilePath (Join-Path $dir $exeName) -WorkingDirectory $dir -PassThru
             Wait-Flag (Join-Path $dir 'ready.signal')
             $before=Join-Path $dir 'before.txt'; $after=Join-Path $dir 'after.txt'
-            & $u "-p:$($proc.Id)" "-f:$before" > $null 2>&1
-            if($LASTEXITCODE -ne 0 -or -not(Test-Path $before)){throw 'UMDH baseline capture failed'}
+            $captureLog=Join-Path $dir 'capture_status_local_only.txt'
+            & $u "-p:$($proc.Id)" "-f:$before" > $captureLog 2>&1
+            $captureExit=$LASTEXITCODE
+            if($captureExit -ne 0 -or -not(Test-Path $before)){
+              $info=[IO.File]::ReadAllText($captureLog)
+              $class='UNKNOWN'
+              if($info -match '(?i)stack.trace.database|UST|stack.trace'){ $class='STACK_DB' }
+              elseif($info -match '(?i)access.denied|access.is.denied|privilege'){ $class='PRIVILEGE' }
+              elseif($info -match '(?i)invalid.*(switch|parameter)|usage:|syntax'){ $class='SYNTAX' }
+              elseif($info -match '(?i)process.*(exited|not.found|cannot.open|could.not.open)'){ $class='PROCESS' }
+              elseif($info -match '(?i)symbol|pdb'){ $class='SYMBOLS' }
+              $proc.Refresh()
+              $alive=[int](-not $proc.HasExited)
+              $filePresent=[int](Test-Path $before -PathType Leaf)
+              Write-Host "C545D_UMDH_CAPTURE_DIAG,exit=$captureExit,file=$filePresent,proc_alive=$alive,reason=$class,CI_only=1,raw_uploaded=0"
+              throw 'UMDH baseline capture failed; diagnostic category above'
+            }
             New-Item -ItemType File -Force -Path (Join-Path $dir 'allocate.signal') | Out-Null
             Wait-Flag (Join-Path $dir 'allocated.signal')
             & $u "-p:$($proc.Id)" "-f:$after" > $null 2>&1
