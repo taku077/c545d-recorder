@@ -3,18 +3,25 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8049032d5d7963d79a50a3a68609bf0af62d599e`
-- **PR updated at (UTC):** `2026-11-21T15:06:24Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8049032d5d7963d79a50a3a68609bf0af62d599e/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `fa0b74764c126ffc085a8bc2cefbf5b95287d069`
+- **PR updated at (UTC):** `2026-11-21T15:07:04Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/fa0b74764c126ffc085a8bc2cefbf5b95287d069/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44917397415](https://github.com/taku077/c545d-recorder/actions/runs/44917397415) |
-| C545D MSVC official SDK core vs Win32 native path and DisplayName epoch cache heap64 (CI ONLY) | in_progress | [#44917394190](https://github.com/taku077/c545d-recorder/actions/runs/44917394190) |
+| C545D active development handoff auto-refresh | in_progress | [#44917458982](https://github.com/taku077/c545d-recorder/actions/runs/44917458982) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-22 JST — actual MSVC 64-cycle archive proved false-negative analyzer; arm-aware gate fixed, retest pending
+
+- **Current authority:** draft [PR #62](https://github.com/taku077/c545d-recorder/pull/62) branch `investigate/c545d-status-only-monitor-20261120`. Last non-doc commit [8049032](https://github.com/taku077/c545d-recorder/commit/8049032d5d7963d79a50a3a68609bf0af62d599e). No recorder-host changes; diagnostic patch `install_approved=0`, no user WPR/UMDH/multihour action. The host Windows10 user interface is Japanese; experimental `fr-FR/en-US` fixtures are NOT user locale.
+- **FINISHED result (do not perpetuate IN_PROGRESS):** [MSVC rerun #44916356539 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/44916356539) at prior head `b3b5cd9`. Official GStreamer SDK provenance, GLib2.82.4 MSVC build, 2047 exact exports and native watcher sidecar PASS. All four 64-cycle A/B arms and two 16-cycle exact native/WinRT comparisons completed exit0; analyzer SELFTEST PASS but **FALSE REJECTED** `combined DisplayName cache not exercised`. Allowlist-only numerical artifact [14712431086](https://github.com/taku077/c545d-recorder/actions/runs/44916356539/artifacts/14712431086) uploaded (no raw logs/paths).
+- **Numeric proof from 14712431086:** combo-nochange initial WinRT native path `success=32,fallback=0`, cache `hits=0,misses=32,entries=32`, bridge `scans=1,errors=0,ready=1`. **Valid no-change control has only one enumeration: zero hits is expected, NOT cache failure.** combo-registry after 64 changes (66 package scans) native path `32/0` each scan, cache **`hits=2080,misses=32,entries=32`**, bridge `scans=66,injections=0,evictions=0,errors=0,ready=1`. Both compare-registry-16 and compare-nochange-16 native-vs-WinRT equality: `32 matched, mismatch=0` at first scan; compare-registry cache hits512 after 16 cycles. No real camera or user's OS exposed. **Do not infer zero memory leak: old run did not archive the HeapWalk/PrivateUsage/Key values because analyzer aborted first.**
+- **FIX committed [8049032](https://github.com/taku077/c545d-recorder/commit/8049032d5d7963d79a50a3a68609bf0af62d599e)** changes ONLY `tests/analyze_gio_combo_msvc64.py`: requires populated <=1024 cache for BOTH arms, requires positive *reuse* only for registry-mutating arm; four bad fixture cases rejected by new selftest. Preserves native path/nonzero scans/bridge readiness/no errors, 16-cycle same-path equality, SDK export/API and full memory/Key/Heap numeric comparisons. Automated fresh [Windows run #44917394190](https://github.com/taku077/c545d-recorder/actions/runs/44917394190) QUEUED after commit, **not yet measured**. Inspect latest actual run and numeric artifact, bins 56/120/190/194/196/360, control-adjusted PrivateUsage/HeapWalk/Key before further fix. Do not start another redundant 64-cycle test unless necessary.
+- **Additional unmet release gates:** residual late 360B owner not attributed, zero long-term slope not proven; combined MSVC new media/EOS regression not yet executed; Japanese Windows10 two real C545D RTSP stream1/stream6 synchronization, AAC and full 3600s MP4, memory/CPU/Key stability unverified. Remain on draft branch, do not deploy or change running recorder. User action NONE.
 
 ### UPDATE 2026-11-21 JST — MSVC combo CI failure classified; whitelist-only numeric failure capture added
 
