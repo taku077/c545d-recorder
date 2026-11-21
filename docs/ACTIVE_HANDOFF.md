@@ -11,7 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#44902860351](https://github.com/taku077/c545d-recorder/actions/runs/44902860351) |
+| C545D active development handoff auto-refresh | in_progress | [#44902860351](https://github.com/taku077/c545d-recorder/actions/runs/44902860351) |
 | C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#44902858245](https://github.com/taku077/c545d-recorder/actions/runs/44902858245) |
 
 ## Current development findings from the active PR
