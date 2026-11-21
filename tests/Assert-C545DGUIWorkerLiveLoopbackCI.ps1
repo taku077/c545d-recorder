@@ -132,8 +132,11 @@ try {
   $bootstrapText=@(
     'param([string]$OwnedStage,[string]$SessionId)',
     '$ErrorActionPreference=''Stop''',
+    '$phase=Join-Path $OwnedStage ''ci-bootstrap-phase''',
+    '[IO.File]::WriteAllText($phase,''BOOTSTRAP_ENTER'')',
     'if($env:GITHUB_ACTIONS -cne ''true'' -or $env:RUNNER_OS -cne ''Windows''){exit 3}',
     'if([IO.File]::ReadAllText((Join-Path $OwnedStage ''.c545d-ci-owned'')) -cne ''CI_MIRROR_ONLY_NOT_FOR_EXECUTION''){exit 3}',
+    '[IO.File]::WriteAllText($phase,''GUARDS_PASS'')',
     '$env:LOCALAPPDATA=Join-Path $OwnedStage ''ci-localappdata''',
     '$conf=Join-Path $env:LOCALAPPDATA ''C545D_GStreamer''',
     '$secret=Join-Path $conf ''camera_password.dpapi''',
@@ -141,8 +144,15 @@ try {
     '$fake=ConvertTo-SecureString ''CI_DUMMY_NOT_REAL'' -AsPlainText -Force',
     'ConvertFrom-SecureString $fake | Set-Content -LiteralPath $secret -Encoding ASCII',
     'if(-not (Test-Path -LiteralPath $secret -PathType Leaf)){exit 3}',
-    '& (Join-Path $OwnedStage ''RecordGUIWorker.ps1'') -SessionId $SessionId',
-    'if(-not $?){exit 3}',
+    '[IO.File]::WriteAllText($phase,''DUMMY_DPAPI_WRITTEN'')',
+    'try {',
+    ' & (Join-Path $OwnedStage ''RecordGUIWorker.ps1'') -SessionId $SessionId',
+    ' if(-not $?){[IO.File]::WriteAllText($phase,''WORKER_RETURNED_FAILURE'');exit 3}',
+    ' [IO.File]::WriteAllText($phase,''WORKER_RETURNED_SUCCESS'')',
+    '} catch {',
+    ' [IO.File]::WriteAllText($phase,''WORKER_THREW'')',
+    ' exit 3',
+    '}',
     'exit 0'
   )
   [IO.File]::WriteAllText($bootstrap,($bootstrapText -join [Environment]::NewLine),
@@ -200,7 +210,20 @@ try {
       if($readySeen){break}
     }
   }
-  if(-not $readySeen){throw 'REAL_GUI_WORKER_NOT_READY'}
+  if(-not $readySeen){
+    $bootFile=Join-Path $stage 'ci-bootstrap-phase'
+    $phaseValue=if(Test-Path -LiteralPath $bootFile){[IO.File]::ReadAllText($bootFile)}else{'NO_BOOTSTRAP_PHASE'}
+    $allowed=@('NO_BOOTSTRAP_PHASE','BOOTSTRAP_ENTER','GUARDS_PASS',
+       'DUMMY_DPAPI_WRITTEN','WORKER_RETURNED_FAILURE',
+       'WORKER_RETURNED_SUCCESS','WORKER_THREW')
+    if($phaseValue -notin $allowed){$phaseValue='UNEXPECTED_PHASE'}
+    $existsSecret=[int](Test-Path -LiteralPath (Join-Path $config 'camera_password.dpapi'))
+    $existsReady=[int](Test-Path -LiteralPath $ready)
+    $exited=[int]$worker.HasExited
+    $exitNumber=if($worker.HasExited){[int]$worker.ExitCode}else{-999}
+    Write-Output "C545D_GUI_BOOTSTRAP_DIAG,phase=$phaseValue,worker_exited=$exited,worker_exit=$exitNumber,dummy_secret_exists=$existsSecret,ready_exists=$existsReady,real_camera=0"
+    throw 'REAL_GUI_WORKER_NOT_READY'
+  }
   $phase='TWO_MEDIA_MOUNTS'
   $wideRequested=0;$teleRequested=0
   for($i=0;$i -lt 420;$i++){
