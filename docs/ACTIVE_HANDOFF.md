@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `34bef41406ba2a56516deb0c6122c18f7be3ac00`
-- **PR updated at (UTC):** `2026-11-21T14:29:44Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/34bef41406ba2a56516deb0c6122c18f7be3ac00/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `46e553de09e0405220f481688895e2fbc889dadb`
+- **PR updated at (UTC):** `2026-11-21T14:30:12Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/46e553de09e0405220f481688895e2fbc889dadb/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44914209066](https://github.com/taku077/c545d-recorder/actions/runs/44914209066) |
+| C545D active development handoff auto-refresh | in_progress | [#44914253205](https://github.com/taku077/c545d-recorder/actions/runs/44914253205) |
+| C545D MSVC official SDK core vs Win32 native path and DisplayName epoch cache heap64 (CI ONLY) | in_progress | [#44914251014](https://github.com/taku077/c545d-recorder/actions/runs/44914251014) |
 
 ## Current development findings from the active PR
 
