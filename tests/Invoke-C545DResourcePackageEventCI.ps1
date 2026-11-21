@@ -7,8 +7,13 @@ No camera, production DLL, or user's registry/system is touched.
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$WatchDll,
       [Parameter(Mandatory=$true)][string]$StubExe,
-      [string]$GioScanDll='')
+      [string]$GioScanDll='',
+      [switch]$AssertLocalizedDisplayName,
+      [string]$LocalizedProbeExe='')
 $ErrorActionPreference='Stop'
+if($AssertLocalizedDisplayName -and (-not $LocalizedProbeExe -or -not(Test-Path -LiteralPath $LocalizedProbeExe))){
+  throw 'C545D_RESOURCE_LOCALIZED_TEST_REQUIRES_NATIVE_DISPLAY_PROBE'
+}
 $name='C545D.CI.PackageEvents'
 $root=Join-Path $env:RUNNER_TEMP ('c545d_resource_'+[guid]::NewGuid().ToString('N'))
 $secret=[guid]::NewGuid().ToString('N')
@@ -77,7 +82,9 @@ try {
   $resDir=Join-Path $root 'resource'
   $mainMsix=Join-Path $root 'main.msix'
   $resMsix=Join-Path $root 'resource.msix'
-  & py tests/make_c545d_ci_package_fixture.py --out $mainDir --stub $StubExe --version '1.0.0.0'
+  $mainArgs=@('tests/make_c545d_ci_package_fixture.py','--out',$mainDir,'--stub',$StubExe,'--version','1.0.0.0')
+  if($AssertLocalizedDisplayName){$mainArgs+='--localized-display-name'}
+  & py @mainArgs
   Checked 'main_fixture'
   & py tests/make_c545d_ci_resource_package_fixture.py --out $resDir --main-layout $mainDir
   Checked 'resource_fixture'
@@ -186,6 +193,10 @@ public static class C545DResourceGio {
   [UInt64]$g1=Await $g0
   if($g1 -le $g0){throw 'C545D_RESOURCE_CI_MAIN_EVENT_MISSING'}
   [UInt64]$s1=Status
+  if($AssertLocalizedDisplayName){
+    & $LocalizedProbeExe $installedParent main_add
+    Checked 'localized_main_baseline'
+  }
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(11)
     "C545D_RESOURCE_GIO_PREQUERY,stage=main_add,changed=$changed,CI_only=1"
@@ -203,6 +214,10 @@ public static class C545DResourceGio {
   [UInt64]$g2=Await $g1
   [UInt64]$s2=Status
   $c2=Completion
+  if($AssertLocalizedDisplayName){
+    & $LocalizedProbeExe $installedParent resource_add
+    Checked 'localized_resource_add'
+  }
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(12)
     "C545D_RESOURCE_GIO_PREQUERY,stage=resource_add,changed=$changed,CI_only=1"
@@ -213,6 +228,10 @@ public static class C545DResourceGio {
   [UInt64]$g3=Await $g2
   [UInt64]$s3=Status
   $c3=Completion
+  if($AssertLocalizedDisplayName){
+    & $LocalizedProbeExe $installedParent resource_remove
+    Checked 'localized_resource_remove'
+  }
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(13)
     "C545D_RESOURCE_GIO_PREQUERY,stage=resource_remove,changed=$changed,CI_only=1"
