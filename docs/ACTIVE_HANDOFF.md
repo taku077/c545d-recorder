@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44899905574](https://github.com/taku077/c545d-recorder/actions/runs/44899905574) |
+| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#44899903633](https://github.com/taku077/c545d-recorder/actions/runs/44899903633) |
 
 ## Current development findings from the active PR
 
