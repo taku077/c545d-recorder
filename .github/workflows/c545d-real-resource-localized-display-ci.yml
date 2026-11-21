@@ -82,6 +82,16 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          # Preserve only approved numeric evidence if an original WinRT
+          # DisplayName assertion fails before the ordinary post-step filter.
+          # Never upload raw MakePri/PowerShell output, package paths or names.
+          sanitize_on_exit() {
+            if [ -f artifacts/resource_gio_run.txt ]; then
+              tr -d '\000\r' < artifacts/resource_gio_run.txt |
+                grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_|C545D_RESOURCE_NAME_PROBE,)' > artifacts/resource_gio_numeric.txt || true
+            fi
+          }
+          trap sanitize_on_exit EXIT
           export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
           export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
           export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
