@@ -59,7 +59,7 @@ jobs:
           foreach($row in $rows){
             if(([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_STAGE,worker_exit=-?[0-9]+,worker_exited=[01],gui_ctrlc_sent=[01],wide_mount=[01],tele_mount=[01],launch_count=[0-9]+,stop_at_gst_return=[01],native_gst_exit=-?[0-9]+,policy_stop=[01],policy_reconnect=[01],eos_message=[01],worker_returned=[01],mp4_count=[0-9]+,mp4_bytes=[0-9]+,stop_marker=[01],ready_removed=[01],real_camera=0$' -or
                ([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_FAIL,phase=[A-Z_]+,reason=[A-Z_]+,real_camera=0,host_modified=0$' -or
-               ([string]$row) -cmatch '^C545D_GUI_BOOTSTRAP_DIAG,phase=[A-Z_]+,worker_exited=[01],worker_exit=-?[0-9]+,dummy_secret_exists=[01],ready_exists=[01],real_camera=0$'){
+               ([string]$row) -cmatch '^C545D_GUI_BOOTSTRAP_DIAG,phase=[A-Za-z_]+,worker_exited=[01],worker_exit=-?[0-9]+,dummy_secret_exists=[01],ready_exists=[01],real_camera=0$'){
               Write-Host $row
             }
           }
