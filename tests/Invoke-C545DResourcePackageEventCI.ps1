@@ -103,14 +103,15 @@ try {
   $pri=Tool 'MakePri.exe'
   $strings=Join-Path $mainDir ('Strings\'+$baseLanguage)
   New-Item -ItemType Directory -Force -Path $strings | Out-Null
-  @'
+  $baseText=@'
 <?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="C545DResourceProbe" xml:space="preserve">
     <value>__BASE_VALUE__ synthetic resource value</value>
   </data>
 </root>
-'@.Replace('__BASE_VALUE__',$(if($ReverseResourceLanguage){'French'}else{'English'})) | Set-Content -LiteralPath (Join-Path $strings 'Resources.resw') -Encoding utf8
+'@
+  $baseText.Replace('__BASE_VALUE__',$(if($ReverseResourceLanguage){'French'}else{'English'})) | Set-Content -LiteralPath (Join-Path $strings 'Resources.resw') -Encoding utf8
   $mainCfg=Join-Path $mainDir 'priconfig.xml'
   $resCfg=Join-Path $resDir 'priconfig.xml'
   $mainPri=Join-Path $mainDir 'resources.pri'
