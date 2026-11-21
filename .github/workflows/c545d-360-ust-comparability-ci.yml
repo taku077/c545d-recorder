@@ -1,0 +1,39 @@
+name: C545D archived 256-cycle 360B per-arm UST comparability gate (Ubuntu ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_360_ust_confounds.py'
+      - '.github/workflows/c545d-360-ust-comparability-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze-existing-six-traces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Selftest no false same-run inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_gio_360_ust_confounds.py --selftest
+      - name: Download original Windows2022 256-cycle numeric-only evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          run-id: 44918598339
+          github-token: ${{ github.token }}
+          path: artifacts/saved
+      - name: Inspect uninstrumented raw 360B per-arm deltas and UST comparability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f artifacts/saved/ab64_safe_trace.txt
+          python3 tests/analyze_gio_360_ust_confounds.py --root artifacts/saved | tee /tmp/c545d_360_compare.txt
+          grep -Fx 'C545D_360_UNINSTRUMENTED_PAIRED,source_run=44918598339,mode=combo,late_control_adjusted=5,matched_same_run=1,CI_only=1' /tmp/c545d_360_compare.txt
+          grep -Fx 'C545D_360_COMPARABILITY,uncontrolled_ust_differences=1,cross_runner_control_pair_is_invalid=1,exact_360_owner_proven=0,zero_leak_proven=0,same_run_uninstrumented_combo_effect=5,windows_reruns=0' /tmp/c545d_360_compare.txt
+          test "$(grep -c '^C545D_360_UNINSTRUMENTED_RAW,' /tmp/c545d_360_compare.txt)" -eq 4
+          echo 'C545D_360_PAIRED_ARCHIVE_DIAGNOSTIC_PASS,new_windows_runs=0,user_host_modified=0'
