@@ -37,40 +37,8 @@ jobs:
           $matches=@($rows|Where-Object {([string]$_) -ceq $expected})
           if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1){
             foreach($row in $rows){
-              if(([string]$row) -cmatch '^C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=[01],stop=[01],quit=[01],namer_ready=[01],stub_safe_stop=[01],source_unchanged=[01],real_rtsp=0,real_camera=0,install_approved=0,reason=[A-Z_]+
-                Write-Host $row
-              }
-            }
-            throw 'The actual WinForms event handlers did not pass CI-owned no-RTSP gate'
-          }
-          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
-          $matches[0] | Set-Content artifacts/numeric/winforms_button_dispatch_ci.txt -Encoding ascii
-          Write-Host $matches[0]
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: c545d-winforms-button-dispatch-no-rtsp-CI-only
-          path: artifacts/numeric/winforms_button_dispatch_ci.txt
-          if-no-files-found: error
-          retention-days: 7
- -or
-                 ([string]$row) -cmatch '^C545D_WINFORMS_CHILD_DIAG,boot=[A-Z_]+,error_id=[A-Za-z0-9_]+,gui_exit=-?[0-9]+,real_rtsp=0
-                Write-Host $row
-              }
-            }
-            throw 'The actual WinForms event handlers did not pass CI-owned no-RTSP gate'
-          }
-          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
-          $matches[0] | Set-Content artifacts/numeric/winforms_button_dispatch_ci.txt -Encoding ascii
-          Write-Host $matches[0]
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: c545d-winforms-button-dispatch-no-rtsp-CI-only
-          path: artifacts/numeric/winforms_button_dispatch_ci.txt
-          if-no-files-found: error
-          retention-days: 7
-){
+              if(([string]$row) -cmatch '^C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=[01],stop=[01],quit=[01],namer_ready=[01],stub_safe_stop=[01],source_unchanged=[01],real_rtsp=0,real_camera=0,install_approved=0,reason=[A-Z_]+$' -or
+                 ([string]$row) -cmatch '^C545D_WINFORMS_CHILD_DIAG,boot=[A-Z_]+,error_id=[A-Za-z0-9_]+,gui_exit=-?[0-9]+,real_rtsp=0$'){
                 Write-Host $row
               }
             }
