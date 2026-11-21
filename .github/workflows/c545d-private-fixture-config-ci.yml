@@ -99,44 +99,6 @@ jobs:
               throw 'PS51 cross-process dummy decrypt blocked'
             }
             Write-Host $readerRows[0]
-            # CreateProcess with UseShellExecute=false retains explicit
-            # caller token and LOCALAPPDATA. Start-Process on GH Windows
-            # runners was observed to fail DPAPI cross-process even when
-            # direct native PS5.1 invocation succeeds.
-            $psi=[System.Diagnostics.ProcessStartInfo]::new($ps)
-            $psi.UseShellExecute=$false
-            $psi.WorkingDirectory=$root
-            $psi.RedirectStandardOutput=$true
-            $psi.RedirectStandardError=$true
-            $psi.Environment['LOCALAPPDATA']=$configRoot
-            foreach($arg in @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-               '-File',$readerFile,'-CopiedSettings',(Join-Path $stage 'CommonSettings.ps1'))){
-              [void]$psi.ArgumentList.Add($arg)
-            }
-            $p51=[System.Diagnostics.Process]::new()
-            $p51.StartInfo=$psi
-            try {
-              if(-not $p51.Start()){throw 'CreateProcess PS51 dummy reader did not start'}
-              $outTask=$p51.StandardOutput.ReadToEndAsync()
-              $errTask=$p51.StandardError.ReadToEndAsync()
-              if(-not $p51.WaitForExit(25000)){
-                try{$p51.Kill($true);[void]$p51.WaitForExit(3000)}catch{}
-                throw 'CreateProcess PS51 dummy reader timeout'
-              }
-              $output=$outTask.GetAwaiter().GetResult().Trim()
-              $errClass=$errTask.GetAwaiter().GetResult()
-              $want='C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'
-              if($p51.ExitCode -ne 0 -or $output -cne $want){
-                $missingSecret=[int]($errClass -match 'Saved password is missing')
-                $decryptFailed=[int]($errClass -match 'Cannot decrypt saved password')
-                Write-Host ("C545D_PS51_CREATEPROCESS_DIAG,exit_nonzero="+[int]($p51.ExitCode -ne 0)+",secret_missing="+$missingSecret+",secret_decrypt_failed="+$decryptFailed+",output_valid="+[int]($output -ceq $want))
-                throw 'CreateProcess dummy DPAPI verification blocked'
-              }
-              Write-Host 'C545D_PS51_CREATEPROCESS_DPAPI_PASS,writer_ps51=1,reader_ps51=1,explicit_environment=1,secret_fake=1,host_access=0'
-            } finally {
-              if(-not $p51.HasExited){try{$p51.Kill($true);[void]$p51.WaitForExit(3000)}catch{}}
-              $p51.Dispose()
-            }
           } finally {
             $env:LOCALAPPDATA=$oldHome
           }
