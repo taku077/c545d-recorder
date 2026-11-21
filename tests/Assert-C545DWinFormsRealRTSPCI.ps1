@@ -33,6 +33,7 @@ $CiLiveNamer=$true
 $liveNamer=$null;$liveNamerStop='';$liveNamerReady=0;$liveRenamedBeforeStop=0
 $liveNamerClosed=0;$liveRenameCount=0
 $gui=$null;$guiStopMarker='';$guiQuitMarker='';$guiStarted=0;$guiStop=0;$guiExit=0
+$workerExitMismatch=0;$mediaVerified=0
 try {
   if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
      -not $env:RUNNER_TEMP){throw 'NOT_DISPOSABLE_WINDOWS_CI'}
@@ -572,7 +573,9 @@ $encrypted=ConvertFrom-SecureString $pass
   # Split the exact same acceptance predicate into individual fail-closed
   # codes; CI prints only the first failed invariant, never camera log content.
   $phase='GUI_STOP_POLICY_CHECK'
-  if($recordExit -ne 0){throw 'GUI_STOP_POLICY_WORKER_EXIT'}
+  # Do not ignore the nonzero worker status. Continue private media and GUI
+  # cleanup checks and fail at the end, to identify whether EOS MP4s survived.
+  $workerExitMismatch=[int]($recordExit -ne 0)
   if($signalSent -ne 1){throw 'GUI_STOP_POLICY_NO_SIGNAL'}
   if($launchObserved -ne 1){throw 'GUI_STOP_POLICY_NOT_LAUNCHED'}
   if($launchCount -ne 1){throw 'GUI_STOP_POLICY_LAUNCH_COUNT'}
@@ -678,6 +681,11 @@ $encrypted=ConvertFrom-SecureString $pass
       throw 'ORIGINAL_BYTES_CHANGED'
     }
   }
+  $mediaVerified=1
+  if($workerExitMismatch -eq 1){
+    $phase='POST_VERIFICATION_WORKER_STATUS'
+    throw 'GUI_STOP_POLICY_WORKER_EXIT'
+  }
   Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
   $phase='PASS'
 } catch {
@@ -715,6 +723,11 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
     'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    # Attach the signed worker exit status directly to the one failure line
+    # that the workflow is guaranteed to preserve. Numeric PID is NOT logged.
+    $reason='GUI_STOP_POLICY_WORKER_EXIT'
+  }
   if($phase -ceq 'GUI_STOP_POLICY_CHECK'){
     # Only bounded scalar counters. Never upload original worker transcript,
     # camera credentials, RTSP URLs, file names, or exception messages.
@@ -742,7 +755,11 @@ $encrypted=ConvertFrom-SecureString $pass
   $errorCategory=[string]$_.CategoryInfo.Category
   if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
   Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,real_camera=0"
-  Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0,host_modified=0"
+  } else {
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
+  }
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
  } finally {
   if($gui){
