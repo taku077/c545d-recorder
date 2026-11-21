@@ -16,6 +16,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void
+on_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media, gpointer user_data)
+{
+  const char *mount=(const char*)user_data;
+  (void) factory;
+  (void) media;
+  /* Fixed-safe CI-only evidence of actual RTSP session construction. */
+  g_print("C545D_FINITE_RTSP_MEDIA_CONFIGURED,stream=%s,real_camera=0\n", mount);
+  fflush(stdout);
+}
+
 static int run_server(void)
 {
   GstRTSPServer *server;
@@ -47,6 +58,8 @@ static int run_server(void)
   tele = gst_rtsp_media_factory_new();
   gst_rtsp_media_factory_set_launch(wide, wide_launch);
   gst_rtsp_media_factory_set_launch(tele, tele_launch);
+  g_signal_connect(wide, "media-configure", G_CALLBACK(on_media_configure), "stream1");
+  g_signal_connect(tele, "media-configure", G_CALLBACK(on_media_configure), "stream6");
   gst_rtsp_mount_points_add_factory(mounts, "/stream1", wide);
   gst_rtsp_mount_points_add_factory(mounts, "/stream6", tele);
   g_object_unref(mounts);
