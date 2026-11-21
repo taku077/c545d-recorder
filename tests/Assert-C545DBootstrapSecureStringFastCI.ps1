@@ -43,7 +43,15 @@ try {
       [Text.UTF8Encoding]::new($false))
   $args=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
     '-File',('"'+$child+'"'),'-Root',('"'+$stage+'"'))
-  $p=Start-Process -FilePath $ps -ArgumentList $args -PassThru -WindowStyle Hidden -WorkingDirectory $root
+  # Microsoft's documented workaround for PS7->intermediate->WinPS5.1:
+  # strip inherited PSModulePath for the owned child creation only.
+  $priorPSModulePath=[Environment]::GetEnvironmentVariable('PSModulePath','Process')
+  try {
+    [Environment]::SetEnvironmentVariable('PSModulePath',$null,'Process')
+    $p=Start-Process -FilePath $ps -ArgumentList $args -PassThru -WindowStyle Hidden -WorkingDirectory $root
+  } finally {
+    [Environment]::SetEnvironmentVariable('PSModulePath',$priorPSModulePath,'Process')
+  }
   if(-not $p.WaitForExit(15000)){throw 'CHILD_TIMEOUT'}
   $statePath=Join-Path $stage 'state'
   $state=if(Test-Path -LiteralPath $statePath){[IO.File]::ReadAllText($statePath)}else{'NO_STATE'}
