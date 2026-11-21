@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `906c866bf4394c24a19930cfb94a97cf049b9e97`
-- **PR updated at (UTC):** `2026-11-21T16:06:05Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/906c866bf4394c24a19930cfb94a97cf049b9e97/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f7dba256d618f314b6c4f6efe9f6cad218d78249`
+- **PR updated at (UTC):** `2026-11-21T16:07:12Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f7dba256d618f314b6c4f6efe9f6cad218d78249/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44922695926](https://github.com/taku077/c545d-recorder/actions/runs/44922695926) |
-| C545D 256-cycle sparse heap plus full process-samples parser selftest (Linux only) | success | [#44922693815](https://github.com/taku077/c545d-recorder/actions/runs/44922693815) |
+| C545D active development handoff auto-refresh | in_progress | [#44922797721](https://github.com/taku077/c545d-recorder/actions/runs/44922797721) |
 
 ## Current development findings from the active PR
 
