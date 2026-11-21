@@ -64,6 +64,44 @@ jobs:
           }
           if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $originalHash){throw 'Original source mutated'}
           Write-Host 'C545D_CI_DUMMY_CAMERA_CONFIG_PASS,synthetic_ip=1,private_output=1,dpapi_fixture=1,original_settings_unchanged=1,user_secret_read=0,user_camera_contacted=0'
+          # Check actual PS5.1 DPAPI across TWO different child processes.
+          # Previous same-process pwsh7 fixture did not cover this exact gate.
+          $writerFile=Join-Path $stage 'ci-dummy-dpapi-write-51.ps1'
+          $readerFile=Join-Path $stage 'ci-dummy-dpapi-read-51.ps1'
+          $passwordFile=Join-Path $configDir 'camera_password.dpapi'
+          $writerCode=@(
+            'param([string]$OutFile)',
+            '$dummy=ConvertTo-SecureString ''dummy_ci_only_password_not_real'' -AsPlainText -Force',
+            'ConvertFrom-SecureString $dummy | Set-Content -LiteralPath $OutFile -Encoding ASCII'
+          )
+          $readerCode=@(
+            'param([string]$CopiedSettings)',
+            '. $CopiedSettings',
+            '$s=Read-C545DSettings',
+            '$secret=Read-C545DPassword',
+            '$ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)',
+            'try { $match=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) -ceq ''dummy_ci_only_password_not_real'' }',
+            'finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }',
+            'if(-not $match -or $s.camera_ip -cne ''127.0.0.1''){exit 3}',
+            'Write-Output ''C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'''
+          )
+          [IO.File]::WriteAllText($writerFile,($writerCode -join [Environment]::NewLine))
+          [IO.File]::WriteAllText($readerFile,($readerCode -join [Environment]::NewLine))
+          $env:LOCALAPPDATA=$configRoot
+          try {
+            & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $writerFile -OutFile $passwordFile
+            if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $passwordFile -PathType Leaf)){
+              throw 'PS51 dummy password generator failed'
+            }
+            $readerRows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $readerFile -CopiedSettings (Join-Path $stage 'CommonSettings.ps1') 2>$null)
+            if($LASTEXITCODE -ne 0 -or $readerRows.Count -ne 1 -or
+               $readerRows[0] -cne 'C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'){
+              throw 'PS51 cross-process dummy decrypt blocked'
+            }
+            Write-Host $readerRows[0]
+          } finally {
+            $env:LOCALAPPDATA=$oldHome
+          }
           $links=@(Get-ChildItem -LiteralPath $stage -Recurse -Force | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
           if($links.Count -ne 0 -or
              [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\') -cne $root -or
