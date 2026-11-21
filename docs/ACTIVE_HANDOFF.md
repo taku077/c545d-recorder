@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `473cb6b33f085729d258891a53ae705fa12844a9`
-- **PR updated at (UTC):** `2026-11-21T08:02:53Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/473cb6b33f085729d258891a53ae705fa12844a9/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `776144a469c0759a25097e6f2e679c1642ea5c60`
+- **PR updated at (UTC):** `2026-11-21T08:07:44Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/776144a469c0759a25097e6f2e679c1642ea5c60/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44883023120](https://github.com/taku077/c545d-recorder/actions/runs/44883023120) |
-| C545D real GUI worker Ctrl+C EOS dual localhost RTSP Windows CI ONLY | in_progress | [#44883020087](https://github.com/taku077/c545d-recorder/actions/runs/44883020087) |
+| Same-SHA CI not found | unknown | - |
 
 ## Current development findings from the active PR
 
