@@ -51,6 +51,13 @@ jobs:
           $manifest=(Resolve-Path artifacts/pinned-candidate/manifest.txt).Path
           $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
           $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_MIRROR_SDK -CandidateDll $candidate -CandidateManifest $manifest -ReferenceManifest $ref)
+          # A child failure can reveal ONLY these fixed numeric classification
+          # booleans; never forward full camera/host paths or native stderr.
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_PRESTOP_FAILURE_DIAG,native_nonzero=1,managed_exit_null=[01],settings_error=[01],dpapi_error=[01],element_error=[01],decoder_error=[01],aac_error=[01],graph_observed=[01],stop_observed=[01]$'){
+              Write-Host $row
+            }
+          }
           if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1 -or
              $rows[0] -cnotmatch '^C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=[2-8],mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,recorder_prestop_preflight=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0$'){
             throw 'Strict integrated media runtime result mismatch'
