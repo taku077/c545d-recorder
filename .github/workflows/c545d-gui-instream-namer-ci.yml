@@ -29,6 +29,19 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - name: Parse harness before SDK installation; report only sanitized diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tok=$null;$err=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path tests/Assert-C545DGUIWorkerLiveLoopbackCI.ps1).Path,[ref]$tok,[ref]$err)
+          if($err.Count -gt 0){
+            foreach($e in $err){
+              Write-Host "C545D_HARNESS_PARSE_DIAG,line=$($e.Extent.StartLineNumber),column=$($e.Extent.StartColumnNumber),id=$($e.ErrorId)"
+            }
+            throw 'Harness source did not parse; SDK/RTSP never started'
+          }
+          Write-Host 'C545D_HARNESS_PARSE_PASS,source_syntax=1,ci_only=1'
       - uses: actions/download-artifact@v4
         with:
           name: c545d-core-only-gio-2824-msvc-ci-not-for-install
