@@ -172,8 +172,22 @@ try {
     output_folder='C:\NONEXISTENT_NOT_USED'
   }
   $dummySettings | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $configDir 'settings.json') -Encoding utf8
-  $dummySecret=ConvertTo-SecureString 'dummy_ci_only_password_not_real' -AsPlainText -Force
-  ConvertFrom-SecureString $dummySecret | Set-Content -LiteralPath (Join-Path $configDir 'camera_password.dpapi') -Encoding ascii
+  # The exact production recorder executes in Windows PowerShell 5.1.
+  # Generate the fake DPAPI payload in that SAME PS5.1 user/runtime, never
+  # using PowerShell7's independently versioned secure-string serialization.
+  # This local CI script carries no user secret, only an inert public dummy.
+  $dummyPwScript=Join-Path $stage 'ci-generate-dummy-dpapi.ps1'
+  $dummyPwCode=@(
+    'param([string]$OutFile)',
+    '$dummy=ConvertTo-SecureString ''dummy_ci_only_password_not_real'' -AsPlainText -Force',
+    'ConvertFrom-SecureString $dummy | Set-Content -LiteralPath $OutFile -Encoding ASCII'
+  )
+  [IO.File]::WriteAllText($dummyPwScript,($dummyPwCode -join [Environment]::NewLine))
+  $dummyPwFile=Join-Path $configDir 'camera_password.dpapi'
+  & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $dummyPwScript -OutFile $dummyPwFile
+  if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $dummyPwFile -PathType Leaf)){
+    throw 'CI_DUMMY_DPAPI_GENERATION_FAILED'
+  }
   $env:LOCALAPPDATA=$fixtureLocalAppData
   $stop=Join-Path $stage 'ci-preexisting-stop.marker'
   [IO.File]::WriteAllText($stop,'NO_RTSP_ALLOWED_FOR_PRESTOP_TEST')
