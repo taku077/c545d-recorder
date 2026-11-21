@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#44910224597](https://github.com/taku077/c545d-recorder/actions/runs/44910224597) |
+| C545D active development handoff auto-refresh | in_progress | [#44910224597](https://github.com/taku077/c545d-recorder/actions/runs/44910224597) |
+| C545D three archived GIO source-stage heap bins (no Windows rerun) | success | [#44910222457](https://github.com/taku077/c545d-recorder/actions/runs/44910222457) |
 
 ## Current development findings from the active PR
 
