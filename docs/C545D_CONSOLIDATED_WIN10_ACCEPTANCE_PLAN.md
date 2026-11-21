@@ -31,20 +31,23 @@ DLLs, run the candidate, or upload video/credentials.**
    true loaded-GIO module path, ownership marker, link/reparse refusal,
    failure cleanup, environment-variable restoration, and safe child exit.
    A created ZIP alone is not host approval.
-3. The current future-only launcher is **camera-free**; it does not launch
-   production-equivalent 2xRTSP capture. CI-only
-   [production source-mirror/isolated output gate](C545D_ISOLATED_PRODUCTION_MIRROR_CI_GATE.md)
-   is now implemented and [Windows CI #44873653092](https://github.com/taku077/c545d-recorder/actions/runs/44873653092)
-   passed: it mirrors all `Record.ps1` text except the one executable-bin
-   assignment and redirects only the *cloned* settings' output folder to an
-   empty private child. This is still a **static/no-execution gate** with
-   non-runnable EXE placeholders, not a finished host runner. Next integrate
-   the exact source mirror with actual official MSVC SDK executables and
-   pinned candidate GIO on disposable Windows2022, verify real loaded DLL
-   identity, synthetic two-video/one-audio MP4/EOS and isolated cleanup.
-   Do NOT edit the user's installed GStreamer DLLs, registry or original
-   Record.ps1. If runtime equivalence cannot be proven offline, DO NOT
-   request host testing.
+3. The future-only launcher remains **camera-free**. The production source
+   mirror plus private output-folder static gate passed Windows CI #44873653092.
+   The NEXT isolated integration gate has also passed: Windows Server 2022
+   [real SDK CI #44874736247](https://github.com/taku077/c545d-recorder/actions/runs/44874736247)
+   used the exact official pinned GStreamer MSVC1.28.8 SDK, staged real
+   GStreamer executables and pinned candidate GIO in the SAME private bin
+   as the cloned production source, observed the actual loaded candidate
+   GIO module for synthetic WAV, produced and independently decoded **five**
+   shorter synthetic dual RTP H264/AAC MP4 fragments, and cleaned its owned
+   private stage. Details: [real SDK source-mirror gate](C545D_PRODUCTION_MIRROR_REAL_SDK_CI_GATE.md).
+   **Neither CI executes the mirrored Record.ps1, authenticates camera RTSP
+   nor verifies the true 3,600-second boundary.** Next qualify a genuine
+   synthetic local RTSP endpoint and a safe private configuration/metrics
+   harness before considering a user-host session. Never change the user's
+   installed SDK DLLs, registry, original Record.ps1 or active recording.
+   If offline source/runtime equivalence cannot be shown, do not request
+   host testing.
 4. Prepare a single self-contained, supervised test script which verifies
    preconditions, collects already-identified metrics automatically,
    preserves any test outputs only in a user-owned private location,
