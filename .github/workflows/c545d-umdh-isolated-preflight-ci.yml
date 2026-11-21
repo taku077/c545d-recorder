@@ -11,7 +11,7 @@ permissions:
 jobs:
   synthetic-toolchain:
     runs-on: windows-2022
-    timeout-minutes: 22
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
@@ -22,38 +22,60 @@ jobs:
       # Windows 10 debugger feature in this disposable CI VM; never on host.
       # The official archived SDK installer is unserviced: verify Authenticode
       # and run with no user data or credentials before GIO attribution.
-      - name: Select Microsoft-signed Windows 10 UMDH on isolated runner only
+      - name: Extract pinned Windows 10 Debugging Tools side-by-side in disposable CI folder
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $root="${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64"
-          $oldTool=Join-Path $root 'umdh.exe'
-          $oldVersion=0
-          if(Test-Path $oldTool){
-            $oldVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($oldTool).FileBuildPart
-          }
-          if($oldVersion -gt 0 -and $oldVersion -lt 22000) {
-            Write-Host "C545D_WIN10_UMDH_READY,build=$oldVersion,installer_used=0,CI_only=1"
-            exit 0
-          }
-          $installer=Join-Path $env:RUNNER_TEMP 'c545d_msft_win10_sdk_debugger_setup.exe'
+          # The MSVC runner already contains 26100 UMDH, and even the signed
+          # Win10 SDK feature installer does not replace it. Use a side-by-side
+          # layout + MSI administrative extraction, documented by Microsoft.
+          $sdkUrl='https://go.microsoft.com/fwlink/?linkid=2164145'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d_msft_win10_sdk.exe'
+          $layout=Join-Path $env:RUNNER_TEMP 'c545d_sdk20348_layout'
+          $target=Join-Path $env:RUNNER_TEMP 'c545d_sdk20348_extracted'
           try {
-            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2164145' -OutFile $installer -TimeoutSec 180
-            if((Get-Item $installer).Length -lt 500000){throw 'Archived Microsoft SDK installer too small'}
+            Invoke-WebRequest -Uri $sdkUrl -OutFile $installer -TimeoutSec 180
+            if((Get-Item $installer).Length -lt 500000){throw 'Official SDK bootstrap too small'}
             $signature=Get-AuthenticodeSignature -FilePath $installer
             if($signature.Status -ne 'Valid' -or
                $signature.SignerCertificate.Subject -notmatch 'Microsoft'){
-              throw 'Official Windows10 SDK installer signature not verified'
+              throw 'Windows10 SDK signature not trusted'
             }
-            $p=Start-Process -FilePath $installer -ArgumentList '/features OptionId.WindowsDesktopDebuggers /quiet /norestart' -PassThru -Wait
-            if($p.ExitCode -notin @(0,3010)){throw 'Windows10 debugger-only SDK setup rejected'}
-            if(-not(Test-Path $oldTool)){throw 'Windows10 UMDH tool absent after SDK setup'}
-            $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($oldTool)
-            $build=$v.FileBuildPart
-            if($build -le 0 -or $build -ge 22000){throw 'Windows11 UMDH remained active; refuse known broken tool'}
-            Write-Host "C545D_WIN10_UMDH_READY,build=$build,installer_used=1,signed_by_microsoft=1,CI_only=1,host_modified=0"
+            New-Item -ItemType Directory -Force -Path $layout | Out-Null
+            $p=Start-Process -FilePath $installer -ArgumentList @(
+              '/layout', ('"'+$layout+'"'), '/features', 'OptionId.WindowsDesktopDebuggers',
+              '/quiet', '/norestart'
+            ) -Wait -PassThru
+            if($p.ExitCode -notin @(0,3010)){throw 'MSFT Windows10 SDK layout failed'}
+            $msis=@(Get-ChildItem -Path $layout -Filter '*.msi' -Recurse -File |
+              Where-Object {$_.Name -match '(?i)debuggers.*x64|x64.*debuggers'})
+            if($msis.Count -ne 1){
+              throw "Expected one signed x64 Debuggers MSI in layout; found $($msis.Count)"
+            }
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            $p=Start-Process -FilePath 'msiexec.exe' -ArgumentList @(
+              '/a', ('"'+$msis[0].FullName+'"'), ('TARGETDIR="'+$target+'"'),
+              '/qn', '/norestart'
+            ) -Wait -PassThru
+            if($p.ExitCode -notin @(0,3010)){throw 'Debuggers MSI administrative extraction failed'}
+            $old=@(Get-ChildItem -Path $target -Filter 'umdh.exe' -Recurse -File |
+              Where-Object {
+                $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($_.FullName)
+                $v.FileBuildPart -gt 0 -and $v.FileBuildPart -lt 22000
+              })
+            if($old.Count -ne 1){throw 'Exactly one Win10 UMDH not found in extracted x64 SDK'}
+            $toolSignature=Get-AuthenticodeSignature -FilePath $old[0].FullName
+            if($toolSignature.Status -ne 'Valid' -or
+               $toolSignature.SignerCertificate.Subject -notmatch 'Microsoft'){
+              throw 'Extracted Win10 UMDH signature could not be verified'
+            }
+            $ver=[Diagnostics.FileVersionInfo]::GetVersionInfo($old[0].FullName)
+            "C545D_LEGACY_UMDH_EXE=$($old[0].FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "C545D_WIN10_UMDH_READY,build=$($ver.FileBuildPart),layout_used=1,side_by_side=1,microsoft_signed=1,CI_only=1,host_modified=0"
           } finally {
             Remove-Item $installer -Force -ErrorAction SilentlyContinue
+            # The ephemeral runner retains the extracted tool for the next CI step.
+            # No MSI data, raw SDK payload or symbol logs are uploaded.
           }
       - name: Discover Debugging Tools and test isolated synthetic allocation stacks
         shell: pwsh
@@ -73,7 +95,10 @@ jobs:
             return $null
           }
           $g=Find-DebuggerTool 'gflags.exe'
-          $u=Find-DebuggerTool 'umdh.exe'
+          $u=$env:C545D_LEGACY_UMDH_EXE
+          if(-not $u -or -not(Test-Path $u -PathType Leaf)){
+            throw 'Explicit Microsoft-signed Windows10 UMDH extraction prerequisite missing'
+          }
           $gf=[int][bool]$g; $uf=[int][bool]$u
           if(-not($g -and $u)){
             Write-Host "C545D_UMDH_PREFLIGHT,gflags=$gf,umdh=$uf,stack_capture=0,reason=TOOLS_ABSENT,CI_only=1,host_modified=0"
