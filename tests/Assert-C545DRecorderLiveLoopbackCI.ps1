@@ -164,27 +164,44 @@ try {
   # not send CTRL+C, kill a recording, or pretend to have tested GUI EOS.
   # If the finite RTSP source does not complete, the workflow timeout
   # eventually fails this disposable CI probe, not the user's recorder.
-  $stopJob=Start-Job -ArgumentList $stage,$stop -ScriptBlock {
-    param([string]$ownedStage,[string]$stopPath)
+  $stopJob=Start-Job -ArgumentList $stage,$stop,$svrOut -ScriptBlock {
+    param([string]$ownedStage,[string]$stopPath,[string]$serverStdout)
     if([IO.File]::ReadAllText((Join-Path $ownedStage '.c545d-ci-owned')) -cne
        'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){return 'ownership=0'}
     $watch=[Diagnostics.Stopwatch]::StartNew()
-    $seen=-1
+    $bothMountedAt=-1
     while($watch.Elapsed.TotalSeconds -lt 95){
-      $mp4=@(Get-ChildItem -LiteralPath (Join-Path $ownedStage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue |
-        Where-Object {$_.Length -gt 5000})
-      if($mp4.Count -gt 0 -and $seen -lt 0){$seen=$watch.Elapsed.TotalSeconds}
-      if($seen -ge 0 -and ($watch.Elapsed.TotalSeconds-$seen) -gt 1){
-        [IO.File]::WriteAllText($stopPath,'CI_SYNTHETIC_RTSP_END_ONLY')
-        return 'marker=1,media_file_seen=1'
+      $media=''
+      if(Test-Path -LiteralPath $serverStdout){
+        try {
+          $fd=[IO.File]::Open($serverStdout,[IO.FileMode]::Open,
+                 [IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+          try {
+            $reader=[IO.StreamReader]::new($fd)
+            $media=$reader.ReadToEnd()
+          } finally {$fd.Dispose()}
+        } catch [IO.IOException] {}
       }
-      if($watch.Elapsed.TotalSeconds -gt 55 -and $seen -lt 0){
-        [IO.File]::WriteAllText($stopPath,'CI_NO_MP4_TIMEOUT_STOP_RECONNECT')
-        return 'marker=1,media_file_seen=0'
+      $wide=$media.Contains('C545D_FINITE_RTSP_MEDIA_CONFIGURED,stream=stream1,real_camera=0')
+      $tele=$media.Contains('C545D_FINITE_RTSP_MEDIA_CONFIGURED,stream=stream6,real_camera=0')
+      if($wide -and $tele -and $bothMountedAt -lt 0){
+        $bothMountedAt=$watch.Elapsed.TotalSeconds
+      }
+      # Six seconds AFTER both actual RTSP sessions are constructed, record
+      # the existing stop marker. This happens before the finite 22s source
+      # stops, and is independent of MP4 buffering/delayed file writes.
+      if($bothMountedAt -ge 0 -and
+         ($watch.Elapsed.TotalSeconds-$bothMountedAt) -gt 6){
+        [IO.File]::WriteAllText($stopPath,'CI_TWO_LOCAL_RTSP_MOUNTS_ACTIVE')
+        return 'marker=1,two_mounts=1,real_camera=0'
+      }
+      if($watch.Elapsed.TotalSeconds -gt 55 -and $bothMountedAt -lt 0){
+        [IO.File]::WriteAllText($stopPath,'CI_MOUNTS_NOT_READY_STOP_RECONNECT')
+        return 'marker=1,two_mounts=0,real_camera=0'
       }
       Start-Sleep -Milliseconds 250
     }
-    [IO.File]::WriteAllText($stopPath,'CI_STOP_BACKOFF_TIMEOUT')
+    [IO.File]::WriteAllText($stopPath,'CI_MOUNT_WAIT_TIMEOUT')
     return 'marker=1,timed_out=1'
   }
   $recorder=Join-Path $stage 'Record.ps1'
@@ -207,9 +224,21 @@ try {
   $markerAtReturn=[int]($lastExit.Count -gt 0 -and $lastExit[$lastExit.Count-1].Groups[2].Value -ceq 'True')
   $reconnectAction=[int]$text.Contains('Recorder exit policy: reconnect')
   $lastMp4Bytes=if($filesCount -gt 0){[long]$outFiles[0].Length}else{0}
-  Write-Output "C545D_RECORDER_LIVE_RTSP_STAGE,launch=$launchObserved,launch_count=$launches,returned=$returnObserved,source_stop_marker=$([int]$safeStop),stop_at_gst_return=$markerAtReturn,policy_stop=$policyStop,policy_reconnect=$reconnectAction,gst_exit=$nativeRc,eos_message=$eosObserved,mp4_count=$filesCount,first_mp4_bytes=$lastMp4Bytes,rtsp_error=$actualRtspError,record_exit_nonzero=$([int]($recordExit -ne 0)),real_camera=0"
+  $srvStream=''
+  if(Test-Path -LiteralPath $svrOut){
+    $readFd=[IO.File]::Open($svrOut,[IO.FileMode]::Open,
+                 [IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+    try {
+      $streamReader=[IO.StreamReader]::new($readFd)
+      $srvStream=$streamReader.ReadToEnd()
+    } finally {$readFd.Dispose()}
+  }
+  $wideRequested=[int]$srvStream.Contains('C545D_FINITE_RTSP_MEDIA_CONFIGURED,stream=stream1,real_camera=0')
+  $teleRequested=[int]$srvStream.Contains('C545D_FINITE_RTSP_MEDIA_CONFIGURED,stream=stream6,real_camera=0')
+  Write-Output "C545D_RECORDER_LIVE_RTSP_STAGE,launch=$launchObserved,launch_count=$launches,returned=$returnObserved,source_stop_marker=$([int]$safeStop),stop_at_gst_return=$markerAtReturn,wide_rtsp_requested=$wideRequested,tele_rtsp_requested=$teleRequested,policy_stop=$policyStop,policy_reconnect=$reconnectAction,gst_exit=$nativeRc,eos_message=$eosObserved,mp4_count=$filesCount,first_mp4_bytes=$lastMp4Bytes,rtsp_error=$actualRtspError,record_exit_nonzero=$([int]($recordExit -ne 0)),real_camera=0"
   if($recordExit -ne 0 -or $launchObserved -ne 1 -or
-     $launches -ne 1 -or -not $safeStop -or $policyStop -ne 1 -or
+     $launches -ne 1 -or -not $safeStop -or $markerAtReturn -ne 1 -or
+     $wideRequested -ne 1 -or $teleRequested -ne 1 -or $policyStop -ne 1 -or
      $filesCount -ne 1 -or $actualRtspError -ne 0){
     throw 'RECORDER_LIVE_GATE_NOT_PASSED'
   }
