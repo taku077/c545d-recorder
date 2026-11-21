@@ -551,6 +551,16 @@ $encrypted=ConvertFrom-SecureString $pass
   $stopLatencyMs=[long]$ctrlCStopwatch.ElapsedMilliseconds
   if($stopLatencyMs -gt 20000){throw 'GUI_WORKER_EOS_NOT_TIMELY'}
   $recordExit=[int]$worker.ExitCode
+  # Preserve the raw 32-bit Windows status even for negative signed exit
+  # codes. A lost old code cannot be reconstructed from EOS success alone.
+  # This pure-number diagnostic does not weaken any existing stop assertion.
+  $recordExitUInt=[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$recordExit),0)
+  $recordExitHex=[string]::Format('{0:X8}',$recordExitUInt)
+  $controlCRef=[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]-1073741510),0)
+  if([string]::Format('{0:X8}',$controlCRef) -cne 'C000013A'){
+    throw 'CI_EXIT_HEX_ENCODING_FAILED'
+  }
+  Write-Output "C545D_GUI_WORKER_EXIT_HEX_CI,signed=$recordExit,hex=$recordExitHex,after_wait=1,real_camera=0"
   # This record is emitted BEFORE later MP4/GUI checks and can identify a
   # nonzero worker status even if an inner cleanup later prevents failure logs.
   Write-Output "C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=$stopLatencyMs,worker_exit=$recordExit,bounded_20s=1,real_camera=0"
@@ -771,6 +781,7 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_CI_NAMER_PROCESS_NOT_UNIQUE','GUI_CI_NAMER_PROCESS_EARLY_EXIT',
     'GUI_CI_NAMER_PROCESS_NOT_EXITED','GUI_CI_NAMER_PROCESS_BAD_EXIT',
     'CI_STOP_ALIGNMENT_WORKER_EXITED',
+    'CI_EXIT_HEX_ENCODING_FAILED',
     'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
     'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
     'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
