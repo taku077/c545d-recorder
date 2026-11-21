@@ -715,6 +715,14 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
     'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  if($phase -ceq 'GUI_STOP_POLICY_CHECK'){
+    # Only bounded scalar counters. Never upload original worker transcript,
+    # camera credentials, RTSP URLs, file names, or exception messages.
+    $recordErrorDetected=[int](([string]$text).Contains('RECORD ERROR:'))
+    $gstReturned=[int](([string]$text).Contains('GStreamer returned; exitCode='))
+    $eosSuccessful=[int](([string]$text).Contains('Recording stopped by GUI; GStreamer EOS completed.'))
+    Write-Output "C545D_WINFORMS_STOP_DIAG,worker_exit=$recordExit,native_gst_exit=$nativeExit,record_error=$recordErrorDetected,gst_returned=$gstReturned,eos_successful=$eosSuccessful,stop_policy=$policyStop,reconnect=$unexpectedReconnect,record_returned=$returned,marker_at_return=$markerAtReturn,mp4_files=$filesCount,stop_proven=$stopExists,ready_removed=$readyRemoved,real_camera=0"
+  }
   $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
   $errorClass=[string]$_.Exception.GetType().Name
   if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
