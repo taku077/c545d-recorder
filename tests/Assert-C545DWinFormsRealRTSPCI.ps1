@@ -754,7 +754,7 @@ $encrypted=ConvertFrom-SecureString $pass
   if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
   $errorCategory=[string]$_.CategoryInfo.Category
   if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
-  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,real_camera=0"
+  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0"
   if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
     Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0,host_modified=0"
   } else {
