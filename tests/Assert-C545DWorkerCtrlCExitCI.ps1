@@ -121,6 +121,7 @@ if(-not $sent){exit 3}
     $stubFinished=Join-Path $stage ('ci-stub-finished-'+$stubId)
     $workerArgs=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
       '-File',('"'+(Join-Path $stage 'RecordGUIWorker.ps1')+'"'),'-SessionId',$session)
+    $phase='TRIAL_READY'
     $activeWorker=Start-Process -FilePath $ps -ArgumentList $workerArgs -WorkingDirectory $stage -WindowStyle Hidden -PassThru
     $readyOk=$false
     for($wait=0;$wait -lt 160;$wait++){
@@ -133,6 +134,7 @@ if(-not $sent){exit 3}
       Start-Sleep -Milliseconds 50
     }
     if(-not $readyOk){throw 'WORKER_READY_NOT_OBSERVED'}
+    $phase='TRIAL_SIGNAL'
     [IO.File]::WriteAllText($stop,'CI_PRIVATE_STOP_ONLY')
     if($delay -gt 0){Start-Sleep -Milliseconds $delay}
     $sigLines=@(& $ps -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helperPath -Stage $stage -WorkerId $activeWorker.Id -ExpectedParent $PID 2>$null)
@@ -140,11 +142,13 @@ if(-not $sent){exit 3}
        $sigLines[0] -cne 'C545D_CI_PRIVATE_CTRL_C_SIGNAL,sent=1,owned_console=1,rtsp=0'){
       throw 'PRIVATE_CONSOLE_SIGNAL_NOT_SENT'
     }
+    $phase='TRIAL_EXIT'
     if(-not $activeWorker.WaitForExit(20000)){throw 'WORKER_NOT_STOPPED'}
     $actual=[int]$activeWorker.ExitCode
     if($actual -ne 0){throw 'WORKER_EXIT_NONZERO'}
     if(-not (Test-Path -LiteralPath $stubFinished -PathType Leaf) -or
        (Test-Path -LiteralPath $ready -PathType Leaf)){throw 'WORKER_STOP_NOT_FINALIZED'}
+    $phase='TRIAL_TRANSCRIPT'
     $logDir=Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\Logs'
     $logs=@(Get-ChildItem -LiteralPath $logDir -Filter ('Recording_*_'+$activeWorker.Id+'.txt') -File -ErrorAction Stop)
     if($logs.Count -ne 1){throw 'WORKER_TRANSCRIPT_NOT_UNIQUE'}
@@ -156,6 +160,7 @@ if(-not $sent){exit 3}
     $activeWorker=$null
   }
   if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHash){throw 'PRODUCTION_SOURCE_CHANGED'}
+  $phase='PASS'
   $result='PASS'
 } catch {
   $code=[string]$_.Exception.Message
@@ -196,6 +201,6 @@ if(-not $sent){exit 3}
     }catch{$result='CI_CLEANUP_REFUSED'}
   }
 }
-Write-Output "C545D_ORIGINAL_WORKER_CTRL_C_CI,trials=$total,passed=$passed,original_worker=1,private_stub=1,one_ctrl_c_per_trial=1,real_rtsp=0,real_camera=0,host_modified=0,reason=$result"
+Write-Output "C545D_ORIGINAL_WORKER_CTRL_C_CI,trials=$total,passed=$passed,handler_count_verified=$([int]($passed -eq $total)),phase=$phase,original_worker=1,private_stub=1,real_rtsp=0,real_camera=0,host_modified=0,reason=$result"
 if($result -ceq 'PASS' -and $passed -eq $total){exit 0}
 exit 3
