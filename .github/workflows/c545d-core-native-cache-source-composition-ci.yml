@@ -1,0 +1,56 @@
+name: C545D GLib 2.82.4 MSVC core+native-path+DisplayName-epoch cache source composition (no Windows)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-native-cache-source-composition-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-upstream-source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply all existing validated diagnostic transformations to pinned upstream GLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_msvc_gio_sdk_export.py glib-src/gio/meson.build
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          # Native path must precede lazy package epoch because the latter
+          # wraps the parser's original "return result" boundary.
+          python tests/patch_glib_uwp_native_path_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_native_spontaneous_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          root=Path('glib-src')
+          changed=subprocess.check_output(['git','-C',str(root),'diff','--name-only'],text=True).splitlines()
+          expected=['gio/gwin32appinfo.c','gio/gwin32packageparser.c','gio/gwin32registrykey.c','gio/meson.build']
+          assert sorted(changed)==sorted(expected),(changed,expected)
+          app=(root/'gio/gwin32appinfo.c').read_text()
+          parser=(root/'gio/gwin32packageparser.c').read_text()
+          assert 'GetPackagePathByFullName' in parser
+          assert 'IPackage2_get_DisplayName' in parser
+          assert 'c545d_bridge_epoch_still_valid' in parser
+          assert 'previous.locale == c545d_bridge_locale' in parser
+          assert 'c545d_ci_package_scan_finished' in parser
+          assert 'c545d_ci_spontaneous_monitor_sink' in app
+          assert 'c545d_ci_package_generation_needs_rescan' in app
+          assert 'c545d_cache_display_lookup' in parser
+          assert 'g_hash_table_remove_all (c545d_display_cache)' in parser
+          assert 'c545d_cache_display_store' in parser
+          assert 'g_hash_table_size (c545d_display_cache) < 1024' in parser
+          assert 'if (!c545d_bridge_ready ||' in parser
+          print('C545D_CORE_NATIVE_CACHE_SOURCE_COMPOSITION_PASS,upstream=glib-2.82.4,changed_files=4,epoch_generation_and_locale=1,native_fallback_retained=1,cache_bounded=1,source_only=1,windows_build=0,host_approved=0')
+          PY
