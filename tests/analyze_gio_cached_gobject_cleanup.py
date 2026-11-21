@@ -97,14 +97,28 @@ def analysis(root: Path) -> list[str]:
                     )
             else:
                 e256_257, e257_258 = None, None
+            if cleanup_available:
+                # Exact identity of the three already-finished archival runs.
+                # The only nonzero checked-type cleanup effect was a
+                # *transient* GWin32RegistryKey count, fully reversed by 258.
+                expected_key = {
+                    RUNS[0]: {"default": 1, "cache": 2},
+                    RUNS[1]: {"default": 1, "cache": 2},
+                    RUNS[2]: {"default": 1, "cache": 1},
+                }[run][mode]
+                for typ, early, late in zip(TYPES, e256_257, e257_258):
+                    expected = (expected_key, -expected_key) if (
+                        typ == "GWin32RegistryKey") else (0, 0)
+                    if (early, late) != expected:
+                        raise ValueError("archived GObject transient identity changed")
             last128 = [
                 (reg[t][256] - reg[t][128]) - (no[t][256] - no[t][128])
                 for t in TYPES
             ]
             # This old three-run cached-AB result was previously checked.
             # Pin it as an exact per-type (not aggregate sum) identity.
-            if mode == "cache" and any(last128):
-                raise ValueError("historic cached-AB last128 per-type effect changed")
+            if any(last128):
+                raise ValueError("historic six-cohort last128 GObject counts changed")
             results.append(
                 f"C545D_SAVED_GOBJECT_COHORT,run={run},mode={mode},"
                 f"types={len(TYPES)},last128_net={sum(last128)},"
@@ -115,6 +129,14 @@ def analysis(root: Path) -> list[str]:
                 f"cleanup257_258_nonzero_types={sum(bool(x) for x in e257_258) if cleanup_available else 'NA'},"
                 "distinct_from_MSVCCoreCombo=1,CI_only=1"
             )
+    if cleanup_available:
+        results.append(
+            "C545D_SAVED_GOBJECT_CROSSRUN_IDENTITY,source_runs=3,"
+            "cohorts=6,seven_types_no_last128_growth=6of6,"
+            "transient_GWin32RegistryKey_cleanup=6of6,"
+            "other_six_GObject_types_cleanup_effect=0,"
+            "registry_key_restored_by258=6of6,MSVC_Combo_not_tested=1,CI_only=1"
+        )
     results.append(
         f"C545D_SAVED_GOBJECT_CLEANUP_PASS,archived_windows_runs=3,"
         f"arms=2,modes=2,types={len(TYPES)},cleanup_available={int(cleanup_available)},"
