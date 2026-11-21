@@ -63,16 +63,16 @@ try {
     $node.Right.Extent.Text.Trim() -ceq 'Find-GstBin'
   },$true))
   if($found.Count -ne 1){throw 'BAD_ANCHOR'}
-  foreach($term in @(
-    "$"+'gst = Join-Path $bin '+"'gst-launch-1.0.exe'",
-    "$"+'inspect = Join-Path $bin '+"'gst-inspect-1.0.exe'",
-    "$"+'gstArgs = @('+"'-e') + "+'$pipeline.ToArray()',
-    'Add-Input '+"'cam1' "+'$wideURL 0',
-    'Add-Input '+"'cam2' "+'$teleURL 1',
-    'max-size-time=3600000000000',
-    "'.c545d-a-nonexistent-sentinel'"
-  )){
-    if($term -ceq "'.c545d-a-nonexistent-sentinel'"){continue}
+  # Literal PS strings avoid expression/operator parsing ambiguities.
+  $required=@(
+    '$gst = Join-Path $bin ''gst-launch-1.0.exe''',
+    '$inspect = Join-Path $bin ''gst-inspect-1.0.exe''',
+    '$gstArgs = @(''-e'') + $pipeline.ToArray()',
+    'Add-Input ''cam1'' $wideURL 0',
+    'Add-Input ''cam2'' $teleURL 1',
+    'max-size-time=3600000000000'
+  )
+  foreach($term in $required){
     if(-not $original.Contains($term)){throw 'SOURCE_CHANGED'}
   }
   if(-not $original.Contains(". (Join-Path "+'$PSScriptRoot '+"'CommonSettings.ps1')")){
