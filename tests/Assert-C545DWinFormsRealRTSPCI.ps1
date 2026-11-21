@@ -275,11 +275,12 @@ $script:ciWinFormsTime.Add_Tick({
         }
         $script:ciWinFormsPhase=1
         $id=[string]$script:sessionId
-        $pid=[int]$script:worker.Id
-        if($id -cnotmatch '^[a-f0-9]{32}$' -or $pid -le 0){
+        # $PID is a read-only automatic variable in PowerShell (case insensitive).
+        $launchedWorkerPid=[int]$script:worker.Id
+        if($id -cnotmatch '^[a-f0-9]{32}$' -or $launchedWorkerPid -le 0){
           throw 'CI_GUI_SESSION_INVALID'
         }
-        [IO.File]::WriteAllText((Join-Path $root 'ci-gui-session'),($id+','+$pid))
+        [IO.File]::WriteAllText((Join-Path $root 'ci-gui-session'),($id+','+$launchedWorkerPid))
       }
       1 {
         if(-not (Test-Path -LiteralPath (Join-Path $root 'ci-gui-request-stop') -PathType Leaf)){break}
