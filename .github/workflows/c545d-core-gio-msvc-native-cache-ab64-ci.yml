@@ -190,10 +190,40 @@ jobs:
           New-Item artifacts/numeric -ItemType Directory -Force | Out-Null
           $rows | Set-Content artifacts/numeric/combo_vs_core_ab64.txt -Encoding ascii
           foreach($row in $rows){Write-Host $row}
+      # The original A/B step refuses absent cache hits. Never relax that
+      # strict gate: preserve the four trace files' allowlisted NUMERIC rows
+      # so an unexercised package path can be distinguished from a code defect.
+      # Do not upload raw process output, package identities, paths or host data.
+      - name: Preserve numeric cache/native-path evidence even on failure
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=(Resolve-Path artifacts).Path
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'numeric') | Out-Null
+          $allowed='^(?:C545D_DISPLAY_CACHE,hits=[0-9]+,misses=[0-9]+,entries=[0-9]+|C545D_WINRT_BRIDGE,scans=[0-9]+,injections=[0-9]+,evictions=[0-9]+,errors=[0-9]+,ready=[01]|GIO_NATIVE_PATH,[0-9]+,[0-9]+,[0-9]+,[0-9]+|GIO_PROBE_DONE,cycles=(?:16|64),notifications=[0-9]+,reg_changes=[01])$'
+          $prefix='^(?:C545D_DISPLAY_CACHE,|C545D_WINRT_BRIDGE,|GIO_NATIVE_PATH,|GIO_PROBE_DONE,)'
+          $rows=New-Object 'System.Collections.Generic.List[string]'
+          $names=@('core-nochange-64','core-registry-64','combo-nochange-64','combo-registry-64','compare-nochange-16','compare-registry-16')
+          foreach($tag in $names){
+            $path=Join-Path $root ($tag+'.txt')
+            $present=[int](Test-Path $path -PathType Leaf)
+            $rows.Add("C545D_AB64_TRACE,tag=$tag,present=$present,CI_only=1")
+            if(-not $present){continue}
+            if((Get-Item $path).Length -gt 10000000){throw 'Diagnostic trace exceeded safety bound'}
+            foreach($line in [System.IO.File]::ReadLines($path)){
+              if($line -match $prefix){
+                if($line -cnotmatch $allowed){throw 'Malformed numeric evidence row (raw value withheld)'}
+                $rows.Add("$tag|$line")
+              }
+            }
+          }
+          $rows | Set-Content (Join-Path $root 'numeric/ab64_safe_trace.txt') -Encoding ascii
+          Write-Host 'C545D_AB64_SAFE_EVIDENCE_PASS,numeric_only=1,raw_trace_uploaded=0,host_modified=0'
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
           name: c545d-msvc-core-native-cache-combo-ab64-numeric-CI-only
-          path: artifacts/numeric/combo_vs_core_ab64.txt
-          if-no-files-found: error
+          path: artifacts/numeric/*.txt
+          if-no-files-found: warn
           retention-days: 7
