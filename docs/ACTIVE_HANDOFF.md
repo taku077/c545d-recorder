@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `18431c062c3ef9e475653faa1d76003bee12a2ac`
-- **PR updated at (UTC):** `2026-11-21T09:03:58Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/18431c062c3ef9e475653faa1d76003bee12a2ac/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6ef6602ad7eda1dde8f53dbeb12da80c401467e2`
+- **PR updated at (UTC):** `2026-11-21T09:07:25Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6ef6602ad7eda1dde8f53dbeb12da80c401467e2/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44887790204](https://github.com/taku077/c545d-recorder/actions/runs/44887790204) |
-| C545D accelerated splitmux MP4 segments dual localhost RTSP CI ONLY | in_progress | [#44887787945](https://github.com/taku077/c545d-recorder/actions/runs/44887787945) |
+| C545D active development handoff auto-refresh | in_progress | [#44888063562](https://github.com/taku077/c545d-recorder/actions/runs/44888063562) |
 
 ## Current development findings from the active PR
 
