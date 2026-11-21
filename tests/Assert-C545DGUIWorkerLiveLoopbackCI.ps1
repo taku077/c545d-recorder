@@ -214,7 +214,17 @@ try {
       '-SessionId',$session)
   # A private WindowStyle Hidden console is identical to GUI launch policy.
   # Do not redirect the console, because gst-launch must receive Ctrl+C.
-  $worker=Start-Process -FilePath $ps -ArgumentList $workerArgs -WorkingDirectory $temp -WindowStyle Hidden -PassThru
+  # Microsoft about_PSModulePath: an intermediate Start-Process can pass
+  # PowerShell7 modules into Windows PowerShell5.1, breaking standard
+  # Microsoft.PowerShell.Security auto-loading (CommandNotFoundException).
+  # Clear ONLY process env at CI child launch, then restore immediately.
+  $previousModulePath=[Environment]::GetEnvironmentVariable('PSModulePath','Process')
+  try {
+    [Environment]::SetEnvironmentVariable('PSModulePath',$null,'Process')
+    $worker=Start-Process -FilePath $ps -ArgumentList $workerArgs -WorkingDirectory $temp -WindowStyle Hidden -PassThru
+  } finally {
+    [Environment]::SetEnvironmentVariable('PSModulePath',$previousModulePath,'Process')
+  }
   $readySeen=$false
   for($i=0;$i -lt 400;$i++){
     Start-Sleep -Milliseconds 100
