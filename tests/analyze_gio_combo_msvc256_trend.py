@@ -160,6 +160,16 @@ def audit_cache_rebuild_epochs(group: dict[str, list[str]]) -> list[str]:
                 arm: cohort[arm][metric][after] - cohort[arm][metric][before]
                 for arm in ARMS
             }
+            # Preserve the actual source-run numbers; otherwise a later
+            # changed or mixed archive could silently rewrite this finding.
+            expected = {
+                (256, 257, "mem"): (0, 0),
+                (256, 257, "heap"): (-758460, 0),
+                (257, 258, "mem"): (-57344, 0),
+                (257, 258, "heap"): (749156, 0),
+            }[before[1], after[1], metric]
+            if (raw["registry"], raw["nochange"]) != expected:
+                raise ValueError("pinned cleanup/rebuild resources changed")
             out.append(
                 f"C545D_SAVED256_CLEANUP_RESOURCE,source_run=44918598339,"
                 f"metric={metric},window={before[1]}_{after[1]},"
