@@ -234,7 +234,7 @@ try {
     }
     if($liveNamerReady -ne 1){throw 'LIVE_NAMER_NOT_READY'}
   }
-  $phase='COMPILER
+  $phase='COMPILER'
   $lib=Join-Path $SdkRoot 'lib'
   $inc=Join-Path $SdkRoot 'include'
   $exe=Join-Path $stage 'c545d_finite_rtsp_server.exe'
