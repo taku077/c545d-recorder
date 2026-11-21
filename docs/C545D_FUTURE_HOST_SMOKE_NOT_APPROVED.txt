@@ -15,9 +15,14 @@ Contents:
 - A guarded CMD launcher that asks for an explicit approval acknowledgement.
 
 When authorized at a natural safe recording stop, the script refuses active
-known recorder processes, unknown SDK hashes, an altered candidate or
-manifest, non-Windows10 hosts, or a missing scanner/plugin directory. It
-runs NO camera connection and never writes into the installed SDK. It creates
+known recorder processes (including known PowerShell GUI/record workers
+BEFORE gst-launch starts), unknown SDK hashes, an altered candidate or
+manifest, non-Windows10 hosts, or a missing scanner/plugin directory.
+Unreadable process-command-line inventory is also a refusal, not an override.
+The process check examines data only in memory and outputs no command lines.
+The check is intentionally conservative and cannot identify arbitrary renamed
+recorders; passing it does NOT authorize any test while recording.
+It runs NO camera connection and never writes into the installed SDK. It creates
 only a uniquely owned disposable test directory under TEMP and restores
 per-process GST_ environment values. It does not update Windows registry.
 It emits one numeric status line with no local paths or SHA values.
