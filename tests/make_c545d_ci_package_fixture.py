@@ -23,7 +23,7 @@ def png(size):
             + chunk(b"IEND", b""))
 
 
-def build(out, stub, version, versioned_display_name=False):
+def build(out, stub, version, versioned_display_name=False, localized_display_name=False):
     if version not in ("1.0.0.0", "1.0.1.0"):
         raise ValueError("Only the two disposable CI fixture versions are permitted")
     if not stub.is_file():
@@ -34,7 +34,10 @@ def build(out, stub, version, versioned_display_name=False):
     for file, size in (("StoreLogo.png", 50), ("LargeLogo.png", 150),
                        ("SmallLogo.png", 44)):
         (out / "Assets" / file).write_bytes(png(size))
-    display_name = ("C545D CI Event Probe Upgraded" if versioned_display_name
+    if versioned_display_name and localized_display_name:
+        raise ValueError("Versioned and localized DisplayName fixture modes are exclusive")
+    display_name = ("ms-resource:C545DResourceProbe" if localized_display_name else
+                    "C545D CI Event Probe Upgraded" if versioned_display_name
                     and version == "1.0.1.0" else "C545D CI Event Probe")
     # One unique synthetic identity; no real installed app or actual customer
     # package names. Signing CN MUST match this manifest Publisher exactly.
@@ -80,5 +83,8 @@ if __name__ == "__main__":
     ap.add_argument("--version", choices=("1.0.0.0", "1.0.1.0"), required=True)
     ap.add_argument("--versioned-display-name", action="store_true",
                     help="CI-only v2 title differs from v1; no real package")
+    ap.add_argument("--localized-display-name", action="store_true",
+                    help="CI-only ms-resource manifest fixture with real PRI")
     a=ap.parse_args()
-    build(a.out, a.stub, a.version, a.versioned_display_name)
+    build(a.out, a.stub, a.version, a.versioned_display_name,
+          a.localized_display_name)
