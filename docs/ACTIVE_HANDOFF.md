@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `480fd684bbea182eb255ee9f755cca6556c19203`
-- **PR updated at (UTC):** `2026-11-21T07:22:02Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/480fd684bbea182eb255ee9f755cca6556c19203/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `bc479bb773849f890734c05256aa83e4bca8e533`
+- **PR updated at (UTC):** `2026-11-21T07:22:37Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/bc479bb773849f890734c05256aa83e4bca8e533/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44879918185](https://github.com/taku077/c545d-recorder/actions/runs/44879918185) |
-| C545D production mirror real pinned GStreamer media CI ONLY | in_progress | [#44879915942](https://github.com/taku077/c545d-recorder/actions/runs/44879915942) |
+| C545D active development handoff auto-refresh | in_progress | [#44879965765](https://github.com/taku077/c545d-recorder/actions/runs/44879965765) |
+| C545D dummy config and DPAPI private settings CI ONLY | in_progress | [#44879963307](https://github.com/taku077/c545d-recorder/actions/runs/44879963307) |
 
 ## Current development findings from the active PR
 
