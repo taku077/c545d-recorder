@@ -569,15 +569,23 @@ $encrypted=ConvertFrom-SecureString $pass
   $readyRemoved=[int](-not (Test-Path -LiteralPath $ready))
   $launchCount=[regex]::Matches($text,'GStreamer launching \(EOS enabled\); attempt=').Count
   Write-Output "C545D_GUI_WORKER_RTSP_STAGE,worker_exit=$recordExit,worker_exited=$workerExited,gui_ctrlc_sent=$signalSent,wide_mount=$wideRequested,tele_mount=$teleRequested,launch_count=$launchCount,stop_at_gst_return=$markerAtReturn,native_gst_exit=$nativeExit,policy_stop=$policyStop,policy_reconnect=$unexpectedReconnect,eos_message=$eosObserved,worker_returned=$returned,mp4_count=$filesCount,mp4_bytes=$mp4Bytes,stop_marker=$stopExists,ready_removed=$readyRemoved,real_camera=0"
-  if($recordExit -ne 0 -or $signalSent -ne 1 -or
-     $launchObserved -ne 1 -or $launchCount -ne 1 -or
-     $markerAtReturn -ne 1 -or $nativeExit -ne 0 -or
-     $policyStop -ne 1 -or $unexpectedReconnect -ne 0 -or
-     $eosObserved -ne 1 -or $returned -ne 1 -or
-     -not $mp4CountOk -or $mp4Bytes -lt 30000 -or
-     $stopExists -ne 1 -or $readyRemoved -ne 1){
-    throw 'GUI_REAL_WORKER_STOP_POLICY_FAILED'
-  }
+  # Split the exact same acceptance predicate into individual fail-closed
+  # codes; CI prints only the first failed invariant, never camera log content.
+  $phase='GUI_STOP_POLICY_CHECK'
+  if($recordExit -ne 0){throw 'GUI_STOP_POLICY_WORKER_EXIT'}
+  if($signalSent -ne 1){throw 'GUI_STOP_POLICY_NO_SIGNAL'}
+  if($launchObserved -ne 1){throw 'GUI_STOP_POLICY_NOT_LAUNCHED'}
+  if($launchCount -ne 1){throw 'GUI_STOP_POLICY_LAUNCH_COUNT'}
+  if($markerAtReturn -ne 1){throw 'GUI_STOP_POLICY_MARKER_AT_RETURN'}
+  if($nativeExit -ne 0){throw 'GUI_STOP_POLICY_GST_EXIT'}
+  if($policyStop -ne 1){throw 'GUI_STOP_POLICY_STOP_DECISION'}
+  if($unexpectedReconnect -ne 0){throw 'GUI_STOP_POLICY_RECONNECT'}
+  if($eosObserved -ne 1){throw 'GUI_STOP_POLICY_EOS_MISSING'}
+  if($returned -ne 1){throw 'GUI_STOP_POLICY_RECORD_RETURN'}
+  if(-not $mp4CountOk){throw 'GUI_STOP_POLICY_FRAGMENT_COUNT'}
+  if($mp4Bytes -lt 30000){throw 'GUI_STOP_POLICY_MP4_BYTES'}
+  if($stopExists -ne 1){throw 'GUI_STOP_POLICY_MARKER_PROOF'}
+  if($readyRemoved -ne 1){throw 'GUI_STOP_POLICY_WORKER_READY_LEFT'}
   # Confirm that the native gst process from our exact isolated bin was
   # released after GUI Ctrl+C, not merely that PowerShell Worker exited.
   $remainingStagedGst=@(Get-Process -Name 'gst-launch-1.0' -ErrorAction SilentlyContinue |
@@ -664,13 +672,13 @@ $encrypted=ConvertFrom-SecureString $pass
     }
     if($readyRemain -ne 0){throw 'GUI_CI_NAMER_NOT_CLOSED'}
     $liveNamerClosed=1
-    Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
   }
   foreach($src in $snapshot.Keys){
     if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $snapshot[$src]){
       throw 'ORIGINAL_BYTES_CHANGED'
     }
   }
+  Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
   $phase='PASS'
 } catch {
   $known=@('NOT_DISPOSABLE_WINDOWS_CI','UNSAFE_CI_TEMP','REFERENCE_NOT_PINNED',
@@ -698,7 +706,14 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_NAMER_SOURCE_CHANGED','GUI_CI_DID_NOT_START_WORKER','GUI_CI_SESSION_INVALID',
     'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
     'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
-    'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED')
+    'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
+    'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
+    'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
+    'GUI_STOP_POLICY_STOP_DECISION','GUI_STOP_POLICY_RECONNECT',
+    'GUI_STOP_POLICY_EOS_MISSING','GUI_STOP_POLICY_RECORD_RETURN',
+    'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
+    'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
   $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
   $errorClass=[string]$_.Exception.GetType().Name
