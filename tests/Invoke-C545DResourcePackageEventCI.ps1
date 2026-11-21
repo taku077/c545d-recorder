@@ -184,6 +184,8 @@ public static class C545DResourceGio {
   public static extern int Observe(int stage);
   [DllImport(@"__DLL__",EntryPoint="c545d_ci_monitor_stop",CallingConvention=CallingConvention.Cdecl)]
   public static extern int Stop();
+  [DllImport(@"__DLL__",EntryPoint="c545d_ci_scan_resource_display_value",CallingConvention=CallingConvention.Cdecl)]
+  public static extern int ResourceDisplay(int stage,int reverse);
 }
 '@
     Add-Type -TypeDefinition $gionative.Replace('__DLL__',$GioScanDll.Replace('"','""'))
@@ -212,6 +214,10 @@ public static class C545DResourceGio {
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(11)
     "C545D_RESOURCE_GIO_PREQUERY,stage=main_add,changed=$changed,CI_only=1"
+    if($ReverseResourceLanguage -and $AssertLocalizedDisplayName){
+      $display=[C545DResourceGio]::ResourceDisplay(1,1)
+      if($display -ne 1){throw 'C545D_GIO_RESOURCE_VALUE_NOT_FRESH_MAIN_ADD' }
+    }
   }
   $c1=Completion
   Add-AppxPackage -Path $resMsix -ErrorAction Stop
@@ -234,6 +240,10 @@ public static class C545DResourceGio {
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(12)
     "C545D_RESOURCE_GIO_PREQUERY,stage=resource_add,changed=$changed,CI_only=1"
+    if($ReverseResourceLanguage -and $AssertLocalizedDisplayName){
+      $display=[C545DResourceGio]::ResourceDisplay(2,1)
+      if($display -ne 1){throw 'C545D_GIO_RESOURCE_VALUE_NOT_FRESH_RESOURCE_ADD' }
+    }
   }
   "C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=$($g2-$g1),genuine_status_callbacks_delta=$($s2-$s1),install_terminal_delta=$($c2.inst-$c1.inst),update_terminal_delta=$($c2.upd-$c1.upd),uninstall_terminal_delta=$($c2.uninst-$c1.uninst),synthetic_events=0,CI_only=1"
   Remove-AppxPackage -Package $resourceFullName -ErrorAction Stop
@@ -249,6 +259,10 @@ public static class C545DResourceGio {
   if($gioStarted){
     $changed=[C545DResourceGio]::Observe(13)
     "C545D_RESOURCE_GIO_PREQUERY,stage=resource_remove,changed=$changed,CI_only=1"
+    if($ReverseResourceLanguage -and $AssertLocalizedDisplayName){
+      $display=[C545DResourceGio]::ResourceDisplay(3,1)
+      if($display -ne 1){throw 'C545D_GIO_RESOURCE_VALUE_NOT_FRESH_RESOURCE_REMOVE' }
+    }
   }
   "C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=$($g3-$g2),genuine_status_callbacks_delta=$($s3-$s2),install_terminal_delta=$($c3.inst-$c2.inst),update_terminal_delta=$($c3.upd-$c2.upd),uninstall_terminal_delta=$($c3.uninst-$c2.uninst),synthetic_events=0,CI_only=1"
   'C545D_RESOURCE_PACKAGE_PROBE_COMPLETE,parent_fullname_stable=1,resource_add_remove=1,runner_only=1'

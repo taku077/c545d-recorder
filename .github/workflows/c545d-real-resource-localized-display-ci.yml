@@ -88,7 +88,7 @@ jobs:
           sanitize_on_exit() {
             if [ -f artifacts/resource_gio_run.txt ]; then
               tr -d '\000\r' < artifacts/resource_gio_run.txt |
-                grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_|C545D_RESOURCE_NAME_PROBE,)' > artifacts/resource_gio_numeric.txt || true
+                grep -E '^(C545D_GIO_RESOURCE_DISPLAY,|C545D_RESOURCE_NAME_REVERSE,|C545D_RESOURCE_GIO_PREQUERY,|C545D_RESOURCE_OS_(ADD|REMOVE)_OBSERVATION,|C545D_RESOURCE_PACKAGE_PROBE_COMPLETE,|C545D_RESOURCE_CI_CLEANUP_EXECUTED=|C545D_APPINFO_MONITOR_)' > artifacts/resource_gio_numeric.txt || true
             fi
           }
           trap sanitize_on_exit EXIT
@@ -103,12 +103,12 @@ jobs:
           SCAN="$(cygpath -w "$PWD/artifacts/c545d_gio_real_msix_cache_scan.dll")"
           PROBE="$(cygpath -w "$PWD/artifacts/c545d_ci_localized_pkg_display_probe.exe")"
           export WATCH NOOP SCAN PROBE
-          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DResourcePackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" -LocalizedProbeExe "$PROBE" -AssertLocalizedDisplayName' > artifacts/resource_gio_run.txt
+          meson devenv -C glib-build sh -c 'cd .. && exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Invoke-C545DResourcePackageEventCI.ps1 -WatchDll "$WATCH" -StubExe "$NOOP" -GioScanDll "$SCAN" -LocalizedProbeExe "$PROBE" -AssertLocalizedDisplayName -ReverseResourceLanguage' > artifacts/resource_gio_run.txt
           grep -q 'C545D_RESOURCE_CI_CLEANUP_EXECUTED=1' artifacts/resource_gio_run.txt
           # MakePri emits UTF-16 console text into this shared stdout, which
           # makes GNU grep classify the stream as binary. Remove NUL and CR
           # BEFORE the numeric-only allowlist; never upload raw OS log lines.
-          tr -d '\000\r' < artifacts/resource_gio_run.txt | grep -E '^(C545D_RESOURCE_(GIO_PREQUERY|OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED)|C545D_APPINFO_MONITOR_|C545D_RESOURCE_NAME_PROBE,)' > artifacts/resource_gio_numeric.txt
+          tr -d '\000\r' < artifacts/resource_gio_run.txt | grep -E '^(C545D_GIO_RESOURCE_DISPLAY,|C545D_RESOURCE_NAME_REVERSE,|C545D_RESOURCE_GIO_PREQUERY,|C545D_RESOURCE_OS_(ADD|REMOVE)_OBSERVATION,|C545D_RESOURCE_PACKAGE_PROBE_COMPLETE,|C545D_RESOURCE_CI_CLEANUP_EXECUTED=|C545D_APPINFO_MONITOR_)' > artifacts/resource_gio_numeric.txt
           python - <<'PY'
           from pathlib import Path
           import re
@@ -120,12 +120,12 @@ jobs:
           assert [counts[n] for n in ("main_add","resource_add","resource_remove")]==[1,2,3],('real resource PackageCatalog events did not trigger exactly one unsolicited changed signal each',counts)
           assert re.search(r'C545D_RESOURCE_OS_ADD_OBSERVATION,parent_fullname_unchanged=1,resource_installed=1,native_generation_delta=\d+,genuine_status_callbacks_delta=0,install_terminal_delta=1,update_terminal_delta=0,uninstall_terminal_delta=0,synthetic_events=0,CI_only=1',text),'resource install OS provenance missing'
           assert re.search(r'C545D_RESOURCE_OS_REMOVE_OBSERVATION,parent_fullname_unchanged=1,native_generation_delta=\d+,genuine_status_callbacks_delta=0,install_terminal_delta=0,update_terminal_delta=0,uninstall_terminal_delta=1,synthetic_events=0,CI_only=1',text),'resource remove OS provenance missing'
-          display=re.findall(r'^C545D_RESOURCE_NAME_PROBE,phase=(main_add|resource_add|resource_remove),expected=([01]),english=([01]),french=([01]),actual_nonempty=([01]),thread_fr=1,CI_only=1$',text,re.M)
-          assert len(display)==3,('Expected genuine WinRT getter at all three stages, got',display)
-          assert [item[0] for item in display]==['main_add','resource_add','resource_remove'],display
-          assert all(item[1]=='1' and item[4]=='1' for item in display),('Original WinRT localized DisplayName stale/unresolved',display)
-          assert [item[2:4] for item in display]==[('1','0'),('0','1'),('1','0')],('Unchanged-fullname fr-FR value not refreshed',display)
-          print('C545D_RESOURCE_REAL_LOCALIZED_VALUE_PASS,main_en=1,resource_fr=1,removed_en=1,parent_fullname_constant=1,real_OS_events_only=1,CI_only=1')
+          display=re.findall(r'^C545D_RESOURCE_NAME_REVERSE,phase=(main_add|resource_add|resource_remove),expected=([01]),english=([01]),french=([01]),actual_nonempty=([01]),user_en=1,CI_only=1$',text,re.M)
+          assert display==[('main_add','1','0','1','1'),('resource_add','1','1','0','1'),('resource_remove','1','0','1','1')],('Native original WinRT getter value regression',display)
+          gio=re.findall(r'^C545D_GIO_RESOURCE_DISPLAY,stage=([123]),fresh=([01]),english=(\d+),french=(\d+),reverse=1,CI_only=1$',text,re.M)
+          assert gio==[('1','1','0','1'),('2','1','1','0'),('3','1','0','1')],('Public GAppInfo DisplayName stale, missing, or duplicated',gio)
+          assert re.search(r'^C545D_RESOURCE_CI_CLEANUP_EXECUTED=1,runner_only=1$',text,re.M),'real fixture/certificate cleanup marker missing'
+          print('C545D_GIO_SAME_FULLNAME_LOCALIZED_DISPLAY_PASS,main_fr=1,resource_en=1,remove_fr=1,prequery_monitor_1_2_3=1,real_OS_events_only=1,release_approved=0')
           print('C545D_REAL_RESOURCE_GIO_PREQUERY_PASS,main=1,resource_add=2,resource_remove=3,no_registry_stimulus=1,real_OS_events_only=1,CI_only=1')
           PY
       - uses: actions/upload-artifact@v4
