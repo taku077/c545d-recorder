@@ -17,7 +17,7 @@ permissions:
 jobs:
   pinned-real-sdk:
     runs-on: windows-2022
-    timeout-minutes: 22
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -54,7 +54,7 @@ jobs:
           # A child failure can reveal ONLY these fixed numeric classification
           # booleans; never forward full camera/host paths or native stderr.
           foreach($row in $rows){
-            if(([string]$row) -cmatch '^C545D_PRESTOP_FAILURE_DIAG,native_nonzero=1,managed_exit_null=[01],settings_error=[01],dpapi_error=[01],element_error=[01],decoder_error=[01],aac_error=[01],graph_observed=[01],stop_observed=[01]$'){
+            if(([string]$row) -cmatch '^C545D_PRESTOP_FAILURE_DIAG,native_nonzero=1,direct_native_invocation=1,settings_error=[01],dpapi_error=[01],element_error=[01],decoder_error=[01],aac_error=[01],graph_observed=[01],stop_observed=[01]$'){
               Write-Host $row
             }
           }
