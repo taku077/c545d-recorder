@@ -52,7 +52,21 @@ jobs:
           $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
           $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_MIRROR_SDK -CandidateDll $candidate -CandidateManifest $manifest -ReferenceManifest $ref)
           if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1 -or
-             $rows[0] -cnotmatch '^C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=[2-8],mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0$'){
+             $rows[0] -cnotmatch '^C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=[2-8],mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,recorder_prestop_preflight=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0){
+            throw 'Strict integrated media runtime result mismatch'
+          }
+          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
+          $rows[0] | Set-Content artifacts/numeric/mirror_real_sdk.txt -Encoding ascii
+          Write-Host $rows[0]
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-production-mirror-real-sdk-NOT-FOR-HOST-numeric
+          path: artifacts/numeric/mirror_real_sdk.txt
+          retention-days: 7
+          if-no-files-found: error
+){
             throw 'Strict integrated media runtime result mismatch'
           }
           New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
