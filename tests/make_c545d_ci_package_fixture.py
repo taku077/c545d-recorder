@@ -23,9 +23,14 @@ def png(size):
             + chunk(b"IEND", b""))
 
 
-def build(out, stub, version, versioned_display_name=False, localized_display_name=False):
+def build(out, stub, version, versioned_display_name=False, localized_display_name=False,
+          base_language="en-us"):
     if version not in ("1.0.0.0", "1.0.1.0"):
         raise ValueError("Only the two disposable CI fixture versions are permitted")
+    if base_language not in ("en-us", "fr-fr"):
+        raise ValueError("Only synthetic en-us/fr-fr base languages permitted")
+    if not localized_display_name and base_language != "en-us":
+        raise ValueError("Nondefault base language requires CI localized fixture")
     if not stub.is_file():
         raise ValueError("CI no-op stub missing")
     out.mkdir(parents=True, exist_ok=True)
@@ -57,7 +62,7 @@ def build(out, stub, version, versioned_display_name=False, localized_display_na
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0"
                         MaxVersionTested="10.0.26100.0"/>
   </Dependencies>
-  <Resources><Resource Language="en-us"/></Resources>
+  <Resources><Resource Language="{base_language}"/></Resources>
   <Applications>
     <Application Id="App" Executable="app.exe"
                  EntryPoint="Windows.FullTrustApplication">
@@ -85,6 +90,8 @@ if __name__ == "__main__":
                     help="CI-only v2 title differs from v1; no real package")
     ap.add_argument("--localized-display-name", action="store_true",
                     help="CI-only ms-resource manifest fixture with real PRI")
+    ap.add_argument("--base-language", choices=("en-us", "fr-fr"), default="en-us",
+                    help="CI-only localized fixture base language; default unchanged")
     a=ap.parse_args()
     build(a.out, a.stub, a.version, a.versioned_display_name,
-          a.localized_display_name)
+          a.localized_display_name, a.base_language)
