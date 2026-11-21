@@ -175,7 +175,7 @@ def audit(original: str, weak: str, package: str, balanced: str) -> list[str]:
         "WinRT_allocation_owner_unproven=1,CI_only=1",
         "C545D_GIO_COM_FAILURE_PATH_AUDIT,upstream_unconditional_uninit=1,"
         "CI_candidate_balanced_success_only=1,MTA_failure_path_risk=1,"
-        "not_current_memory_leak_cause=1,Windows_build_untested=1,CI_only=1",
+        "current_private_usage_cause_unproven=1,Windows_build_untested=1,CI_only=1",
         "C545D_GIO_GRAPH_SOURCE_AUDIT_PASS,source_tag=2.82.4,"
         "no_runtime_or_host_changed=1,zero_leak_proven=0,"
         "new_windows_runs=0",
