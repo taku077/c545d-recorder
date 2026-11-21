@@ -148,6 +148,26 @@ def audit_cache_rebuild_epochs(group: dict[str, list[str]]) -> list[str]:
             f"cache_entry_growth=0,native_evictions=0,"
             f"cache_copies_not_alloc_site=1,CI_only=1"
         )
+    # A genuine additional GIO parse happened in the registry arm between
+    # AFTER_CLEANUP(257) and SETTLED_CLEANUP(258); the nochange arm had none.
+    # Quantify the matched resource changes in BOTH segments. Do not attribute
+    # them entirely to the parser: all allocations and scheduler activity run.
+    cohort = {arm: source.parse(group, "combo", arm) for arm in ARMS}
+    for before, after in ((("cycle", 256), ("after_cleanup", 257)),
+                          (("after_cleanup", 257), ("settled_cleanup", 258))):
+        for metric in ("mem", "heap"):
+            raw = {
+                arm: cohort[arm][metric][after] - cohort[arm][metric][before]
+                for arm in ARMS
+            }
+            out.append(
+                f"C545D_SAVED256_CLEANUP_RESOURCE,source_run=44918598339,"
+                f"metric={metric},window={before[1]}_{after[1]},"
+                f"registry_raw={raw['registry']},"
+                f"nochange_raw={raw['nochange']},"
+                f"control_adjusted={raw['registry']-raw['nochange']},"
+                "late_parser_scan_not_unique_cause=1,CI_only=1"
+            )
     out.append(
         "C545D_SAVED256_CACHE_REBUILD_PASS,source_run=44918598339,"
         "snapshot_order_preserved=1,registry_scans=258,nochange_scans=1,"
