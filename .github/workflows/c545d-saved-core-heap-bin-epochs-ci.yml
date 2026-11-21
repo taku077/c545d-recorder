@@ -1,0 +1,41 @@
+name: C545D saved core GIO 64-cycle residual heap-bin epoch audit (no rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_saved_bin64_epochs.py'
+      - '.github/workflows/c545d-saved-core-heap-bin-epochs-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44907202861
+          repository: taku077/c545d-recorder
+          name: c545d-core-only-actual-gio-heap64-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved/44907202861
+      - name: Strict saved-only per-16-cycle HeapWalk exact-bin trajectory, no new Windows test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_saved_bin64_epochs.py --selftest
+          python tests/analyze_gio_saved_bin64_epochs.py --root saved/44907202861 | tee artifacts/numeric/core_bin_epochs.txt
+          grep -qx 'C545D_SAVED_GIO_BIN_EPOCHS_PASS,archived_windows_run_id=44907202861,modes=2,arms=2,windows_reruns=0,camera=0,zero_leak_proven=0,stack_attributed=0,install_approved=0' artifacts/numeric/core_bin_epochs.txt
+          test "$(grep -c '^C545D_SAVED_BIN64,' artifacts/numeric/core_bin_epochs.txt)" -eq 16
+          echo 'C545D_SAVED_CORE64_EPOCHS_CI_PASS,source_artifact_exact=1,new_windows_tests=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-core-heap-bins-epoch-only
+          path: artifacts/numeric/core_bin_epochs.txt
+          if-no-files-found: error
+          retention-days: 7
