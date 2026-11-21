@@ -263,7 +263,8 @@ try {
     $privateFiles=if(Test-Path -LiteralPath (Join-Path $stage 'private-output')){
       @(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue).Count
     }else{0}
-    $workerCpuMs=if(-not $worker.HasExited){[int]$worker.TotalProcessorTime.TotalMilliseconds}else{0}
+    $workerCpuMs=0
+    if(-not $worker.HasExited){try{$workerCpuMs=[int]$worker.TotalProcessorTime.TotalMilliseconds}catch{}}
     $readyCandidates=@(Get-ChildItem -LiteralPath $control -Filter 'session_*.ready' -File -ErrorAction SilentlyContinue)
     $readyCandidatesCount=$readyCandidates.Count
     $readyCandidatePidMatch=0
@@ -277,7 +278,17 @@ try {
     $logText=''
     if($logCount -eq 1){
       $transcript=(Get-ChildItem -LiteralPath $transcriptFolder -Filter 'Recording_*.txt' -File | Select-Object -First 1).FullName
-      $logText=[IO.File]::ReadAllText($transcript)
+      try {
+        $fd=[IO.File]::Open($transcript,[IO.FileMode]::Open,
+                 [IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+        try {
+          $rdr=[IO.StreamReader]::new($fd)
+          $logText=$rdr.ReadToEnd()
+        } finally {$fd.Dispose()}
+      } catch [IO.IOException] {
+        # Active original GUI Worker Start-Transcript still owns the file.
+        $logText=''
+      }
     }
     $logSessionMatches=[int]$logText.Contains(('stop session='+$session))
     $logWorkerPidMatches=[int]$logText.Contains(('Worker initialized. PID='+$worker.Id))
