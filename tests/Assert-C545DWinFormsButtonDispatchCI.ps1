@@ -174,8 +174,7 @@ $global:ProgressPreference='SilentlyContinue'
     $gui=Start-Process -FilePath $guiExe -ArgumentList @(
       '-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass',
       '-File',('"'+(Join-Path $stage 'ci-gui-bootstrap.ps1')+'"')
-    ) -WorkingDirectory $stage -PassThru -WindowStyle Hidden
-      -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr
+    ) -WorkingDirectory $stage -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr
   } finally {
     [Environment]::SetEnvironmentVariable('PSModulePath',$previous,'Process')
   }
