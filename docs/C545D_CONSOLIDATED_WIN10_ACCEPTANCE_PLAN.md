@@ -31,30 +31,15 @@ DLLs, run the candidate, or upload video/credentials.**
    true loaded-GIO module path, ownership marker, link/reparse refusal,
    failure cleanup, environment-variable restoration, and safe child exit.
    A created ZIP alone is not host approval.
-3. The future-only launcher remains **camera-free** and NOT APPROVED.
-   Three **distinct** Windows2022 CI gates are now qualified:
-   (a) [#44874736247 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44874736247)
-       actual official MSVC SDK, pinned candidate GIO module observed, private
-       source mirror and five shortened synthetic dual RTP H264/AAC MP4 fragments
-       independently decoded and rolled back;
-   (b) [#44878301067 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44878301067)
-       genuine localhost-only dual 127.0.0.1:554 /stream1 and /stream6 RTSP
-       TCP media, two synthetic H264 and two PCMA 8kHz tracks all decoded;
-   (c) [#44879915942 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44879915942)
-       the actual cloned production Record.ps1 executed in Windows PowerShell5.1
-       with isolated dummy LOCALAPPDATA/DPAPI and a pre-existing STOP marker,
-       passed original GStreamer startup and graph validation then exited
-       WITHOUT any RTSP launch or MP4 creation, with all originals untouched.
-   These gates do not yet prove an IN-FLIGHT recording by actual Record.ps1
-   with both synthetic RTSP streams, safe Ctrl+C/EOS/GUI stop, reconnect and
-   finalized MP4. Next AI-only: integrate the already-qualified localhost
-   source server with the exact recorder mirror, verify it can start and stop
-   safely and inspect MP4 and CPU/PrivateUsage/handles automatically. No
-   original source or user-installed SDK/registry is to be altered.
-   The 3600s actual MP4 boundary and real Tapo clocks/credentials still
-   require separately approved host verification only after AI gates.
-   Supporting records: [real SDK/recorder pre-stop](C545D_PRODUCTION_MIRROR_REAL_SDK_CI_GATE.md)
-   and [synthetic RTSP CI](C545D_SYNTHETIC_LOOPBACK_RTSP_CI_GATE.md).
+3. The future-only launcher remains **camera-free and NOT HOST APPROVED**.
+   Four independent Windows2022 CI milestones are now completed:
+   (a) [#44874736247 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44874736247): official MSVC1.28.8 SDK, real candidate GIO module observed, five shortened synthetic H264/AAC MP4 fragments verified.
+   (b) [#44878301067 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44878301067): real TCP localhost RTSP on 127.0.0.1:554 /stream1 and /stream6, H264+PCMA decoded on both.
+   (c) [#44879915942 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44879915942): genuine source-equivalent Record.ps1 startup in WinPS5 with isolated dummy DPAPI and a pre-existing STOP marker. No RTSP opened.
+   (d) [#44881283742 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44881283742): **genuine cloned Record.ps1 executed and recorded both synthetic local RTSP sessions** and one finalized 6,547,122-byte H264/AAC 2560x720@15fps mono48k MP4, independently decoded. A post-start STOP marker was present by the time the **finite RTSP sources ended naturally**, recorder selected STOP rather than RECONNECT, GStreamer exit 0. This is **NOT** a GUI Ctrl+C / active GStreamer EOS signal test.
+   (e) [#44881597094 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44881597094): isolated camera-free exact Windows GUI worker Ctrl+C handler and marker-before-event protocol passed without running GStreamer.
+   New ongoing AI-only work: combine actual unmodified RecordGUIWorker.ps1, source-exact Record.ps1 and both synthetic RTSP streams in a dedicated private Windows console, send a Ctrl+C only if the console contains exclusively the CI-created worker, one private gst-launch process and sender. [GUI Ctrl+C CI gate](C545D_GUI_WORKER_CTRL_C_EOS_CI_GATE.md). First full [#44881856117 FAILED](https://github.com/taku077/c545d-recorder/actions/runs/44881856117) before GUI worker ready; subsequent runs isolate Windows hosted CI dummy SecureString creation, not yet a GStreamer stop outcome. **Do not declare the GUI-integrated test a success until exact final run and numeric EOS + MP4 decode evidence.**
+   Preserve the production 3,600-second splitmux, x264 medium QP24, avdec_h264, AAC mono48kHz/192k and safe stop. A real one-hour boundary and physical Tapo two-lens sync/CPU/PrivateUsage/handles still require one separately approved consolidated Win10 acceptance session only AFTER all AI-side gates.
 4. Prepare a single self-contained, supervised test script which verifies
    preconditions, collects already-identified metrics automatically,
    preserves any test outputs only in a user-owned private location,
