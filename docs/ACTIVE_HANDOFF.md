@@ -3,15 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6d17884dc11bb44df57d22c65cf6db25c3f9e386`
-- **PR updated at (UTC):** `2026-11-21T16:38:40Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6d17884dc11bb44df57d22c65cf6db25c3f9e386/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `24ad93ac9aa667d41e483439ce7194cb6e6d0cd3`
+- **PR updated at (UTC):** `2026-11-21T16:41:22Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/24ad93ac9aa667d41e483439ce7194cb6e6d0cd3/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44925697615](https://github.com/taku077/c545d-recorder/actions/runs/44925697615) |
+| C545D isolate combined MSVC GIO late360 UMDH stack evidence (CI ONLY) | in_progress | [#44925935468](https://github.com/taku077/c545d-recorder/actions/runs/44925935468) |
 
 ## Current development findings from the active PR
 
