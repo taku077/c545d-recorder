@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `feeee212f904cc90ae7d2260cb0240695e5930c5`
-- **PR updated at (UTC):** `2026-11-21T14:05:29Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/feeee212f904cc90ae7d2260cb0240695e5930c5/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `14d20cbd02ebf3e098bdeb597adb61c6221f8abf`
+- **PR updated at (UTC):** `2026-11-21T14:06:33Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/14d20cbd02ebf3e098bdeb597adb61c6221f8abf/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44912122964](https://github.com/taku077/c545d-recorder/actions/runs/44912122964) |
-| C545D archive-only localized WinRT DisplayName numeric classification | success | [#44912120173](https://github.com/taku077/c545d-recorder/actions/runs/44912120173) |
+| C545D active development handoff auto-refresh | in_progress | [#44912213096](https://github.com/taku077/c545d-recorder/actions/runs/44912213096) |
 
 ## Current development findings from the active PR
 
