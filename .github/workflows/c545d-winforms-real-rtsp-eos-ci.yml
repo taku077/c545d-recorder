@@ -111,7 +111,8 @@ jobs:
           }
           # If recording fails, expose only coarse phase/reason; no camera credentials.
           foreach($row in $rows){
-            if(([string]$row) -cmatch '^C545D_GUI_INTEGRATED_DIAG,code=[A-Z_]+,real_camera=0$'){
+            if(([string]$row) -cmatch '^C545D_GUI_INTEGRATED_DIAG,code=[A-Z_]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_INTEGRATED_ERROR_STAGE,phase=[A-Z_]+,line=[0-9]+,exception_class=[A-Za-z0-9_]+,category=[A-Za-z0-9_]+,real_camera=0$'){
               Write-Host $row
             }
           }
