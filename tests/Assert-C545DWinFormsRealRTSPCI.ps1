@@ -721,6 +721,19 @@ $encrypted=ConvertFrom-SecureString $pass
     $recordErrorDetected=[int](([string]$text).Contains('RECORD ERROR:'))
     $gstReturned=[int](([string]$text).Contains('GStreamer returned; exitCode='))
     $eosSuccessful=[int](([string]$text).Contains('Recording stopped by GUI; GStreamer EOS completed.'))
+    # Reason token must survive outer workflow's strict A-Z_ log whitelist.
+    # Encode small finite categories only, never the user's camera/path/logs.
+    $workerClass=if($recordExit -eq 0){'ZERO'}elseif($recordExit -eq 1){'ONE'}elseif($recordExit -eq -1073741510){'CONTROL_C'}else{'OTHER'}
+    $gstClass=if($nativeExit -eq 0){'ZERO'}elseif($nativeExit -eq 999){'MISSING'}else{'NONZERO'}
+    $eosClass=if($eosSuccessful -eq 1){'YES'}else{'NO'}
+    $errorClassToken=if($recordErrorDetected -eq 1){'YES'}else{'NO'}
+    $returnedClass=if($returned -eq 1){'YES'}else{'NO'}
+    $markerClass=if($markerAtReturn -eq 1){'YES'}else{'NO'}
+    $stopClass=if($policyStop -eq 1){'YES'}else{'NO'}
+    $readyClass=if($readyRemoved -eq 1){'YES'}else{'NO'}
+    $reason=(@('GUI','STOP','WORKER',$workerClass,'GST',$gstClass,'EOS',$eosClass,
+      'RECORDERROR',$errorClassToken,'RETURNED',$returnedClass,'MARKER',$markerClass,
+      'POLICY',$stopClass,'READYREMOVED',$readyClass) -join '_')
     Write-Output "C545D_WINFORMS_STOP_DIAG,worker_exit=$recordExit,native_gst_exit=$nativeExit,record_error=$recordErrorDetected,gst_returned=$gstReturned,eos_successful=$eosSuccessful,stop_policy=$policyStop,reconnect=$unexpectedReconnect,record_returned=$returned,marker_at_return=$markerAtReturn,mp4_files=$filesCount,stop_proven=$stopExists,ready_removed=$readyRemoved,real_camera=0"
   }
   $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
