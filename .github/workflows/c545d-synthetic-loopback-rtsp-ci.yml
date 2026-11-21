@@ -72,7 +72,7 @@ jobs:
           foreach($k in @('PATH','GST_REGISTRY','GST_PLUGIN_SCANNER','GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0','GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0')){
             $prior[$k]=[Environment]::GetEnvironmentVariable($k,'Process')
           }
-          $server=$null;$client=$null;$passed=$false
+          $server=$null;$client=$null;$passed=$false;$phase='BEFORE_SERVER'
           try {
             $env:PATH="$(Join-Path $sdk 'bin');$($prior['PATH'])"
             $env:GST_REGISTRY=Join-Path $stage 'registry.bin'
@@ -84,19 +84,38 @@ jobs:
             $so=Join-Path $stage 'server.stdout'
             $se=Join-Path $stage 'server.stderr'
             $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $root -RedirectStandardOutput $so -RedirectStandardError $se
+            $phase='SERVER_STARTED'
             $ready='C545D_SYNTHETIC_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,real_camera=0'
             $seen=$false
             for($i=0;$i -lt 120;$i++){
               Start-Sleep -Milliseconds 100
-              if((Test-Path -LiteralPath $so) -and [IO.File]::ReadAllText($so).Contains($ready)){$seen=$true;break}
+              # Start-Process keeps redirected stdout open until child exits.
+              # Read using a sharing mode that permits the owner to write.
+              if(Test-Path -LiteralPath $so){
+                try {
+                  $fs=[IO.File]::Open($so,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+                  try {
+                    $reader=[IO.StreamReader]::new($fs)
+                    if($reader.ReadToEnd().Contains($ready)){$seen=$true}
+                  } finally {
+                    $fs.Dispose()
+                  }
+                } catch [System.IO.IOException] {
+                  # Transient Windows stdout handle-sharing contention.
+                }
+              }
+              if($seen){break}
               if($server.HasExited){break}
             }
             if(-not $seen){throw 'Local RTSP server did not bind'}
+            $phase='SERVER_READY'
             $co=Join-Path $stage 'client.stdout'
             $ce=Join-Path $stage 'client.stderr'
             $client=Start-Process -FilePath $exe -ArgumentList 'client' -PassThru -WorkingDirectory $root -RedirectStandardOutput $co -RedirectStandardError $ce
+            $phase='CLIENT_STARTED'
             if(-not $client.WaitForExit(40000)){throw 'Local RTSP client timeout'}
             if($client.ExitCode -ne 0){throw 'Synthetic RTSP negotiation failed'}
+            $phase='CLIENT_EXIT_0'
             $result=@(Get-Content -LiteralPath $co)
             $expected='C545D_SYNTHETIC_RTSP_CLIENT,pass=1,loopback_only=1,streams=2,video_branches=2,audio_branches=2,v0_present=1,a0_present=1,v1_present=1,a1_present=1,real_camera=0'
             if($result.Count -ne 1 -or $result[0] -cne $expected){throw 'Strict RTSP numeric output mismatch'}
@@ -108,7 +127,7 @@ jobs:
             if($_.Exception.Message -eq 'Local RTSP client timeout'){$type='CLIENT_TIMEOUT'}
             if($_.Exception.Message -eq 'Synthetic RTSP negotiation failed'){$type='MEDIA_REJECTED'}
             if($_.Exception.Message -eq 'Strict RTSP numeric output mismatch'){$type='NUMERIC_MISMATCH'}
-            Write-Host ("C545D_RTSP_STAGE_CI,reason="+$type+",real_camera=0,host_modified=0")
+            Write-Host ("C545D_RTSP_STAGE_CI,reason="+$type+",phase="+$phase+",server_seen="+[int]($null -ne $server)+",client_seen="+[int]($null -ne $client)+",real_camera=0,host_modified=0")
             throw 'SANITIZED_RTSP_CI_FAILED'
           } finally {
             if($client){
