@@ -834,8 +834,34 @@ $encrypted=ConvertFrom-SecureString $pass
        'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){
       throw 'OWNED_STAGE_CLEANUP_REFUSED'
     }
-    Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
-    if(Test-Path -LiteralPath $stage){throw 'STAGE_CLEANUP_INCOMPLETE'}
+    # FileSystemWatcher may release a handle immediately AFTER .ready is
+    # deleted. Only this exact CI-owned child of RUNNER_TEMP may be retried.
+    # No new path or ownership is accepted; reject reparse links on every
+    # attempt. A permanent lock still fails the job, never a false PASS.
+    $ciStageCleanupRetries=0
+    $ciStageCleanupError='NONE'
+    for($attempt=0;$attempt -lt 16;$attempt++){
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $newLinks=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+        Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+      $rootAttributes=(Get-Item -LiteralPath $stage -Force).Attributes
+      if($newLinks.Count -ne 0 -or
+         ($rootAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'OWNED_STAGE_CLEANUP_REFUSED'
+      }
+      try {
+        Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
+      } catch {
+        $ciStageCleanupError=$_.Exception.GetType().Name
+        if($ciStageCleanupError -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$ciStageCleanupError='OTHER'}
+      }
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $ciStageCleanupRetries++
+      Start-Sleep -Milliseconds 250
+    }
+    $stageRemoved=[int](-not (Test-Path -LiteralPath $stage))
+    Write-Output "C545D_GUI_CI_STAGE_CLEANUP,removed=$stageRemoved,retries=$ciStageCleanupRetries,real_camera=0"
+    if($stageRemoved -ne 1){throw 'STAGE_CLEANUP_INCOMPLETE'}
   }
 }
 if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
