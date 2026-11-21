@@ -229,7 +229,7 @@ jobs:
               & pwsh -NoProfile -File tests/Invoke-C545DGioUmdhStackGate.ps1 @params
               if($LASTEXITCODE -ne 0){throw "Matched 256-cycle $arm UMDH stack probe failed"}
             }
-            Write-Host 'C545D_GIO_UMDH_LATE360_CI_PASS,msvc_official_sdk=1,arms=2,cycles=256,synthetic_only=1,raw_uploaded=0,host_modified=0,release_approved=0'
+            Write-Host 'C545D_GIO_UMDH_LATE360_CAPTURE_COMPLETE,msvc_official_sdk=1,arms=2,cycles=256,stack_owner_not_proven=1,synthetic_only=1,raw_uploaded=0,host_modified=0,release_approved=0'
           } finally {
             Remove-Item $volatile -Force -Recurse -ErrorAction SilentlyContinue
             Remove-Item $smokeLog -Force -ErrorAction SilentlyContinue

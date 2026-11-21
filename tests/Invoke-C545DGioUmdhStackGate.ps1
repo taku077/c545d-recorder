@@ -61,7 +61,12 @@ function Compare-C545DUmdhStacks([int]$left,[int]$right,[string]$before,[string]
   }
   $positive=$headers.Count
   Write-Host "C545D_GIO_UMDH_STACK,arm=$arm,cycles=$Cycles,window=$($left)_$right,positive_backtraces=$positive,has_gio_module=$gio,has_glib_module=$glib,exact_360_owner_proven=0,raw_uploaded=0,CI_only=1"
-  if($positive -lt 1){throw 'Actual GIO UMDH snapshot diff contains no positive stacks'}
+  # A valid 0->16 UMDH diff may have zero positive stacks. The 360B
+  # residual appeared late; do not treat an early plateau as tool failure.
+  # A zero count at 192->256 means inconclusive attribution, not zero leak.
+  if($positive -eq 0) {
+    Write-Host "C545D_GIO_UMDH_NO_POSITIVE_STACKS,arm=$arm,cycles=$Cycles,window=$($left)_$right,snapshots_valid=1,leak_absent_proven=0,CI_only=1"
+  }
 }
 try {
   & $Gflags /i $exeName +ust > $null 2>&1
@@ -88,14 +93,21 @@ try {
     Compare-C545DUmdhStacks $stages[$j] $stages[$j+1] $snaps[$stages[$j]] $snaps[$stages[$j+1]]
   }
   if($Cycles -eq256){
-    $m192=[regex]::Match($output,'(?m)^GIO_HEAPSIZE,cycle,192,360,(\d+)$')
-    $m256=[regex]::Match($output,'(?m)^GIO_HEAPSIZE,cycle,256,360,(\d+)$')
-    if(-not($m192.Success -and $m256.Success)){throw 'GIO 360-byte HeapWalk checkpoints missing'}
-    $start=[long]::Parse($m192.Groups[1].Value);$end=[long]::Parse($m256.Groups[1].Value)
+    # MSVC stdout is CRLF, and the C probe omits zero-count size bins.
+    # Require both valid HeapWalk checkpoints before interpreting absence
+    # of a 360B row as zero rather than an incomplete heap traversal.
+    foreach($point in @(192,256)) {
+      $heap=[regex]::Match($output,("(?m)^GIO_HEAP,cycle,"+$point+",\d+,\d+,\d+,0\r?$"))
+      if(-not $heap.Success){throw "Incomplete or invalid HeapWalk checkpoint $point"}
+    }
+    $m192=[regex]::Match($output,'(?m)^GIO_HEAPSIZE,cycle,192,360,(\d+)\r?$')
+    $m256=[regex]::Match($output,'(?m)^GIO_HEAPSIZE,cycle,256,360,(\d+)\r?$')
+    $start=if($m192.Success){[long]::Parse($m192.Groups[1].Value)}else{[long]0}
+    $end=if($m256.Success){[long]::Parse($m256.Groups[1].Value)}else{[long]0}
     $delta=$end-$start
     Write-Host "C545D_GIO_UMDH_HEAP360,arm=$arm,cycle192=$start,cycle256=$end,raw_delta=$delta,matched_control_not_in_this_arm=1,owner_known=0,CI_only=1"
   }
-  Write-Host "C545D_GIO_UMDH_PROCESS_PASS,arm=$arm,cycles=$Cycles,ust=1,signed_legacy_umdh=1,raw_uploaded=0,user_host_modified=0,release_approved=0"
+  Write-Host "C545D_GIO_UMDH_PROCESS_CAPTURE_COMPLETE,arm=$arm,cycles=$Cycles,ust=1,signed_legacy_umdh=1,exact_360_owner_proven=0,zero_leak_proven=0,raw_uploaded=0,user_host_modified=0,release_approved=0"
 } finally {
   if($proc){
     foreach($point in $stages){New-Item -ItemType File -Force -Path (Join-Path $dir ("resume_"+$point+".signal")) | Out-Null}
