@@ -68,6 +68,91 @@ def monitor_readings(rows: list[str]) -> tuple[dict[int, int], dict[int, int]]:
     return notifications, private
 
 
+
+def completed_rebuild_timeline(rows: list[str]) -> dict[tuple[str, int], tuple]:
+    """Align two *contiguous* numeric parser summaries to the next GIO_PROBE.
+
+    The original Windows exporter preserved source output order. In the
+    probe, enumerate_apps() completes before GIO_PROBE for each checkpoint.
+    A paired cache/bridge summary marks an AppInfo package parser pass;
+    no summary means no parser pass at that checkpoint. Reject ambiguous
+    duplicate or unmatched summaries, never infer an allocation owner.
+    """
+    pending_cache = None
+    pending_bridge = None
+    seen: dict[tuple[str, int], tuple] = {}
+    for row in rows:
+        if m := CACHE.fullmatch(row):
+            if pending_cache is not None:
+                raise ValueError("more than one cache summary between checkpoints")
+            pending_cache = tuple(map(int, m.groups()))
+        elif m := BRIDGE.fullmatch(row):
+            if pending_bridge is not None:
+                raise ValueError("more than one bridge summary between checkpoints")
+            pending_bridge = tuple(map(int, m.groups()))
+        elif row.startswith("GIO_PROBE,"):
+            m = PROBE.fullmatch(row)
+            if m is None:
+                raise ValueError("invalid checkpoint for rebuild alignment")
+            phase, step = m.group(1), int(m.group(2))
+            point = (phase, step)
+            if point in seen or ((pending_cache is None) != (pending_bridge is None)):
+                raise ValueError("ambiguous cache/bridge pairing at process checkpoint")
+            seen[point] = ((pending_cache, pending_bridge)
+                           if pending_cache is not None else None)
+            pending_cache = pending_bridge = None
+    if pending_cache is not None or pending_bridge is not None:
+        raise ValueError("trailing unpaired cache/bridge summary")
+    expected = {("baseline", 0), ("after_cleanup", 257),
+                ("settled_cleanup", 258)}
+    expected.update(("cycle", i) for i in range(1, N + 1))
+    if set(seen) != expected:
+        raise ValueError("incomplete 259-checkpoint rebuild timeline")
+    return seen
+
+
+def audit_cache_rebuild_epochs(group: dict[str, list[str]]) -> list[str]:
+    """Fixture-specific identity, NOT a release invariant across other PCs."""
+    out = []
+    for arm in ARMS:
+        seen = completed_rebuild_timeline(group[f"combo-{arm}-256"])
+        scanned = [p for p, v in seen.items() if v is not None]
+        expected = {("baseline", 0)}
+        if arm == "registry":
+            expected.update(("cycle", i) for i in range(1, N + 1))
+            expected.add(("after_cleanup", 257))
+        if set(scanned) != expected:
+            raise ValueError("original cache rescan/checkpoint mapping changed")
+        all_samples = [seen[p] for p in [("baseline", 0)] +
+                       [("cycle", i) for i in range(1, N + 1)] +
+                       [("after_cleanup", 257), ("settled_cleanup", 258)]
+                       if seen[p] is not None]
+        for number, (cache, bridge) in enumerate(all_samples):
+            hits, misses, entries = cache
+            scans, injections, evictions, errors, ready = bridge
+            if not (misses == 32 and entries == 32 and
+                    hits == number * 32 and scans == number + 1 and
+                    injections == 0 and evictions == 0 and
+                    errors == 0 and ready == 1):
+                raise ValueError("original 32-package cache/bridge identity changed")
+        out.append(
+            f"C545D_SAVED256_CACHE_REBUILD,source_run=44918598339,"
+            f"arm={arm},baseline_scans=1,"
+            f"cycle_scans={256 if arm == 'registry' else 0},"
+            f"after_cleanup_scans={1 if arm == 'registry' else 0},"
+            f"settled_scans=0,packages_per_scan=32,"
+            f"cache_entry_growth=0,native_evictions=0,"
+            f"cache_copies_not_alloc_site=1,CI_only=1"
+        )
+    out.append(
+        "C545D_SAVED256_CACHE_REBUILD_PASS,source_run=44918598339,"
+        "snapshot_order_preserved=1,registry_scans=258,nochange_scans=1,"
+        "displayname_cache_entries_stay_32=1,allocation_owner_proven=0,"
+        "new_windows_runs=0"
+    )
+    return out
+
+
 def monitor_alignment(group: dict[str, list[str]]) -> list[str]:
     # Read the same original-run four arms, with no synthetic cross-run pair.
     # Explicitly keep 'signal-free memory steps' descriptive: asynchronous
@@ -242,6 +327,7 @@ def analyze(group: dict[str, list[str]]) -> list[str]:
        measurements["combo", "handles"][1] != -7:
         raise ValueError("pinned original settled memory/handle effect mismatch")
     output.extend(monitor_alignment(group))
+    output.extend(audit_cache_rebuild_epochs(group))
     print("\n".join(output))
     return output
 
@@ -312,6 +398,28 @@ def selftest() -> None:
         else:
             raise AssertionError("invalid monitor series accepted")
     assert rejected == 4
+
+    # Minimal ordering fixture; test must reject unmatched, repeated or
+    # out-of-order numeric cumulative parser summaries.
+    aligned = ["C545D_DISPLAY_CACHE,hits=0,misses=32,entries=32",
+               "C545D_WINRT_BRIDGE,scans=1,injections=0,evictions=0,errors=0,ready=1",
+               "GIO_PROBE,baseline,0,0,100,1000"] + [
+               f"GIO_PROBE,cycle,{i},0,100,1000" for i in range(1, N + 1)] + [
+               "GIO_PROBE,after_cleanup,257,0,100,1000",
+               "GIO_PROBE,settled_cleanup,258,0,100,1000"]
+    assert completed_rebuild_timeline(aligned)[("baseline", 0)] is not None
+    for broken in (
+        aligned[:1] + aligned[2:],
+        aligned[:2] + [aligned[0]] + aligned[2:],
+        aligned + [aligned[0]],
+    ):
+        try:
+            completed_rebuild_timeline(broken)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("ambiguous source-ordered scan passed")
+
     print("C545D_SAVED256_STEP_SELFTEST_PASS,negative_cases=5,"
           "monitor_negative_cases=4,original_windows_runs=0")
 
