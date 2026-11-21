@@ -76,6 +76,18 @@ DLLs, run the candidate, or upload video/credentials.**
   repeated 4-hour investigations. To actually test a one-hour split boundary,
   the single session must cross at least one 3,600-second production segment.
   Short synthetic splitmux results cannot substitute for this.
+  **Do not demand an exact 3,600.000s file duration**: the unmodified
+  Record.ps1 sets `max-size-time=3600000000000` ns and x264
+  `key-int-max=30` at 15fps, with
+  `send-keyframe-requests=true`. GStreamer splitmuxsink is explicitly
+  keyframe-aligned and may overrun the time target by a GOP; the nominal
+  keyframe interval is at most 30/15 = 2 seconds under steady encoding,
+  but real-source jitter and other delays mean this is NOT a guaranteed
+  absolute 2s cap. Judge the first real split using MP4 media timestamps,
+  recording-continuity markers and individually finalized H264/AAC streams,
+  allowing a cautious bounded margin rather than falsely failing on
+  sub-second/keyframe alignment. Require EOS finalization for the final
+  fragment, and collect all host metrics in the SAME authorized session.
 - In that SAME automated session capture: two RTSP stream health,
   stream1/stream6 layout, true 2560x720@15fps, h264/x264 QP and preset
   invariants, AAC mono48k/192k target, timestamps and audio/video sync,
