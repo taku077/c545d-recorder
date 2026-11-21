@@ -31,7 +31,9 @@ jobs:
           & cl.exe /nologo /W4 /WX /MD /TC tests/c545d_com_apartment_balance_ci.c /Fe:c545d_com_apartment_balance_ci.exe /link ole32.lib
           if($LASTEXITCODE -ne 0){throw 'MSVC independent COM contract build failed'}
           $lines=@(& .\c545d_com_apartment_balance_ci.exe)
-          if($LASTEXITCODE -ne 0){throw 'Windows COM contract runtime failed'}
+          $result=$LASTEXITCODE
+          $lines | ForEach-Object {Write-Host $_}
+          if($result -ne 0){throw 'Windows COM contract runtime failed; see scenario marker above'}
           $expected='C545D_COM_APARTMENT_CONTRACT_PASS,STA_OK=1,STA_SFALSE=1,MTA_CHANGED_MODE_GUARDED=1,legacy_failure_exposed=1,GIO_DLL_UNTESTED=1,windows_runner_only=1,user_host_modified=0'
           if(@($lines | Where-Object {$_ -ceq $expected}).Count -ne 1){throw 'Expected exact COM success marker missing'}
           $lines | ForEach-Object {Write-Host $_}
