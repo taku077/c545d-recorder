@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | pending | [#44881058983](https://github.com/taku077/c545d-recorder/actions/runs/44881058983) |
+| C545D real Record.ps1 finite localhost RTSP Windows CI ONLY | in_progress | [#44881056736](https://github.com/taku077/c545d-recorder/actions/runs/44881056736) |
 
 ## Current development findings from the active PR
 
