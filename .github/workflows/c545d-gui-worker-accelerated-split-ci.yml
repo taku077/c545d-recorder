@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/c545d-gui-worker-accelerated-split-ci.yml'
       - 'tests/Assert-C545DGUIWorkerLiveLoopbackCI.ps1'
+      - 'tests/Assert-C545DSegmentNamerClosedMp4CI.ps1'
+      - 'SegmentNamer.ps1'
+      - 'SegmentNamerWorker.ps1'
       - 'tools/Send-C545DPrivateConsoleStopCI.ps1'
       - 'RecordGUIWorker.ps1'
       - 'C545D_App.ps1'
@@ -45,7 +48,7 @@ jobs:
           $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
           if($p.ExitCode -ne 0){throw 'CI SDK setup failed'}
           "C545D_RTSP_LIVE_SDK=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Verify CI-only 8s splitmux mirror, all finalized MP4 fragments, and GUI EOS
+      - name: Verify 4 split MP4s, original namer closed-file gate, and GUI EOS
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -57,7 +60,8 @@ jobs:
           $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
           $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_RTSP_LIVE_SDK -CandidateDll $candidate -ReferenceManifest $ref -CiSplitSeconds 8 2>$null)
           foreach($row in $rows){
-            if(([string]$row) -cmatch '^C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=[0-9]+,bounded_20s=1,real_camera=0$' -or
+            if(([string]$row) -cmatch '^C545D_SEGMENT_NAMER_CI,ready=[01],locked_deferred=[01],renamed=[0-9]+,mp4_hashes_intact=[01],manual_preserved=[01],clean_exit=[01],source_unchanged=[01],real_camera=0,host_modified=0,reason=[A-Z_]+$' -or
+               ([string]$row) -cmatch '^C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=[0-9]+,bounded_20s=1,real_camera=0$' -or
                ([string]$row) -cmatch '^C545D_GUI_RESOURCE_STAGE,samples=11,nominal_total_s=31,steady_window_s=24,worker_private_first_b=[0-9]+,worker_private_last_b=[0-9]+,worker_handles_first=[0-9]+,worker_handles_last=[0-9]+,gst_private_first_b=[0-9]+,gst_private_steady_first_b=[0-9]+,gst_private_last_b=[0-9]+,gst_handles_first=[0-9]+,gst_handles_steady_first=[0-9]+,gst_handles_last=[0-9]+,gst_cpu_delta_ms=[0-9]+,gio_stage_module_observed=[01],gio_module_query_error=[01],staged_gst_remaining=0,real_camera=0$' -or
                ([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_STAGE,worker_exit=-?[0-9]+,worker_exited=[01],gui_ctrlc_sent=[01],wide_mount=[01],tele_mount=[01],launch_count=[0-9]+,stop_at_gst_return=[01],native_gst_exit=-?[0-9]+,policy_stop=[01],policy_reconnect=[01],eos_message=[01],worker_returned=[01],mp4_count=[0-9]+,mp4_bytes=[0-9]+,stop_marker=[01],ready_removed=[01],real_camera=0$' -or
                ([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_FAIL,phase=[A-Z_]+,reason=[A-Z_]+,real_camera=0,host_modified=0$' -or
@@ -68,12 +72,15 @@ jobs:
           # CI-owned mirror only; actual production retains 3600s.
           $expected='^C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=[3-8],each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0$'
           $matches=@($rows|Where-Object {([string]$_) -cmatch $expected})
-          if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1){
+          $namerExpected='C545D_SEGMENT_NAMER_CI,ready=1,locked_deferred=1,renamed=4,mp4_hashes_intact=1,manual_preserved=1,clean_exit=1,source_unchanged=1,real_camera=0,host_modified=0,reason=PASS'
+          $namerMatches=@($rows|Where-Object {$_ -ceq $namerExpected})
+          if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1 -or $namerMatches.Count -ne 1){
             throw 'Accelerated CI-only MP4 split and decode not qualified'
           }
           New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
-          $matches[0] | Set-Content artifacts/numeric/gui_worker_accelerated_split.txt -Encoding ascii
+          @($matches[0],$namerMatches[0]) | Set-Content artifacts/numeric/gui_worker_accelerated_split.txt -Encoding ascii
           Write-Host $matches[0]
+          Write-Host $namerMatches[0]
       - uses: actions/upload-artifact@v4
         if: success()
         with:
