@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44912999126](https://github.com/taku077/c545d-recorder/actions/runs/44912999126) |
+| C545D real signed same-FullName localized DisplayName resource-refresh CI ONLY | in_progress | [#44912996745](https://github.com/taku077/c545d-recorder/actions/runs/44912996745) |
 
 ## Current development findings from the active PR
 
