@@ -1,0 +1,23 @@
+name: C545D 256-cycle sparse heap plus full process-samples parser selftest (Linux only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_combo_msvc256.py'
+      - '.github/workflows/c545d-combo256-parser-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert real per-cycle process sampling and seven corrupt-fixture rejections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_gio_combo_msvc256.py --selftest | tee /tmp/c545d256-selftest.txt
+          grep -Fx 'C545D_COMBO_MSVC256_ANALYZER_SELFTEST_PASS,negative_cases=7,per_cycle_samples=256' /tmp/c545d256-selftest.txt
+          echo 'C545D_COMBO256_PARSER_ONLY_PASS,windows_runs=0,real_camera=0,host_modified=0,replay_synthetic=1'

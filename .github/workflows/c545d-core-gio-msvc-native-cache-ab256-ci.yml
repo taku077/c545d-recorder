@@ -1,10 +1,8 @@
 name: C545D combined MSVC GIO controlled 256-cycle late residual and 360B heap CI ONLY
+# The expensive four-arm 256-cycle Windows baseline completed in run 44918598339.
+# Opt-in/manual only: parser changes must NOT rerun 4x256 Windows measurements.
+# The archive-only numeric CI independently rechecked the original measurements.
 on:
-  push:
-    branches: ['investigate/c545d-status-only-monitor-20261120']
-    paths:
-      - '.github/workflows/c545d-core-gio-msvc-native-cache-ab256-ci.yml'
-      - 'tests/analyze_gio_combo_msvc256.py'
   workflow_dispatch:
 permissions:
   contents: read

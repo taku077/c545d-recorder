@@ -21,7 +21,8 @@ EPOCHS = CHECKS[:5]
 SIZES = (24, 28, 56, 120, 190, 194, 196, 360)
 
 
-def numeric_rows(raw: str, label: str, width: int, out: dict, index: int) -> None:
+def numeric_rows(raw: str, label: str, width: int, out: dict, index: int,
+                 allowed_points: set[tuple[str, int]]) -> None:
     for line in raw.splitlines():
         if not line.startswith(label + ","):
             continue
@@ -33,7 +34,7 @@ def numeric_rows(raw: str, label: str, width: int, out: dict, index: int) -> Non
             point = (fields[1], int(fields[2]))
         except ValueError as exc:
             raise ValueError(f"non-numeric {label} evidence") from exc
-        if point not in CHECKS or point in out or any(v < 0 for v in nums):
+        if point not in allowed_points or point in out or any(v < 0 for v in nums):
             raise ValueError(f"duplicate, invalid or negative {label} checkpoint")
         out[point] = fields
 
@@ -46,16 +47,19 @@ def read(root: Path, mode: str, arm: str) -> dict:
     if len(done) != 1 or done[0][1] != ("1" if arm == "registry" else "0"):
         raise ValueError("wrong or incomplete 256-cycle scope probe")
     heap_fields, probe_fields, key_fields = {}, {}, {}
-    numeric_rows(raw, "GIO_HEAP", 7, heap_fields, 3)
-    numeric_rows(raw, "GIO_PROBE", 6, probe_fields, 3)
+    # HeapWalk snapshots are sparse; the C probe emits process metrics
+    # at *every* cycle, including 1..256, and once before/after cleanup.
+    all_probe_points = set(CHECKS) | {("cycle", i) for i in range(1, 257)}
+    numeric_rows(raw, "GIO_HEAP", 7, heap_fields, 3, set(CHECKS))
+    numeric_rows(raw, "GIO_PROBE", 6, probe_fields, 3, all_probe_points)
     # GIO_KEY is not at every checkpoint; parse its baseline+settled endpoints.
     for row in re.findall(r"^GIO_KEY,([a-z_]+),(\d+),(\d+)$", raw, re.M):
         point = (row[0], int(row[1]))
         if point in key_fields or int(row[2]) < 0:
             raise ValueError("duplicate/negative Key census")
         key_fields[point] = int(row[2])
-    if set(heap_fields) != set(CHECKS) or set(probe_fields) != set(CHECKS):
-        raise ValueError("missing 256-cycle heap or process checkpoint")
+    if set(heap_fields) != set(CHECKS) or set(probe_fields) != all_probe_points:
+        raise ValueError("missing 256-cycle HeapWalk or per-cycle process sample")
     if not all(point in key_fields for point in (CHECKS[0], CHECKS[-1])):
         raise ValueError("missing baseline/settled Key census")
     heap = {}
@@ -181,10 +185,13 @@ def selftest() -> None:
                 for phase, cycle in CHECKS:
                     rows.extend((
                         f"GIO_HEAP,{phase},{cycle},1,{1000+cycle},1,0",
-                        f"GIO_HEAPSIZE,{phase},{cycle},360,1",
-                        f"GIO_PROBE,{phase},{cycle},0,100,{15000+cycle}"))
+                        f"GIO_HEAPSIZE,{phase},{cycle},360,1"))
+                    if phase != "cycle":
+                        rows.append(f"GIO_PROBE,{phase},{cycle},0,100,{15000+cycle}")
                     if (phase, cycle) in (CHECKS[0], CHECKS[-1]):
                         rows.append(f"GIO_KEY,{phase},{cycle},10")
+                for cycle in range(1, 257):
+                    rows.append(f"GIO_PROBE,cycle,{cycle},0,100,{15000+cycle}")
                 if mode == "combo":
                     rows.extend((
                         "GIO_NATIVE_PATH,32,0,0,0",
@@ -209,6 +216,9 @@ def selftest() -> None:
             good.replace("hits=512", "hits=0", 1),
             good.replace("errors=0,ready=1", "errors=1,ready=1", 1),
             good.replace("entries=32", "entries=1025", 1),
+            good.replace("GIO_PROBE,cycle,100,0,100,15100", "", 1),
+            good + "GIO_PROBE,cycle,100,0,100,15100\n",
+            good + "GIO_PROBE,cycle,259,0,100,15259\n",
         ]
         for bad in damaged:
             file.write_text(bad, encoding="utf-8")
@@ -220,7 +230,7 @@ def selftest() -> None:
                 raise AssertionError("bad 256-cycle evidence accepted")
         file.write_text(good, encoding="utf-8")
         assert analyze(root, emit=False)[-1].startswith("C545D_COMBO_MSVC_AB256_PASS,")
-    print("C545D_COMBO_MSVC256_ANALYZER_SELFTEST_PASS,negative_cases=4")
+    print("C545D_COMBO_MSVC256_ANALYZER_SELFTEST_PASS,negative_cases=7,per_cycle_samples=256")
 
 
 if __name__ == "__main__":
