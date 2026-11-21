@@ -3,15 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `eb768602cdc5135f8bc7f18246aec9b4c606ab0f`
-- **PR updated at (UTC):** `2026-11-21T13:18:37Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/eb768602cdc5135f8bc7f18246aec9b4c606ab0f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `d698ebb75c8ba7aa086188cfb39fa6322d598298`
+- **PR updated at (UTC):** `2026-11-21T13:26:32Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/d698ebb75c8ba7aa086188cfb39fa6322d598298/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44908210784](https://github.com/taku077/c545d-recorder/actions/runs/44908210784) |
+| C545D active development handoff auto-refresh | in_progress | [#44908874653](https://github.com/taku077/c545d-recorder/actions/runs/44908874653) |
 
 ## Current development findings from the active PR
 
