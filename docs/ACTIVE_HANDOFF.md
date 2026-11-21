@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1b53dc68841803212ad18f5417ba015a6413ccab`
-- **PR updated at (UTC):** `2026-11-21T07:13:16Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1b53dc68841803212ad18f5417ba015a6413ccab/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `781a6ef63efc256217f1f1bdfc307404b98a5f2b`
+- **PR updated at (UTC):** `2026-11-21T07:14:44Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/781a6ef63efc256217f1f1bdfc307404b98a5f2b/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44879218428](https://github.com/taku077/c545d-recorder/actions/runs/44879218428) |
+| C545D production mirror real pinned GStreamer media CI ONLY | in_progress | [#44879330878](https://github.com/taku077/c545d-recorder/actions/runs/44879330878) |
+| C545D production mirror runtime script fast PowerShell syntax CI ONLY | in_progress | [#44879330860](https://github.com/taku077/c545d-recorder/actions/runs/44879330860) |
 
 ## Current development findings from the active PR
 
