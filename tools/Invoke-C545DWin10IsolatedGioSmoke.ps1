@@ -25,6 +25,24 @@ function Test-C545DStageHasNoReparse([string]$Root) {
   }
   return $true
 }
+# The recorder's GUI/PowerShell worker can be active *before* gst-launch
+# appears. Test only presence of known script basenames in the read-only WMI
+# CommandLine property; never print, persist or upload any command line.
+# If process enumeration is unavailable, refuse a potentially unsafe smoke.
+function Test-C545DKnownRecorderActive {
+  if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){
+    return $true
+  }
+  $psProcesses=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction Stop)
+  foreach($process in $psProcesses) {
+    $command=[string]$process.CommandLine
+    if([string]::IsNullOrWhiteSpace($command)){throw 'PROCESS_QUERY_UNAVAILABLE'}
+    if($command -match '(?i)(?:^|[\\/"\s])(?:C545D_App|RecordGUIWorker|Record)\.ps1(?:["\s]|$)'){
+      return $true
+    }
+  }
+  return $false
+}
 try {
   $scriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
   if(-not $CandidateDll){$CandidateDll=Join-Path $scriptDir 'gio-2.0-0.dll'}
@@ -65,7 +83,7 @@ try {
     throw 'HOST_NOT_ELIGIBLE'
   }
   $phase='FINGERPRINT_OK'
-  if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){throw 'RECORDER_ACTIVE'}
+  if(Test-C545DKnownRecorderActive){throw 'RECORDER_ACTIVE'}
   if(-not (Test-Path -LiteralPath $CandidateDll -PathType Leaf) -or
      -not (Test-Path -LiteralPath $CandidateManifest -PathType Leaf) -or
      (Get-FileHash -LiteralPath $CandidateDll -Algorithm SHA256).Hash -ne $rc){throw 'CANDIDATE_BAD'}
@@ -135,7 +153,7 @@ try {
   $env:GST_PLUGIN_PATH_1_0=''
   $env:GST_PLUGIN_SYSTEM_PATH=''
   $env:GST_PLUGIN_SYSTEM_PATH_1_0=$plugins
-  if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){
+  if(Test-C545DKnownRecorderActive){
     throw 'RECORDER_BECAME_ACTIVE'
   }
   $out=Join-Path $stage 'isolated.wav'
@@ -180,7 +198,7 @@ try {
   # text, local filenames, host paths, credentials, or raw process stderr.
   $code=[string]$_.Exception.Message
   $known=@('NOT_CI','MISSING_CHECKER','NO_SDK','FINGERPRINT_FAILED',
-    'HOST_NOT_ELIGIBLE','RECORDER_ACTIVE','CANDIDATE_BAD','MANIFEST_BAD',
+    'HOST_NOT_ELIGIBLE','RECORDER_ACTIVE','PROCESS_QUERY_UNAVAILABLE','CANDIDATE_BAD','MANIFEST_BAD',
     'SDK_INCOMPLETE','BAD_TEMP','STAGE_EXISTS','BAD_OVERLAY',
     'RECORDER_BECAME_ACTIVE','NO_CHILD_QUERY_HANDLE','WRONG_DLL',
     'MODULE_NOT_OBSERVED','CHILD_TIMEOUT','CHILD_FAILED','NO_WAV',
