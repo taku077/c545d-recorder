@@ -245,18 +245,13 @@ try {
          $linked.Count -ne 0 -or
          -not [string]::Equals(([IO.Path]::GetDirectoryName($stage)).TrimEnd('\'),
                               $temp,[StringComparison]::OrdinalIgnoreCase) -or
-         [IO.Path]::GetFileName($stage) -notmatch '^c545d-ci-gui-event-[a-f0-9]{32}
-}
-Write-Output "C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=$start,stop=$stop,quit=$quit,namer_ready=$namerReady,stub_safe_stop=$safeMarker,source_unchanged=$sourcesIntact,real_rtsp=0,real_camera=0,install_approved=0,reason=$result"
-if($result -ceq 'PASS'){exit 0}
-exit 3
- -or
+         [IO.Path]::GetFileName($stage) -notmatch '^c545d-ci-gui-event-[a-f0-9]{32}$' -or
          [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-gui-owned')) -cne
              'C545D_GUI_CI_PRIVATE_ONLY'){
         throw 'GUI_CI_CLEANUP_REFUSED'
       }
-      # The actual event watcher drains asynchronously 3s after GUI exit.
-      # Wait for its private .ready marker to disappear rather than killing it.
+      # The actual event watcher drains asynchronously after GUI exit.
+      # Wait for private readiness marker to disappear before stage cleanup.
       $control=Join-Path $stage 'ci-localappdata\C545D_GStreamer\Control'
       for($k=0;$k -lt 75;$k++){
         if(-not (Test-Path -LiteralPath $control -PathType Container)){break}
@@ -274,9 +269,7 @@ exit 3
         }
       }
       if(-not $removed){$result='GUI_CI_CLEANUP_BLOCKED'}
-    } catch {
-      $result='GUI_CI_CLEANUP_REFUSED'
-    }
+    } catch {$result='GUI_CI_CLEANUP_REFUSED'}
   }
 }
 Write-Output "C545D_WINFORMS_BUTTON_DISPATCH_STAGE,start=$start,stop=$stop,quit=$quit,namer_ready=$namerReady,stub_safe_stop=$safeMarker,source_unchanged=$sourcesIntact,real_rtsp=0,real_camera=0,install_approved=0,reason=$result"
