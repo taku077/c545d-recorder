@@ -1,0 +1,24 @@
+name: C545D saved 256-cycle numeric-only reanalysis selftest (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-saved256-reanalysis-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify archived-only analyzer and corrupted fixture rejection
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_gio_combo_msvc256_saved.py --selftest
+          echo 'C545D_SAVED256_PREFLIGHT_PASS,negative_cases=4,windows_runs=0,user_host_modified=0'
+# A later isolated commit MAY add a pinned archive read once run 44918598339
+# actually completes with a numeric artifact. Never rerun 256 Windows cycles
+# to investigate a Python-only checkpoint parsing defect.
