@@ -22,8 +22,8 @@ $pin=@{
   'intl-8.dll'='2EF6A23F712FD7B9BF72B2FEF1A1FD5CDE27BA88F7D164E9E6DE18936C1F51B0'
   'z-1.dll'='B84851F9084247F466C076EE993BD5A92F3462466C4877B5C4ECC4125743A060'
 }
-$stage=$null; $owned=$false; $child=$null; $removed=$false
-$observed=$false; $wavOk=$false; $mediaOk=$false; $segments=0; $prior=@{}
+$stage=$null; $owned=$false; $child=$null; $preStopChild=$null; $removed=$false
+$observed=$false; $wavOk=$false; $mediaOk=$false; $preStopOk=$false; $segments=0; $prior=@{}
 try {
   if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
      -not $env:RUNNER_TEMP){throw 'NOT_CI'}
@@ -98,7 +98,7 @@ try {
   if([IO.File]::ReadAllText((Join-Path $stage 'Record.ps1')) -cne $expectedSource){
     throw 'SOURCE_PARITY_CHANGED'
   }
-  foreach($key in @('PATH','GST_PLUGIN_SCANNER','GST_REGISTRY','GST_PLUGIN_PATH',
+  foreach($key in @('PATH','LOCALAPPDATA','GST_PLUGIN_SCANNER','GST_REGISTRY','GST_PLUGIN_PATH',
       'GST_PLUGIN_PATH_1_0','GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0')){
     $prior[$key]=[Environment]::GetEnvironmentVariable($key,'Process')
   }
@@ -159,7 +159,51 @@ try {
     }
   }
   $mediaOk=$true
+  # Execute the actual single-assignment mirrored production source, but
+  # with a pre-existing managed stop marker. This permits source startup,
+  # decoder/AAC preflights, and pipeline construction; NO RTSP launch.
+  # Only disposable CI-local fake config and dummy DPAPI secret are read.
+  $home=Join-Path $stage 'ci-dummy-localappdata'
+  $configDir=Join-Path $home 'C545D_GStreamer'
+  New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+  $dummySettings=@{
+    camera_ip='127.0.0.1'
+    camera_user='ci_fixture_not_real'
+    output_folder='C:\NONEXISTENT_NOT_USED'
+  }
+  $dummySettings | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $configDir 'settings.json') -Encoding utf8
+  $dummySecret=ConvertTo-SecureString 'dummy_ci_only_password_not_real' -AsPlainText -Force
+  ConvertFrom-SecureString $dummySecret | Set-Content -LiteralPath (Join-Path $configDir 'camera_password.dpapi') -Encoding ascii
+  $env:LOCALAPPDATA=$home
+  $stop=Join-Path $stage 'ci-preexisting-stop.marker'
+  [IO.File]::WriteAllText($stop,'NO_RTSP_ALLOWED_FOR_PRESTOP_TEST')
+  $recorder=Join-Path $stage 'Record.ps1'
+  $cmdArgs=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
+       ('"'+$recorder+'"'),'-StopFile',('"'+$stop+'"'))
+  $preStopChild=Start-Process -FilePath $ps -ArgumentList $cmdArgs -PassThru -WorkingDirectory $temp -RedirectStandardOutput (Join-Path $stage 'prestop.stdout') -RedirectStandardError (Join-Path $stage 'prestop.stderr')
+  if(-not $preStopChild.WaitForExit(180000)){throw 'RECORDER_PRESTOP_TIMEOUT'}
+  if($preStopChild.ExitCode -ne 0){throw 'RECORDER_PRESTOP_FAILURE'}
+  $stopOutput=[IO.File]::ReadAllText((Join-Path $stage 'prestop.stdout'))
+  if(-not $stopOutput.Contains('GStreamer separator validation: PASS') -or
+     -not $stopOutput.Contains('Stop requested; skipping any new RTSP session.') -or
+     $stopOutput.Contains('GStreamer launching (EOS enabled)')){
+    throw 'RECORDER_PRESTOP_INVARIANT_FAILED'
+  }
+  if(@(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File).Count -ne 0){
+    throw 'RECORDER_PRESTOP_WRITTEN_MP4'
+  }
+  foreach($check in @(@($source,$sourceHash),@($settings,$settingsHash))){
+    if((Get-FileHash -LiteralPath $check[0] -Algorithm SHA256).Hash -cne $check[1]){
+      throw 'PRESTOP_MUTATED_PRODUCTION_SOURCE'
+    }
+  }
+  $preStopChild.Dispose();$preStopChild=$null
+  $preStopOk=$true
 } finally {
+  if($preStopChild){
+    if(-not $preStopChild.HasExited){try{$preStopChild.Kill();[void]$preStopChild.WaitForExit(5000)}catch{}}
+    $preStopChild.Dispose()
+  }
   if($child){
     if(-not $child.HasExited){try{$child.Kill();[void]$child.WaitForExit(5000)}catch{}}
     $child.Dispose()
@@ -182,7 +226,7 @@ try {
     }
   }
 }
-if(-not $observed -or -not $wavOk -or -not $mediaOk -or -not $removed){
+if(-not $observed -or -not $wavOk -or -not $mediaOk -or -not $preStopOk -or -not $removed){
   throw 'INTEGRATED_CI_NOT_QUALIFIED'
 }
-Write-Output "C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=$segments,mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0"
+Write-Output "C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=$segments,mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,recorder_prestop_preflight=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0"
