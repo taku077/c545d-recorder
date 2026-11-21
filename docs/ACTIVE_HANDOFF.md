@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b5d9e4726073b75d525f2bc8f34fc182f0b6bf23`
-- **PR updated at (UTC):** `2026-11-21T19:36:13Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b5d9e4726073b75d525f2bc8f34fc182f0b6bf23/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5b70e424ba6d6cfae42d1ff6fc522b456d7f64ac`
+- **PR updated at (UTC):** `2026-11-21T19:37:00Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5b70e424ba6d6cfae42d1ff6fc522b456d7f64ac/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44941822680](https://github.com/taku077/c545d-recorder/actions/runs/44941822680) |
-| C545D isolated Windows COM apartment balance contract (no GLib DLL) | in_progress | [#44941820185](https://github.com/taku077/c545d-recorder/actions/runs/44941820185) |
+| C545D active development handoff auto-refresh | in_progress | [#44941887622](https://github.com/taku077/c545d-recorder/actions/runs/44941887622) |
+| C545D isolated Windows COM apartment balance contract (no GLib DLL) | in_progress | [#44941884066](https://github.com/taku077/c545d-recorder/actions/runs/44941884066) |
 
 ## Current development findings from the active PR
 
