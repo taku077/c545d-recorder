@@ -54,7 +54,7 @@ jobs:
           $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
           $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_RTSP_LIVE_SDK -CandidateDll $candidate -ReferenceManifest $ref 2>$null)
           foreach($row in $rows){
-            if(([string]$row) -cmatch '^C545D_RECORDER_LIVE_RTSP_STAGE,launch=[01],launch_count=[0-9]+,returned=[01],source_stop_marker=[01],stop_at_gst_return=[01],policy_stop=[01],policy_reconnect=[01],gst_exit=-?[0-9]+,eos_message=[01],mp4_count=[0-9]+,first_mp4_bytes=[0-9]+,rtsp_error=[01],record_exit_nonzero=[01],real_camera=0$' -or
+            if(([string]$row) -cmatch '^C545D_RECORDER_LIVE_RTSP_STAGE,launch=[01],launch_count=[0-9]+,returned=[01],source_stop_marker=[01],stop_at_gst_return=[01],wide_rtsp_requested=[01],tele_rtsp_requested=[01],policy_stop=[01],policy_reconnect=[01],gst_exit=-?[0-9]+,eos_message=[01],mp4_count=[0-9]+,first_mp4_bytes=[0-9]+,rtsp_error=[01],record_exit_nonzero=[01],real_camera=0$' -or
                ([string]$row) -cmatch '^C545D_RECORDER_LIVE_RTSP_FAIL,phase=[A-Z_]+,reason=[A-Z_]+,real_camera=0,host_modified=0$'){
               Write-Host $row
             }
