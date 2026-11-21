@@ -112,6 +112,23 @@ def analysis(root: Path) -> list[str]:
     cleanup_available = next(iter(cleanup_presence))
     resource_available = next(iter(resource_presence))
     results: list[str] = []
+    # Exact old source-run identity. Pin individual cleanup resource windows,
+    # not a rounded percentage or a cross-run average. If the old saved
+    # artifact changes or gets mixed, the audit must fail closed.
+    pinned = {
+        RUNS[0]: {
+            "default": {"heap": (-352579, 363765), "mem": (0, 0)},
+            "cache": {"heap": (-169044, 164872), "mem": (0, 0)},
+        },
+        RUNS[1]: {
+            "default": {"heap": (-423749, 430763), "mem": (0, 135168)},
+            "cache": {"heap": (-176120, 176120), "mem": (0, 0)},
+        },
+        RUNS[2]: {
+            "default": {"heap": (-307424, 322782), "mem": (0, 0)},
+            "cache": {"heap": (-167684, 167684), "mem": (0, 0)},
+        },
+    }
     for run in RUNS:
         for mode in MODES:
             no, no_extra, no_resources, no256 = sources[run, mode, "nochange"]
@@ -167,6 +184,9 @@ def analysis(root: Path) -> list[str]:
                         no_a = no256[metric] if point_a[0] == "cycle" else no_resources[point_a][metric]
                         reg_b, no_b = reg_resources[point_b][metric], no_resources[point_b][metric]
                         a, b = reg_b - reg_a, no_b - no_a
+                        idx = 0 if point_b == EXTRA[0] else 1
+                        if b != 0 or a != pinned[run][mode][metric][idx]:
+                            raise ValueError("original cleanup resource trajectory changed")
                         results.append(
                             f"C545D_SAVED_GOBJECT_RESOURCE_WINDOW,run={run},"
                             f"mode={mode},metric={metric},"
@@ -191,6 +211,15 @@ def analysis(root: Path) -> list[str]:
             "transient_GWin32RegistryKey_cleanup=6of6,"
             "other_six_GObject_types_cleanup_effect=0,"
             "registry_key_restored_by258=6of6,MSVC_Combo_not_tested=1,CI_only=1"
+        )
+    if resource_available:
+        results.append(
+            "C545D_SAVED_GOBJECT_RESOURCE_CROSSRUN_IDENTITY,source_runs=3,"
+            "cohorts=6,heap_drop_then_rebound=6of6,"
+            "private_memory_unchanged_both_cleanup_windows=5of6,"
+            "private_late_plus135168=1of6,"
+            "registry_key_transient_full_return=6of6,"
+            "no_absolute_leak_claim=1,CI_only=1"
         )
     results.append(
         f"C545D_SAVED_GOBJECT_RESOURCE_SCOPE,archived_windows_runs=3,"
