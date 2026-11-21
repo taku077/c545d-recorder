@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `060afe8af14264566ed35f90d90cbfc6de15f831`
-- **PR updated at (UTC):** `2026-11-21T14:15:59Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/060afe8af14264566ed35f90d90cbfc6de15f831/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5e3348b9d2af7ece5f5449d3a2d72e0fb6b0456b`
+- **PR updated at (UTC):** `2026-11-21T14:17:47Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5e3348b9d2af7ece5f5449d3a2d72e0fb6b0456b/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44913035549](https://github.com/taku077/c545d-recorder/actions/runs/44913035549) |
-| C545D reverse-language real MSIX original getter eligibility probe (CI ONLY) | in_progress | [#44913033160](https://github.com/taku077/c545d-recorder/actions/runs/44913033160) |
+| C545D archived original WinRT reverse resource language value audit (no rerun) | in_progress | [#44913187802](https://github.com/taku077/c545d-recorder/actions/runs/44913187802) |
 
 ## Current development findings from the active PR
 
