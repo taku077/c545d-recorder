@@ -49,6 +49,34 @@ def read_counts(path: Path, cycles: tuple[int, ...], changed: bool) -> dict[int,
     return {c: size_bins.get(c, 0) for c in cycles}
 
 
+def read_settled(path: Path, changed: bool) -> int:
+    """Numeric-only absolute 360B blocks after cleanup+quiescence (cycle258)."""
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    done = f"GIO_PROBE_DONE,cycles=256,notifications=0,reg_changes={int(changed)}"
+    if sum(x == done for x in lines) != 1:
+        raise ValueError("settled: wrong completion marker")
+    heaps = 0
+    count = None
+    for line in lines:
+        a = line.split(",")
+        if len(a) == 7 and a[:3] == ["GIO_HEAP", "settled_cleanup", "258"]:
+            if int(a[-1]) != 0:
+                raise ValueError("settled: heap census errors")
+            heaps += 1
+        if len(a) == 5 and a[:4] == ["GIO_HEAPSIZE", "settled_cleanup", "258", "360"]:
+            if count is not None or int(a[-1]) < 0:
+                raise ValueError("settled: malformed/duplicate 360B")
+            count = int(a[-1])
+    if heaps != 1:
+        raise ValueError("settled: missing/duplicate valid heap sample")
+    return count if count is not None else 0
+
+
+def check_settled(end_net: int, settled_net: int) -> None:
+    if end_net != settled_net:
+        raise ValueError("360B net not stable between end256 and settled258")
+
+
 def net_epochs(folder: Path, prefix: str, cycles: tuple[int, ...]) -> tuple[int, ...]:
     t = read_counts(folder / f"{prefix}_registry_{cycles[-1]}.log", cycles, True)
     c = read_counts(folder / f"{prefix}_nochange_{cycles[-1]}.log", cycles, False)
@@ -98,7 +126,15 @@ def selftest() -> None:
         else:
             raise AssertionError("bad synthetic case accepted: " + mutation)
     assert rejected == 5
-    print("C545D_HEAP360_CROSSMODE_SELFTEST_PASS,negative_rejected=5,host=0")
+    check_settled(10, 10)
+    try:
+        check_settled(10, 9)
+    except ValueError:
+        rejected += 1
+    else:
+        raise AssertionError("mismatched settled 360B passed")
+    assert rejected == 6
+    print("C545D_HEAP360_CROSSMODE_SELFTEST_PASS,negative_rejected=6,host=0")
 
 
 def main() -> None:
@@ -122,11 +158,24 @@ def main() -> None:
               f"cache_last64={d['cache'][-1]},"
               f"cache_minus_default_last64={d['cache'][-1]-d['default'][-1]},"
               "allocation_stack_known=0")
+        for mode in MODES:
+            directory = args.root / str(run)
+            rpath = directory / f"{mode}_registry_256.log"
+            cpath = directory / f"{mode}_nochange_256.log"
+            # Compare matched absolute 360 counts, not the last64 increment.
+            end_net = (read_counts(rpath, CYCLES, True)[256] -
+                       read_counts(cpath, CYCLES, False)[256])
+            settled_net = read_settled(rpath, True) - read_settled(cpath, False)
+            check_settled(end_net, settled_net)
+            print(f"C545D_HEAP360_SETTLED,run={run},mode={mode},"
+                  f"end360={end_net},settled360={settled_net},"
+                  "after_cleanup_still_busy=1,permanent_leak_proven=0")
     print("C545D_HEAP360_EARLY_API_STAGE,default_16=0,skip_displayname_16=0,"
           "skip_current_16=0,skip_location_16=0,noncomparative_duration=1")
     print("C545D_HEAP360_CROSSMODE_PASS,original_256_runs=3,original_16_runs=1,"
           "new_windows_runs=0,late360_equal_default_cache=3of3,"
-          "early16_all_zero=4of4,heap_size_does_not_identify_owner=1,"
+          "early16_all_zero=4of4,settled_360_unchanged=6of6,"
+          "heap_size_does_not_identify_owner=1,"
           "no_proven_leak_source=1,real_host=0")
 
 
