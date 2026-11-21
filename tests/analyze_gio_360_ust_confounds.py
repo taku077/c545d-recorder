@@ -19,10 +19,10 @@ END = ("cycle", 256)
 MODES = ("core", "combo")
 ARMS = ("nochange", "registry")
 
-def treatment_effect(data: dict[str, dict]) -> int:
+def treatment_effect(data: dict[str, dict], start=START, end=END) -> int:
     # The actual SAME Windows CI run's nochange counterfactual.
-    return ((data["registry"][END] - data["registry"][START])
-          - (data["nochange"][END] - data["nochange"][START]))
+    return ((data["registry"][end] - data["registry"][start])
+          - (data["nochange"][end] - data["nochange"][start]))
 
 def inspect(group: dict[str, list[str]]) -> list[str]:
     # Full content, all four 256-cycle arms and two separate 16-cycle parity
@@ -53,6 +53,30 @@ def inspect(group: dict[str, list[str]]) -> list[str]:
             f"C545D_360_UNINSTRUMENTED_PAIRED,source_run=44918598339,"
             f"mode={mode},late_control_adjusted={effect},"
             "matched_same_run=1,CI_only=1"
+        )
+        # Use the ORIGINAL same-run archive to check ALL four consecutive
+        # 64-cycle windows, not only a selected positive late window.
+        cohort = {arm: data[arm]["bins"][360] for arm in ARMS}
+        effects = []
+        for left, right in zip(saved.EPOCHS[:-1], saved.EPOCHS[1:]):
+            delta = treatment_effect(cohort, left, right)
+            effects.append(delta)
+            out.append(
+                f"C545D_360_UNINSTRUMENTED_EPOCH,source_run=44918598339,"
+                f"mode={mode},window={left[1]}_{right[1]},"
+                f"controlled_delta={delta},matched_same_run=1,CI_only=1"
+            )
+        expected_epochs = {"core": (1, 0, 0, 7),
+                           "combo": (0, 1, -2, 5)}[mode]
+        if tuple(effects) != expected_epochs:
+            raise ValueError("original 360B interval trajectory changed")
+        total = treatment_effect(cohort, saved.EPOCHS[0], saved.EPOCHS[-1])
+        if total != sum(effects) or total != {"core": 8, "combo": 4}[mode]:
+            raise ValueError("360B epoch totals do not telescope")
+        out.append(
+            f"C545D_360_UNINSTRUMENTED_CUMULATIVE,source_run=44918598339,"
+            f"mode={mode},window=0_256,controlled_delta={total},"
+            "bucket_owner_unknown=1,CI_only=1"
         )
     # Both facts are already in the sanitized CI job logs. These are NOT
     # raw snapshots from the original run; never pair their values with it.
