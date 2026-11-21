@@ -1,5 +1,16 @@
 # CI-only GUI worker Ctrl+C EOS integration gate — Tapo C545D
 
+
+## VERIFIED 2026-11-21 — original GUI worker Ctrl+C + EOS real Windows CI PASS
+
+- [Windows Server 2022 CI #44885391598 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44885391598), job136789453398, artifact14699566963 numeric-only. Actual RecordGUIWorker.ps1 byte-for-byte, isolated mirrored Record.ps1 source, pinned official GStreamer 1.28.8 MSVC SDK and candidate GIO; only disposable Windows CI, fake DPAPI, 127.0.0.1/stream1 and /stream6 dual synthetic H264+PCMA RTSP.
+- Original GUI worker ready marker and worker survival were observed. Safe CI helper checked exclusively owned console clients then sent real GUI-style STOP-file-before-Ctrl+C. Gst-launch -e returned 0 with EOS; source logged STOP policy without reconnect. One finalized 1,375,553 byte H264/AAC MP4 decoded with expected 2560x720@15fps and mono AAC 48kHz. Original source files unchanged; privately owned files removed. No camera or user Win10 host touched.
+- Logged exact stage: C545D_GUI_WORKER_RTSP_STAGE,worker_exit=0,worker_exited=1,gui_ctrlc_sent=1,wide_mount=1,tele_mount=1,launch_count=1,stop_at_gst_return=1,native_gst_exit=0,policy_stop=1,policy_reconnect=0,eos_message=1,worker_returned=1,mp4_count=1,mp4_bytes=1375553,stop_marker=1,ready_removed=1,real_camera=0.
+- Logged strict final: C545D_GUI_WORKER_REAL_SOURCE_CTRL_C_CI_PASS,original_worker=1,original_recorder_mirror=1,two_local_rtsp=1,gui_ctrlc_event=1,worker_survived=1,gst_eos=1,mp4_h264_aac_decoded=1,owned_rollback=1,real_camera=0,real_hourly_split_tested=0,install_approved=0.
+- Previous GUI failure [#44883613017](https://github.com/taku077/c545d-recorder/actions/runs/44883613017) was a CI harness variable shadow: $ready was first the actual GUI session ready file path and later overwritten by RTSP server's expected ready-line text. Its sanitized diagnostic already showed ready_candidate_count=1, ready_candidate_pid_match=1, ready_candidate_name_match=0 with recording and MP4 created. [4938cbec](https://github.com/taku077/c545d-recorder/commit/4938cbec579ef63a93bd6edf7acfdc7eb09f5c6c) splits the RTSP text into $rtspReadyLine and fixes this without changing production worker or recorder.
+- New bounded 4-second CPU-time/PrivateMemorySize64/HandleCount sampling of only owned worker + staged gst-launch and explicit post-exit staged process check added in [292e378](https://github.com/taku077/c545d-recorder/commit/292e378839396762547e84ce7f52cd5df4f432e7), plus numeric log whitelist [3ea33e3](https://github.com/taku077/c545d-recorder/commit/3ea33e3ee8670a16bf187b4ba4a49d84dc9d60f4). [Windows CI #44885660589](https://github.com/taku077/c545d-recorder/actions/runs/44885660589) is the new authoritative telemetry outcome; do not call it PASS before final numeric output. Four samples do not demonstrate a zero long-run memory/Key leak or real camera/3600-second segment.
+
+
 **Development test, NOT host approval.** No user PC, real camera, credentials, installed GStreamer, registry or recording process is touched.
 
 ## Independent prerequisites already PASS
