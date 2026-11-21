@@ -35,9 +35,12 @@ try {
   $owner=Join-Path $stage '.c545d-ci-gui-owned'
   [IO.File]::WriteAllText($owner,'C545D_GUI_CI_PRIVATE_ONLY')
   $stageOwned=$true
+  # Original GUI and namer scripts include Japanese messages and UTF-8 BOM.
+  # Windows PowerShell 5.1 treats UTF-8 WITHOUT BOM as the system ANSI code
+  # page, so the clone must retain BOM even though ReadAllText strips it.
   foreach($name in $sources){
     [IO.File]::WriteAllText((Join-Path $stage $name),$original[$name],
-                           (New-Object Text.UTF8Encoding($false)))
+                           (New-Object Text.UTF8Encoding($true)))
   }
   $output=Join-Path $stage 'synthetic-output'
   $privateLocal=Join-Path $stage 'ci-localappdata'
@@ -143,7 +146,7 @@ $ciClickTimer.Start()
   [void][Management.Automation.Language.Parser]::ParseInput($patched,[ref]$t,[ref]$err)
   if($err.Count -gt 0){throw 'GUI_PATCH_SYNTAX'}
   [IO.File]::WriteAllText((Join-Path $stage 'C545D_App.ps1'),$patched,
-                          (New-Object Text.UTF8Encoding($false)))
+                          (New-Object Text.UTF8Encoding($true)))
   $phase='BOOTSTRAP'
   $bootstrap=@'
 $ErrorActionPreference='Stop'
@@ -160,7 +163,18 @@ $fake=ConvertTo-SecureString 'CI_DUMMY_NEVER_REAL' -AsPlainText -Force
 $encrypted=ConvertFrom-SecureString $fake
 [IO.File]::WriteAllText((Join-Path $settings 'camera_password.dpapi'),$encrypted)
 $global:ProgressPreference='SilentlyContinue'
-& (Join-Path $root 'C545D_App.ps1')
+[IO.File]::WriteAllText((Join-Path $root 'ci-gui-boot-phase'),'PREPARED')
+try {
+  [IO.File]::WriteAllText((Join-Path $root 'ci-gui-boot-phase'),'GUI_STARTED')
+  & (Join-Path $root 'C545D_App.ps1')
+  [IO.File]::WriteAllText((Join-Path $root 'ci-gui-boot-phase'),'GUI_RETURNED')
+} catch {
+  $id=[string]$_.FullyQualifiedErrorId
+  if($id -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$id='OTHER'}
+  [IO.File]::WriteAllText((Join-Path $root 'ci-child-error-id'),$id)
+  [IO.File]::WriteAllText((Join-Path $root 'ci-gui-boot-phase'),'GUI_EXCEPTION')
+  exit 3
+}
 '@
   [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-bootstrap.ps1'),$bootstrap,
                           (New-Object Text.UTF8Encoding($false)))
@@ -180,6 +194,21 @@ $global:ProgressPreference='SilentlyContinue'
   }
   if(-not $gui.WaitForExit(32000)){throw 'GUI_WAIT_TIMEOUT'}
   $phase='VERIFY'
+  if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){
+    $bootPhase='NOT_STARTED'
+    $bootMarker=Join-Path $stage 'ci-gui-boot-phase'
+    if(Test-Path -LiteralPath $bootMarker -PathType Leaf){
+      $bootPhase=[IO.File]::ReadAllText($bootMarker).Trim()
+      if($bootPhase -notin @('PREPARED','GUI_STARTED','GUI_RETURNED','GUI_EXCEPTION')){$bootPhase='UNRECOGNIZED'}
+    }
+    $errorId='NONE'
+    $errorMarker=Join-Path $stage 'ci-child-error-id'
+    if(Test-Path -LiteralPath $errorMarker -PathType Leaf){
+      $errorId=[IO.File]::ReadAllText($errorMarker).Trim()
+      if($errorId -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorId='OTHER'}
+    }
+    Write-Output "C545D_WINFORMS_CHILD_DIAG,boot=$bootPhase,error_id=$errorId,gui_exit=$($gui.ExitCode),real_rtsp=0"
+  }
   if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){throw 'GUI_NO_RESULT'}
   $line=[IO.File]::ReadAllText($marker).Trim()
   $expected='C545D_WINFORMS_BUTTON_CI_PASS,start=1,stop=1,namer_ready=1,worker_stub_stop=1,exit_requested=1,real_rtsp=0,real_camera=0,install_approved=0'
