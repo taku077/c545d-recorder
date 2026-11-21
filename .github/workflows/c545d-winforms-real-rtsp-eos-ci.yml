@@ -112,7 +112,8 @@ jobs:
           # If recording fails, expose only coarse phase/reason; no camera credentials.
           foreach($row in $rows){
             if(([string]$row) -cmatch '^C545D_GUI_INTEGRATED_DIAG,code=[A-Z_]+,real_camera=0$' -or
-               ([string]$row) -cmatch '^C545D_GUI_INTEGRATED_ERROR_STAGE,phase=[A-Z_]+,line=[0-9]+,exception_class=[A-Za-z0-9_]+,category=[A-Za-z0-9_]+,real_camera=0$'){
+               ([string]$row) -cmatch '^C545D_GUI_INTEGRATED_ERROR_STAGE,phase=[A-Z_]+,line=[0-9]+,exception_class=[A-Za-z0-9_]+,category=[A-Za-z0-9_]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_WINFORMS_STOP_DIAG,worker_exit=-?[0-9]+,native_gst_exit=-?[0-9]+,record_error=[01],gst_returned=[01],eos_successful=[01],stop_policy=[01],reconnect=[01],record_returned=[01],marker_at_return=[01],mp4_files=[0-9]+,stop_proven=[01],ready_removed=[01],real_camera=0$'){
               Write-Host $row
             }
           }
