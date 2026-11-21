@@ -1,0 +1,35 @@
+name: C545D fake SecureString child bootstrap FAST Windows CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-child-securestring-fast-ci.yml'
+      - 'tests/Assert-C545DBootstrapSecureStringFastCI.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dummy-dpapi-hidden-console:
+    runs-on: windows-2022
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify hidden-console child SecureString with fake data and no SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script=(Resolve-Path tests/Assert-C545DBootstrapSecureStringFastCI.ps1).Path
+          $tok=$null;$errors=$null
+          [Management.Automation.Language.Parser]::ParseFile($script,[ref]$tok,[ref]$errors)|Out-Null
+          if($errors.Count -ne 0){throw 'Fast diagnostic script parse failed'}
+          $rows=@(& pwsh -NoProfile -NonInteractive -File $script 2>$null)
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_FAST_SECURESTRING_CHILD,status=[A-Za-z_]+,exit=[0-9]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_FAST_SECURESTRING_CHILD_FAIL,phase=[A-Z_]+,reason=[A-Z_]+,real_camera=0$'){
+              Write-Host $row
+            }
+          }
+          if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1 -or
+             $rows[0] -cne 'C545D_FAST_SECURESTRING_CHILD,status=DECRYPTED,exit=0,real_camera=0'){
+            throw 'Fake child SecureString Windows CI not qualified'
+          }
