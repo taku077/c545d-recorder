@@ -3,18 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `e637e1c82f4807521bada54ba6bcf78745b891e6`
-- **PR updated at (UTC):** `2026-11-21T14:15:01Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/e637e1c82f4807521bada54ba6bcf78745b891e6/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ca1bb47ebad71ec8a16b66ae886e67661b648ef8`
+- **PR updated at (UTC):** `2026-11-21T14:15:31Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ca1bb47ebad71ec8a16b66ae886e67661b648ef8/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44912950989](https://github.com/taku077/c545d-recorder/actions/runs/44912950989) |
-| C545D real resource-only MSIX event provenance Windows CI ONLY | in_progress | [#44912947903](https://github.com/taku077/c545d-recorder/actions/runs/44912947903) |
-| C545D real resource-only MSIX GAppInfoMonitor pre-query regression CI ONLY | in_progress | [#44912947772](https://github.com/taku077/c545d-recorder/actions/runs/44912947772) |
-| C545D real signed same-FullName localized DisplayName resource-refresh CI ONLY | in_progress | [#44912947703](https://github.com/taku077/c545d-recorder/actions/runs/44912947703) |
+| Same-SHA CI not found | unknown | - |
 
 ## Current development findings from the active PR
 
