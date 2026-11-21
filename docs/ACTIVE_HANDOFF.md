@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `bc217a73542cc55eed57b552ffc822fe3c888b88`
-- **PR updated at (UTC):** `2026-11-21T06:52:25Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/bc217a73542cc55eed57b552ffc822fe3c888b88/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f668307d175050d287b9c6cc8b6ddbb0908331e6`
+- **PR updated at (UTC):** `2026-11-21T06:53:50Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f668307d175050d287b9c6cc8b6ddbb0908331e6/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44877590384](https://github.com/taku077/c545d-recorder/actions/runs/44877590384) |
-| C545D dummy config and DPAPI private settings CI ONLY | in_progress | [#44877588530](https://github.com/taku077/c545d-recorder/actions/runs/44877588530) |
+| C545D active development handoff auto-refresh | in_progress | [#44877696228](https://github.com/taku077/c545d-recorder/actions/runs/44877696228) |
+| C545D localhost dual synthetic RTSP Windows CI ONLY | in_progress | [#44877694445](https://github.com/taku077/c545d-recorder/actions/runs/44877694445) |
 
 ## Current development findings from the active PR
 
