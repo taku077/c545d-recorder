@@ -11,8 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#44939555836](https://github.com/taku077/c545d-recorder/actions/runs/44939555836) |
-| C545D saved 256-cycle per-cycle PrivateUsage/handles timeline (NO Windows) | in_progress | [#44939552758](https://github.com/taku077/c545d-recorder/actions/runs/44939552758) |
+| C545D active development handoff auto-refresh | in_progress | [#44939555836](https://github.com/taku077/c545d-recorder/actions/runs/44939555836) |
+| C545D saved 256-cycle per-cycle PrivateUsage/handles timeline (NO Windows) | success | [#44939552758](https://github.com/taku077/c545d-recorder/actions/runs/44939552758) |
 
 ## Current development findings from the active PR
 
