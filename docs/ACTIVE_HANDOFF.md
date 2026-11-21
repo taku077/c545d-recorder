@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `25990b2d96b9b1d853760136432c1517b78196fe`
-- **PR updated at (UTC):** `2026-11-21T18:38:50Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/25990b2d96b9b1d853760136432c1517b78196fe/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7a69f5dd0fa12ccd91faa2ed1e71a6f8f652941e`
+- **PR updated at (UTC):** `2026-11-21T18:39:38Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7a69f5dd0fa12ccd91faa2ed1e71a6f8f652941e/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44936667435](https://github.com/taku077/c545d-recorder/actions/runs/44936667435) |
-| C545D archived 256-cycle 360B per-arm UST comparability gate (Ubuntu ONLY) | failure | [#44936665506](https://github.com/taku077/c545d-recorder/actions/runs/44936665506) |
+| C545D active development handoff auto-refresh | in_progress | [#44936733791](https://github.com/taku077/c545d-recorder/actions/runs/44936733791) |
+| C545D archived 256-cycle 360B per-arm UST comparability gate (Ubuntu ONLY) | in_progress | [#44936731723](https://github.com/taku077/c545d-recorder/actions/runs/44936731723) |
 
 ## Current development findings from the active PR
 
