@@ -3,17 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6c139bf9bdd46fd88d84ca78d3e1389630b2aa81`
-- **PR updated at (UTC):** `2026-11-21T07:08:48Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6c139bf9bdd46fd88d84ca78d3e1389630b2aa81/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `115ff481b1c4d57308fef567b16a062a77a7e9cb`
+- **PR updated at (UTC):** `2026-11-21T07:12:02Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/115ff481b1c4d57308fef567b16a062a77a7e9cb/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44878859555](https://github.com/taku077/c545d-recorder/actions/runs/44878859555) |
-| C545D production mirror runtime script fast PowerShell syntax CI ONLY | in_progress | [#44878857390](https://github.com/taku077/c545d-recorder/actions/runs/44878857390) |
-| C545D production mirror real pinned GStreamer media CI ONLY | in_progress | [#44878857312](https://github.com/taku077/c545d-recorder/actions/runs/44878857312) |
+| C545D active development handoff auto-refresh | in_progress | [#44879121993](https://github.com/taku077/c545d-recorder/actions/runs/44879121993) |
+| C545D production mirror real pinned GStreamer media CI ONLY | in_progress | [#44879120018](https://github.com/taku077/c545d-recorder/actions/runs/44879120018) |
+| C545D production mirror runtime script fast PowerShell syntax CI ONLY | in_progress | [#44879120011](https://github.com/taku077/c545d-recorder/actions/runs/44879120011) |
 
 ## Current development findings from the active PR
 
