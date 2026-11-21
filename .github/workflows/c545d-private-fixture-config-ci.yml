@@ -113,7 +113,14 @@ jobs:
               $startRows=@(Get-Content -LiteralPath $startOut)
               if($startRows.Count -ne 1 -or $startRows[0] -cne 'C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'){
                 $missingPw=[int](-not (Test-Path -LiteralPath $passwordFile -PathType Leaf))
-                Write-Host ("C545D_PS51_STARTPROCESS_DIAG,output_pass=0,dummy_password_missing="+$missingPw+",native_exit_nonzero="+[int]($p51.ExitCode -ne 0))
+                $stderrClass=if(Test-Path -LiteralPath $startErr){[IO.File]::ReadAllText($startErr)}else{''}
+                $missingScript=[int]($stderrClass -match 'The argument .* to the -File parameter does not exist|Cannot find path|not recognized')
+                $missingSecret=[int]($stderrClass -match 'Saved password is missing')
+                $decryptFailed=[int]($stderrClass -match 'Cannot decrypt saved password')
+                $missingSettings=[int]($stderrClass -match 'Recording settings do not exist')
+                $parseFailed=[int]($stderrClass -match 'ParserError|Unexpected token')
+                $outCount=@($startRows).Count
+                Write-Host ("C545D_PS51_STARTPROCESS_DIAG,output_pass=0,dummy_password_missing="+$missingPw+",native_exit_nonzero="+[int]($p51.ExitCode -ne 0)+",reader_stdout_rows="+$outCount+",reader_script_missing="+$missingScript+",secret_missing="+$missingSecret+",secret_decrypt_failed="+$decryptFailed+",settings_missing="+$missingSettings+",parser_failed="+$parseFailed)
                 throw 'StartProcess dummy DPAPI verification blocked'
               }
               Write-Host 'C545D_PS51_STARTPROCESS_DPAPI_PASS,writer_ps51=1,reader_ps51=1,env_inherited=1,secret_fake=1,host_access=0'
