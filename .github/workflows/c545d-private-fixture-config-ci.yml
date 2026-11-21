@@ -99,6 +99,28 @@ jobs:
               throw 'PS51 cross-process dummy decrypt blocked'
             }
             Write-Host $readerRows[0]
+            # The production mirror is launched via Start-Process, NOT via
+            # direct invocation. Verify that this changes no LOCALAPPDATA or
+            # DPAPI behavior in a fresh child Windows PowerShell 5.1 process.
+            $startOut=Join-Path $stage 'ci-startprocess-ps51.stdout'
+            $startErr=Join-Path $stage 'ci-startprocess-ps51.stderr'
+            $args51=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+                '-File',('"'+$readerFile+'"'),'-CopiedSettings',
+                ('"'+(Join-Path $stage 'CommonSettings.ps1')+'"'))
+            $p51=Start-Process -FilePath $ps -ArgumentList $args51 -PassThru -WorkingDirectory $root -RedirectStandardOutput $startOut -RedirectStandardError $startErr
+            try{
+              if(-not $p51.WaitForExit(25000)){throw 'StartProcess reader timeout'}
+              $startRows=@(Get-Content -LiteralPath $startOut)
+              if($startRows.Count -ne 1 -or $startRows[0] -cne 'C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'){
+                $missingPw=[int](-not (Test-Path -LiteralPath $passwordFile -PathType Leaf))
+                Write-Host ("C545D_PS51_STARTPROCESS_DIAG,output_pass=0,dummy_password_missing="+$missingPw+",native_exit_nonzero="+[int]($p51.ExitCode -ne 0))
+                throw 'StartProcess dummy DPAPI verification blocked'
+              }
+              Write-Host 'C545D_PS51_STARTPROCESS_DPAPI_PASS,writer_ps51=1,reader_ps51=1,env_inherited=1,secret_fake=1,host_access=0'
+            } finally {
+              if(-not $p51.HasExited){try{$p51.Kill();[void]$p51.WaitForExit(3000)}catch{}}
+              $p51.Dispose()
+            }
           } finally {
             $env:LOCALAPPDATA=$oldHome
           }
