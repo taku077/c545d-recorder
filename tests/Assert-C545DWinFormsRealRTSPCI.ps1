@@ -34,6 +34,7 @@ $CiLiveNamer=$true
 $liveNamer=$null;$liveNamerStop='';$liveNamerReady=0;$liveRenamedBeforeStop=0
 $liveNamerClosed=0;$liveRenameCount=0
 $gui=$null;$guiStopMarker='';$guiQuitMarker='';$guiStarted=0;$guiStop=0;$guiExit=0
+$namerOwned=$null;$namerExit=-999
 $workerExitMismatch=0;$mediaVerified=0
 try {
   if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
@@ -411,6 +412,23 @@ $encrypted=ConvertFrom-SecureString $pass
       -not (Test-Path -LiteralPath (Join-Path $stage 'ci-gui-bootstrap-ok'))){
     throw 'GUI_CI_WORKER_NOT_READY'
   }
+  # The .ready marker alone does not prove actual watcher process lifetime.
+  # Verify a SINGLE WinPS child, owned by this exact CI-private GUI, whose
+  # command line references only our private unmodified namer script.
+  $phase='GUI_NAMER_PROCESS_OWNERSHIP'
+  $expectedNamerScript=[IO.Path]::GetFullPath((Join-Path $stage 'SegmentNamerWorker.ps1'))
+  $expectedWinPs=[IO.Path]::GetFullPath($ps)
+  $namerOwnedCandidates=@(Get-CimInstance Win32_Process -Filter ("ParentProcessId = "+$gui.Id) |
+    Where-Object {
+      $exePath=[string]$_.ExecutablePath
+      $cmd=[string]$_.CommandLine
+      $exePath -and [string]::Equals([IO.Path]::GetFullPath($exePath),
+        $expectedWinPs,[StringComparison]::OrdinalIgnoreCase) -and
+      $cmd.IndexOf($expectedNamerScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+  if($namerOwnedCandidates.Count -ne 1){throw 'GUI_CI_NAMER_PROCESS_NOT_UNIQUE'}
+  $namerOwned=Get-Process -Id ([int]$namerOwnedCandidates[0].ProcessId) -ErrorAction Stop
+  if($namerOwned.HasExited){throw 'GUI_CI_NAMER_PROCESS_EARLY_EXIT'}
   $guiStarted=1
   $phase='TWO_MEDIA_MOUNTS'
   $wideRequested=0;$teleRequested=0
@@ -703,6 +721,12 @@ $encrypted=ConvertFrom-SecureString $pass
       Start-Sleep -Milliseconds 100
     }
     if($readyRemain -ne 0){throw 'GUI_CI_NAMER_NOT_CLOSED'}
+    if(-not $namerOwned.WaitForExit(15000)){
+      throw 'GUI_CI_NAMER_PROCESS_NOT_EXITED'
+    }
+    $namerExit=[int]$namerOwned.ExitCode
+    if($namerExit -ne 0){throw 'GUI_CI_NAMER_PROCESS_BAD_EXIT'}
+    Write-Output "C545D_GUI_NAMER_PROCESS_STAGE,owned=1,process_exited=1,exit_code=$namerExit,ready_removed=1,real_camera=0"
     $liveNamerClosed=1
   }
   foreach($src in $snapshot.Keys){
@@ -744,6 +768,8 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
     'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
     'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'GUI_CI_NAMER_PROCESS_NOT_UNIQUE','GUI_CI_NAMER_PROCESS_EARLY_EXIT',
+    'GUI_CI_NAMER_PROCESS_NOT_EXITED','GUI_CI_NAMER_PROCESS_BAD_EXIT',
     'CI_STOP_ALIGNMENT_WORKER_EXITED',
     'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
     'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
@@ -792,6 +818,14 @@ $encrypted=ConvertFrom-SecureString $pass
   }
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
  } finally {
+  if($namerOwned){
+    if(-not $namerOwned.HasExited){
+      # Last-resort cleanup only for the independently checked CI-owned
+      # child PowerShell process, never a camera or user's recorder process.
+      try {$namerOwned.Kill();[void]$namerOwned.WaitForExit(5000)}catch {}
+    }
+    $namerOwned.Dispose()
+  }
   if($gui){
     if(-not $gui.HasExited){
       # Only CI-owned private GUI process can be stopped after a failed test.
