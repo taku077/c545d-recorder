@@ -384,12 +384,19 @@ try {
   if($worker.HasExited){throw 'WORKER_EXITED_BEFORE_CTRL_C'}
   $phase='GUI_CTRL_C_SIGNAL'
   $signalScript=(Resolve-Path -LiteralPath 'tools/Send-C545DPrivateConsoleStopCI.ps1').Path
+  $ctrlCStopwatch=[Diagnostics.Stopwatch]::StartNew()
   $signalRows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $signalScript -StageRoot $stage -WorkerPid $worker.Id -SessionId $session 2>$null)
   $signalOk='C545D_CI_GUI_CTRL_SIGNAL_PASS,stop_marker=1,console_owned=1,gst_launch_owned=1,ctrl_c_sent=1,real_camera=0'
   $signalSent=[int]($LASTEXITCODE -eq 0 -and $signalRows.Count -eq 1 -and $signalRows[0] -ceq $signalOk)
   if($signalSent -ne 1){throw 'GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN'}
   $phase='WORKER_FINALIZE'
-  if(-not $worker.WaitForExit(75000)){throw 'GUI_WORKER_FINALIZE_TIMEOUT'}
+  # A 60s live RTSP fixture would otherwise end naturally. Require the
+  # worker to finish promptly after the actual console Ctrl+C, not source EOF.
+  if(-not $worker.WaitForExit(20000)){throw 'GUI_WORKER_EOS_NOT_TIMELY'}
+  $ctrlCStopwatch.Stop()
+  $stopLatencyMs=[long]$ctrlCStopwatch.ElapsedMilliseconds
+  if($stopLatencyMs -gt 20000){throw 'GUI_WORKER_EOS_NOT_TIMELY'}
+  Write-Output "C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=$stopLatencyMs,bounded_20s=1,real_camera=0"
   $recordExit=$worker.ExitCode
   $workerExited=1
   $transcripts=@(Get-ChildItem -LiteralPath (Join-Path $config 'Logs') -Filter 'Recording_*.txt' -File -ErrorAction SilentlyContinue)
@@ -470,7 +477,7 @@ try {
     'ORIGINAL_BYTES_CHANGED','EARLY_WORKER_MARKER','GUI_WORKER_MIRROR_NOT_EXACT',
     'REAL_GUI_WORKER_NOT_READY','REAL_WORKER_DUAL_RTSP_NOT_READY',
     'WORKER_EXITED_BEFORE_CTRL_C','GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN',
-    'GUI_WORKER_FINALIZE_TIMEOUT','GUI_TRANSCRIPT_NOT_UNIQUE',
+    'GUI_WORKER_FINALIZE_TIMEOUT','GUI_WORKER_EOS_NOT_TIMELY','GUI_TRANSCRIPT_NOT_UNIQUE',
     'GUI_REAL_WORKER_STOP_POLICY_FAILED',
     'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
     'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
