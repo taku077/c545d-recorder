@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f45e1cf9ec621bc91bbc2a1b76ee6e57b3ab9e32`
-- **PR updated at (UTC):** `2026-11-21T15:19:51Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f45e1cf9ec621bc91bbc2a1b76ee6e57b3ab9e32/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9c995a6fb1b7b4ba4469f04dd224d6b6fe367c65`
+- **PR updated at (UTC):** `2026-11-21T15:20:41Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9c995a6fb1b7b4ba4469f04dd224d6b6fe367c65/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44918600884](https://github.com/taku077/c545d-recorder/actions/runs/44918600884) |
-| C545D combined MSVC GIO controlled 256-cycle late residual and 360B heap CI ONLY | in_progress | [#44918598339](https://github.com/taku077/c545d-recorder/actions/runs/44918598339) |
+| C545D active development handoff auto-refresh | in_progress | [#44918680622](https://github.com/taku077/c545d-recorder/actions/runs/44918680622) |
 
 ## Current development findings from the active PR
 
