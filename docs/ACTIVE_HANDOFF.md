@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44912122964](https://github.com/taku077/c545d-recorder/actions/runs/44912122964) |
+| C545D archive-only localized WinRT DisplayName numeric classification | success | [#44912120173](https://github.com/taku077/c545d-recorder/actions/runs/44912120173) |
 
 ## Current development findings from the active PR
 
