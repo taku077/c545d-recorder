@@ -1,4 +1,4 @@
-name: C545D saved 256-cycle numeric-only reanalysis selftest (CI ONLY)
+name: C545D pinned original 256-cycle numeric artifact offline reanalysis (NO Windows)
 on:
   push:
     branches: ['investigate/c545d-status-only-monitor-20261120']
@@ -19,6 +19,25 @@ jobs:
           set -euo pipefail
           python3 tests/analyze_gio_combo_msvc256_saved.py --selftest
           echo 'C545D_SAVED256_PREFLIGHT_PASS,negative_cases=4,windows_runs=0,user_host_modified=0'
-# A later isolated commit MAY add a pinned archive read once run 44918598339
-# actually completes with a numeric artifact. Never rerun 256 Windows cycles
-# to investigate a Python-only checkpoint parsing defect.
+      # Pinned source: Windows2022 run 44918598339, finished FAILURE because
+      # the original Python checker rejected every valid per-cycle GIO_PROBE.
+      # Its four real 256-cycle probes DID finish and the allowlisted artifact
+      # was uploaded (artifact id 14713900393). Do not rerun Windows.
+      - name: Download existing NUMERIC-ONLY original 256-cycle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          run-id: 44918598339
+          github-token: ${{ github.token }}
+          path: artifacts/saved
+      - name: Recalculate matched 256-cycle late epoch effects without cameras or Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Legacy archive basename is ab64_safe_trace.txt despite 256 data.
+          test -f artifacts/saved/ab64_safe_trace.txt
+          python3 tests/analyze_gio_combo_msvc256_saved.py --root artifacts/saved | tee /tmp/c545d_256_effects.txt
+          grep -Fx 'C545D_SAVED256_SETTLED,metric=mem,core_effect=3272704,combo_effect=368640,CI_only=1' /tmp/c545d_256_effects.txt
+          grep -Fx 'C545D_SAVED256_BIN,window=192_256,size=360,core_effect=7,combo_effect=5,stack_attributed=0' /tmp/c545d_256_effects.txt
+          grep -Fx 'C545D_SAVED256_NUMERIC_ANALYSIS_PASS,source_windows_run=44918598339,cycles=256,controls=4,compare16=2,raw_host_data=0,sdk_public_api_not_rechecked_from_archive=1,zero_leak_proven=0,host_install_approved=0' /tmp/c545d_256_effects.txt
+          echo 'C545D_SAVED256_REANALYSIS_PASS,windows_runs=0,source_run=44918598339,host_modified=0,release_approved=0'
