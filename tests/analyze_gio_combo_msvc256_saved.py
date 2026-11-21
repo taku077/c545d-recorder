@@ -29,9 +29,16 @@ PREFIXES = ("GIO_HEAP,", "GIO_HEAPSIZE,", "GIO_PROBE,", "GIO_KEY,",
 
 
 def load(root: Path) -> dict[str, list[str]]:
-    path = root / "ab256_safe_trace.txt"
-    if not path.is_file():
-        raise ValueError("missing original numeric-only 256-cycle artifact")
+    # The already-finished Windows run #44918598339 reused the old
+    # "ab64_safe_trace.txt" output basename in its 256-cycle workflow.
+    # Accept the exact existing numeric artifact rather than rerun Windows.
+    # An ambiguous directory must fail closed; never merge mixed-run traces.
+    candidates = [root / name for name in
+                  ("ab256_safe_trace.txt", "ab64_safe_trace.txt")]
+    existing = [path for path in candidates if path.is_file()]
+    if len(existing) != 1:
+        raise ValueError("missing or ambiguous original 256-cycle numeric archive")
+    path = existing[0]
     grouped = {tag: [] for tag in TAGS}
     seen = {}
     for raw in path.read_text(encoding="utf-8-sig").splitlines():
@@ -216,6 +223,25 @@ def selftest() -> None:
             "GIO_NATIVE_PATH,32,0,32,0",
             f"GIO_PROBE_DONE,cycles=16,notifications=0,reg_changes={int(arm=='registry')}"]
     assert analyze(group, False)[-1].startswith("C545D_SAVED256_NUMERIC_ANALYSIS_PASS,")
+    # Verify the actual run's unfortunately legacy-named artifact, metadata
+    # validation, and refusal to accept duplicate/mixed snapshot sources.
+    with tempfile.TemporaryDirectory(prefix="c545d_saved256_loader_") as tmp:
+        root = Path(tmp)
+        rows = []
+        for name, values in group.items():
+            rows.append(f"C545D_AB256_TRACE,tag={name},present=1,CI_only=1")
+            rows.extend(f"{name}|{value}" for value in values)
+        (root / "ab64_safe_trace.txt").write_text(
+            "\n".join(rows) + "\n", encoding="ascii")
+        assert analyze(load(root), False) == analyze(group, False)
+        (root / "ab256_safe_trace.txt").write_text(
+            "\n".join(rows) + "\n", encoding="ascii")
+        try:
+            load(root)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("mixed or duplicate archive basenames accepted")
     tag = "combo-registry-256"
     original = group[tag][:]
     damaged = [
