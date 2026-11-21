@@ -11,12 +11,50 @@ permissions:
 jobs:
   synthetic-toolchain:
     runs-on: windows-2022
-    timeout-minutes: 10
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      # Microsoft documents an untrustworthy UMDH capture in Windows 11 SDK
+      # (UMDH 10.0.26100 observed in run 44924238758). Only install the older
+      # Windows 10 debugger feature in this disposable CI VM; never on host.
+      # The official archived SDK installer is unserviced: verify Authenticode
+      # and run with no user data or credentials before GIO attribution.
+      - name: Select Microsoft-signed Windows 10 UMDH on isolated runner only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root="${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64"
+          $oldTool=Join-Path $root 'umdh.exe'
+          $oldVersion=0
+          if(Test-Path $oldTool){
+            $oldVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($oldTool).FileBuildPart
+          }
+          if($oldVersion -gt 0 -and $oldVersion -lt 22000) {
+            Write-Host "C545D_WIN10_UMDH_READY,build=$oldVersion,installer_used=0,CI_only=1"
+            exit 0
+          }
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d_msft_win10_sdk_debugger_setup.exe'
+          try {
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2164145' -OutFile $installer -TimeoutSec 180
+            if((Get-Item $installer).Length -lt 500000){throw 'Archived Microsoft SDK installer too small'}
+            $signature=Get-AuthenticodeSignature -FilePath $installer
+            if($signature.Status -ne 'Valid' -or
+               $signature.SignerCertificate.Subject -notmatch 'Microsoft'){
+              throw 'Official Windows10 SDK installer signature not verified'
+            }
+            $p=Start-Process -FilePath $installer -ArgumentList '/features OptionId.WindowsDesktopDebuggers /quiet /norestart' -PassThru -Wait
+            if($p.ExitCode -notin @(0,3010)){throw 'Windows10 debugger-only SDK setup rejected'}
+            if(-not(Test-Path $oldTool)){throw 'Windows10 UMDH tool absent after SDK setup'}
+            $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($oldTool)
+            $build=$v.FileBuildPart
+            if($build -le 0 -or $build -ge 22000){throw 'Windows11 UMDH remained active; refuse known broken tool'}
+            Write-Host "C545D_WIN10_UMDH_READY,build=$build,installer_used=1,signed_by_microsoft=1,CI_only=1,host_modified=0"
+          } finally {
+            Remove-Item $installer -Force -ErrorAction SilentlyContinue
+          }
       - name: Discover Debugging Tools and test isolated synthetic allocation stacks
         shell: pwsh
         run: |
