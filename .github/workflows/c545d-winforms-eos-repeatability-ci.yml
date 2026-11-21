@@ -1,0 +1,143 @@
+name: C545D WinForms EOS real-worker three isolated CI repeatability gates
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-winforms-eos-repeatability-ci.yml'
+      - 'tests/Assert-C545DWinFormsRealRTSPCI.ps1'
+      - 'tests/Assert-C545DGUIWorkerLiveLoopbackCI.ps1'
+      - 'tests/Assert-C545DSegmentNamerClosedMp4CI.ps1'
+      - 'SegmentNamer.ps1'
+      - 'SegmentNamerWorker.ps1'
+      - 'tools/Send-C545DPrivateConsoleStopCI.ps1'
+      - 'RecordGUIWorker.ps1'
+      - 'C545D_App.ps1'
+      - 'tests/c545d_ci_finite_rtsp_server.c'
+      - 'tools/New-C545DIsolatedProductionMirrorCI.ps1'
+      - 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
+      - 'Record.ps1'
+      - 'CommonSettings.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-winforms-eos-repeatability:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        trial: [1, 2, 3]
+    runs-on: windows-2022
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Parse harness before SDK installation; report only sanitized diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tok=$null;$err=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path tests/Assert-C545DGUIWorkerLiveLoopbackCI.ps1).Path,[ref]$tok,[ref]$err)
+          if($err.Count -gt 0){
+            foreach($e in $err){
+              Write-Host "C545D_HARNESS_PARSE_DIAG,line=$($e.Extent.StartLineNumber),column=$($e.Extent.StartColumnNumber),id=$($e.ErrorId)"
+            }
+            throw 'Harness source did not parse; SDK/RTSP never started'
+          }
+          Write-Host 'C545D_HARNESS_PARSE_PASS,source_syntax=1,ci_only=1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/pinned-candidate
+      - name: Assert original GUI namer ready-before-record and safe watcher source policy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $guiPath=(Resolve-Path 'C545D_App.ps1').Path
+          $workerPath=(Resolve-Path 'SegmentNamerWorker.ps1').Path
+          $renamePath=(Resolve-Path 'SegmentNamer.ps1').Path
+          foreach($path in @($guiPath,$workerPath,$renamePath)){
+            $tok=$null;$errors=$null
+            [void][Management.Automation.Language.Parser]::ParseFile($path,[ref]$tok,[ref]$errors)
+            if($errors.Count -ne 0){throw 'Original GUI/namer source syntax invalid'}
+          }
+          $gui=[IO.File]::ReadAllText($guiPath)
+          $start=$gui.IndexOf('$btnStart.Add_Click({',[StringComparison]::Ordinal)
+          $ready=$gui.IndexOf('[void](Wait-C545DNamerReady)',[Math]::Max(0,$start),[StringComparison]::Ordinal)
+          $launch=$gui.IndexOf('$script:worker=Start-Process',[Math]::Max(0,$start),[StringComparison]::Ordinal)
+          if($start -lt 0 -or $ready -le $start -or $launch -le $ready){throw 'GUI startup no longer waits for namer before recorder'}
+          $watcher=[IO.File]::ReadAllText($workerPath)
+          $rename=[IO.File]::ReadAllText($renamePath)
+          foreach($term in @('watcher.Created += OnCreated;','watcher.Renamed += OnRenamed;','[System.IO.File]::WriteAllText($ReadyFile','($pending.Count -eq 0','(($now-$closingSince).TotalSeconds -ge 180)')){
+            if(-not $watcher.Contains($term)){throw 'Watcher event/ready/drain contract changed'}
+          }
+          foreach($term in @('Test-C545DTempName','[System.IO.FileShare]::None','Move-Item -LiteralPath $file.FullName')){
+            if(-not $rename.Contains($term)){throw 'Rename file-lock safety contract changed'}
+          }
+          Write-Host 'C545D_GUI_NAMER_WIRING_SOURCE_CI_PASS,gui_wait_before_record=1,created_event=1,renamed_event=1,ready_marker=1,shutdown_drain=1,exclusive_lock_gate=1,production_sources_unchanged=1,real_camera=0'
+      - name: Install official pinned SDK in disposable hosted Windows runner only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'c545d-live-rtsp-sdk'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d-live-rtsp-sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item -LiteralPath $installer).Length -lt 15000000){throw 'Official installer incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'CI SDK setup failed'}
+          "C545D_RTSP_LIVE_SDK=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Verify real WinForms Start Stop Quit and original recorder plus 4 renamed decoded MP4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script=(Resolve-Path tests/Assert-C545DWinFormsRealRTSPCI.ps1).Path
+          $t=$null;$err=$null
+          [Management.Automation.Language.Parser]::ParseFile($script,[ref]$t,[ref]$err)|Out-Null
+          if($err.Count -ne 0){throw 'CI integration script syntax invalid'}
+          $candidate=(Resolve-Path artifacts/pinned-candidate/gio-2.0-0.dll).Path
+          $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
+          $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_RTSP_LIVE_SDK -CandidateDll $candidate -ReferenceManifest $ref -CiSplitSeconds 8 2>$null)
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=[01],gui_stop_click=[01],gui_quit_click=[01],namer_ready=[01],renamed_before_stop=[01],renamed_total=[0-9]+,all_decoded=[01],gui_ctrl_c_eos=[01],watcher_closed=[01],source_unchanged=[01],real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=[0-9]+,worker_exit=-?[0-9]+,bounded_20s=1,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_RESOURCE_STAGE,samples=11,nominal_total_s=31,steady_window_s=24,worker_private_first_b=[0-9]+,worker_private_last_b=[0-9]+,worker_handles_first=[0-9]+,worker_handles_last=[0-9]+,gst_private_first_b=[0-9]+,gst_private_steady_first_b=[0-9]+,gst_private_last_b=[0-9]+,gst_handles_first=[0-9]+,gst_handles_steady_first=[0-9]+,gst_handles_last=[0-9]+,gst_cpu_delta_ms=[0-9]+,gio_stage_module_observed=[01],gio_module_query_error=[01],staged_gst_remaining=0,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_STAGE,worker_exit=-?[0-9]+,worker_exited=[01],gui_ctrlc_sent=[01],wide_mount=[01],tele_mount=[01],launch_count=[0-9]+,stop_at_gst_return=[01],native_gst_exit=-?[0-9]+,policy_stop=[01],policy_reconnect=[01],eos_message=[01],worker_returned=[01],mp4_count=[0-9]+,mp4_bytes=[0-9]+,stop_marker=[01],ready_removed=[01],real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_WORKER_RTSP_FAIL,phase=[A-Z_]+,reason=[A-Z_]+(?:,worker_exit=-?[0-9]+,media_verified=[01],mp4_files=[0-9]+)?,real_camera=0,host_modified=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_BOOTSTRAP_DIAG,phase=[A-Za-z_]+,worker_exited=[01],worker_exit=-?[0-9]+,dummy_secret_exists=[01],ready_exists=[01],control_dir_exists=[01],transcript_count=[0-9]+,mp4_count=[0-9]+,worker_cpu_ms=[0-9]+,ready_candidate_count=[0-9]+,ready_candidate_pid_match=[01],ready_candidate_name_match=[01],log_worker_pid_match=[01],log_session_match=[01],log_has_recording=[01],log_returned=[01],real_camera=0$'){
+              Write-Host $row
+            }
+          }
+          # If recording fails, expose only coarse phase/reason; no camera credentials.
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_GUI_INTEGRATED_DIAG,code=[A-Z_]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_GUI_INTEGRATED_ERROR_STAGE,phase=[A-Z_]+,line=[0-9]+,exception_class=[A-Za-z0-9_]+,category=[A-Za-z0-9_]+,worker_exit=-?[0-9]+,media_verified=[01],mp4_files=[0-9]+,real_camera=0$' -or
+               ([string]$row) -cmatch '^C545D_WINFORMS_STOP_DIAG,worker_exit=-?[0-9]+,native_gst_exit=-?[0-9]+,record_error=[01],gst_returned=[01],eos_successful=[01],stop_policy=[01],reconnect=[01],record_returned=[01],marker_at_return=[01],mp4_files=[0-9]+,stop_proven=[01],ready_removed=[01],real_camera=0$'){
+              Write-Host $row
+            }
+          }
+          # CI-owned mirror only; actual production retains 3600s.
+          $expected='^C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=[3-8],each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0$'
+          $matches=@($rows|Where-Object {([string]$_) -cmatch $expected})
+          $namerExpected='^C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=1,gui_stop_click=1,gui_quit_click=1,namer_ready=1,renamed_before_stop=1,renamed_total=[3-8],all_decoded=1,gui_ctrl_c_eos=1,watcher_closed=1,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0$'
+          $namerMatches=@($rows|Where-Object {([string]$_) -cmatch $namerExpected})
+          if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1 -or $namerMatches.Count -ne 1){
+            throw 'Actual WinForms GUI button event + original recorder plus 4 MP4 and EOS not qualified'
+          }
+          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
+          @($matches[0],$namerMatches[0]) | Set-Content artifacts/numeric/gui_winforms_real_recording_ci.txt -Encoding ascii
+          Write-Host $matches[0]
+          Write-Host $namerMatches[0]
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-winforms-real-recording-CI-trial-${{ matrix.trial }}
+          path: artifacts/numeric/gui_winforms_real_recording_ci.txt
+          if-no-files-found: error
+          retention-days: 7
