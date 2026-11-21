@@ -13,7 +13,8 @@ param(
   [Parameter(Mandatory=$true)][string]$SdkRoot,
   [Parameter(Mandatory=$true)][string]$CandidateDll,
   [Parameter(Mandatory=$true)][string]$ReferenceManifest,
-  [ValidateSet(8)][int]$CiSplitSeconds=8
+  [ValidateSet(8)][int]$CiSplitSeconds=8,
+  [ValidateSet(0,1000,5000)][int]$CiPreStopDelayMs=0
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -499,6 +500,18 @@ $encrypted=ConvertFrom-SecureString $pass
     throw 'OWNED_RESOURCE_SAMPLES_INVALID'
   }
   if($worker.HasExited){throw 'WORKER_EXITED_BEFORE_CTRL_C'}
+  # Vary only the temporal alignment of the STOP click relative to splitmux
+  # fragments; original production GUI/worker/recorder source is untouched.
+  # The finite synthetic RTSP fixture runs for ~60s, so bounded +5s stays
+  # within the test's 31s sampling window plus startup/cleanup allowance.
+  $phase='CI_PRE_STOP_ALIGNMENT'
+  if($CiPreStopDelayMs -gt 0){
+    Start-Sleep -Milliseconds $CiPreStopDelayMs
+    if($worker.HasExited -or $gui.HasExited){
+      throw 'CI_STOP_ALIGNMENT_WORKER_EXITED'
+    }
+  }
+  Write-Output "C545D_GUI_STOP_ALIGNMENT_CI,delay_ms=$CiPreStopDelayMs,original_source_unchanged=1,synthetic_rtsp=1,real_camera=0"
   $phase='GUI_STOP_BUTTON_CLICK'
   $ctrlCStopwatch=[Diagnostics.Stopwatch]::StartNew()
   [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-request-stop'),'CI_ONLY_STOP_CLICK')
@@ -717,6 +730,7 @@ $encrypted=ConvertFrom-SecureString $pass
     'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
     'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
     'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'CI_STOP_ALIGNMENT_WORKER_EXITED',
     'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
     'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
     'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
