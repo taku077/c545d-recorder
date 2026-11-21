@@ -174,7 +174,7 @@ try {
       $mp4=@(Get-ChildItem -LiteralPath (Join-Path $ownedStage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue |
         Where-Object {$_.Length -gt 5000})
       if($mp4.Count -gt 0 -and $seen -lt 0){$seen=$watch.Elapsed.TotalSeconds}
-      if($seen -ge 0 -and ($watch.Elapsed.TotalSeconds-$seen) -gt 8){
+      if($seen -ge 0 -and ($watch.Elapsed.TotalSeconds-$seen) -gt 1){
         [IO.File]::WriteAllText($stopPath,'CI_SYNTHETIC_RTSP_END_ONLY')
         return 'marker=1,media_file_seen=1'
       }
@@ -202,7 +202,12 @@ try {
   $safeStop=Test-Path -LiteralPath $stop
   $returnObserved=[int]$text.Contains('GStreamer returned; exitCode=')
   $launches=[regex]::Matches($text,'GStreamer launching \(EOS enabled\); attempt=').Count
-  Write-Output "C545D_RECORDER_LIVE_RTSP_STAGE,launch=$launchObserved,launch_count=$launches,returned=$returnObserved,source_stop_marker=$([int]$safeStop),policy_stop=$policyStop,eos_message=$eosObserved,mp4_count=$filesCount,rtsp_error=$actualRtspError,record_exit_nonzero=$([int]($recordExit -ne 0)),real_camera=0"
+  $lastExit=[regex]::Matches($text,'GStreamer returned; exitCode=(-?[0-9]+); stopMarker=(True|False)')
+  $nativeRc=if($lastExit.Count -gt 0){[int]$lastExit[$lastExit.Count-1].Groups[1].Value}else{999}
+  $markerAtReturn=[int]($lastExit.Count -gt 0 -and $lastExit[$lastExit.Count-1].Groups[2].Value -ceq 'True')
+  $reconnectAction=[int]$text.Contains('Recorder exit policy: reconnect')
+  $lastMp4Bytes=if($filesCount -gt 0){[long]$outFiles[0].Length}else{0}
+  Write-Output "C545D_RECORDER_LIVE_RTSP_STAGE,launch=$launchObserved,launch_count=$launches,returned=$returnObserved,source_stop_marker=$([int]$safeStop),stop_at_gst_return=$markerAtReturn,policy_stop=$policyStop,policy_reconnect=$reconnectAction,gst_exit=$nativeRc,eos_message=$eosObserved,mp4_count=$filesCount,first_mp4_bytes=$lastMp4Bytes,rtsp_error=$actualRtspError,record_exit_nonzero=$([int]($recordExit -ne 0)),real_camera=0"
   if($recordExit -ne 0 -or $launchObserved -ne 1 -or
      $launches -ne 1 -or -not $safeStop -or $policyStop -ne 1 -or
      $filesCount -ne 1 -or $actualRtspError -ne 0){
