@@ -519,8 +519,10 @@ $encrypted=ConvertFrom-SecureString $pass
   $ctrlCStopwatch.Stop()
   $stopLatencyMs=[long]$ctrlCStopwatch.ElapsedMilliseconds
   if($stopLatencyMs -gt 20000){throw 'GUI_WORKER_EOS_NOT_TIMELY'}
-  Write-Output "C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=$stopLatencyMs,bounded_20s=1,real_camera=0"
-  $recordExit=$worker.ExitCode
+  $recordExit=[int]$worker.ExitCode
+  # This record is emitted BEFORE later MP4/GUI checks and can identify a
+  # nonzero worker status even if an inner cleanup later prevents failure logs.
+  Write-Output "C545D_GUI_STOP_LATENCY_STAGE,elapsed_ms=$stopLatencyMs,worker_exit=$recordExit,bounded_20s=1,real_camera=0"
   $workerExited=1
   $transcripts=@(Get-ChildItem -LiteralPath (Join-Path $config 'Logs') -Filter 'Recording_*.txt' -File -ErrorAction SilentlyContinue)
   if($transcripts.Count -ne 1){throw 'GUI_TRANSCRIPT_NOT_UNIQUE'}
