@@ -9,25 +9,29 @@ from pathlib import Path
 import argparse
 import shutil
 
-def build(out: Path, existing_main_layout: Path) -> None:
+def build(out: Path, existing_main_layout: Path, resource_language: str = "fr-fr") -> None:
+    if resource_language not in ("fr-fr", "en-us"):
+        raise ValueError("Only synthetic en-us/fr-fr resource packs permitted")
+    resource_id, label = (("French", "French") if resource_language == "fr-fr"
+                          else ("English", "English"))
     logo = existing_main_layout / "Assets" / "StoreLogo.png"
     if not logo.is_file():
         raise ValueError("expected existing disposable main fixture asset")
     out.mkdir(parents=True, exist_ok=True)
     (out / "Assets").mkdir(exist_ok=True)
     shutil.copyfile(logo, out / "Assets" / "StoreLogo.png")
-    (out / "Strings" / "fr-fr").mkdir(parents=True, exist_ok=True)
-    (out / "Strings" / "fr-fr" / "Resources.resw").write_text(
-        """<?xml version="1.0" encoding="utf-8"?>
+    (out / "Strings" / resource_language).mkdir(parents=True, exist_ok=True)
+    (out / "Strings" / resource_language / "Resources.resw").write_text(
+        f"""<?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="C545DResourceProbe" xml:space="preserve">
-    <value>French synthetic resource value</value>
+    <value>{label} synthetic resource value</value>
   </data>
 </root>
 """, encoding="utf-8",
     )
     (out / "resource.txt").write_text(
-        "CI-only French resource fixture. No media or user content.\n",
+        f"CI-only {label} resource fixture. No media or user content.\n",
         encoding="utf-8",
     )
     # MakeAppx /r uses the PARENT application's valid manifest as the
@@ -38,9 +42,9 @@ def build(out: Path, existing_main_layout: Path) -> None:
     # According to the official MakeAppx /r /m /f contract, resources
     # require both ResourceDimensions and ResourceId in the mapping.
     # Keep the mapping self-contained under the disposable temp root.
-    mapping = """[ResourceMetadata]
-"ResourceDimensions" "language-fr-fr"
-"ResourceId" "French"
+    mapping = f"""[ResourceMetadata]
+"ResourceDimensions" "language-{resource_language}"
+"ResourceId" "{resource_id}"
 
 [Files]
 "Assets\\StoreLogo.png" "Assets\\StoreLogo.png"
@@ -48,12 +52,14 @@ def build(out: Path, existing_main_layout: Path) -> None:
 "resources.pri" "resources.pri"
 """
     (out / "mapping.txt").write_text(mapping, encoding="utf-8")
-    print("C545D_RESOURCE_FIXTURE_CREATED,resource_id=French,"
+    print(f"C545D_RESOURCE_FIXTURE_CREATED,resource_id={resource_id},"
           "main_version_unchanged=1,resource_only=1,CI_only=1")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--main-layout", type=Path, required=True)
+    parser.add_argument("--resource-language", choices=("fr-fr", "en-us"),
+                        default="fr-fr", help="opt-in English resource pack")
     args = parser.parse_args()
-    build(args.out, args.main_layout)
+    build(args.out, args.main_layout, args.resource_language)
