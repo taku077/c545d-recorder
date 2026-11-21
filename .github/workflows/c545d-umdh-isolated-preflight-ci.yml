@@ -71,7 +71,13 @@ jobs:
             if($captureExit -ne 0 -or -not(Test-Path $before)){
               $info=[IO.File]::ReadAllText($captureLog)
               $class='UNKNOWN'
-              if($info -match '(?i)stack.trace.database|UST|stack.trace'){ $class='STACK_DB' }
+              # Microsoft published the 2025-06-11 known Windows11 SDK UMDH
+              # false-full-stack-DB bug. Match BOTH exact symptoms; never
+              # misclassify an actual full DB just from the word 'stack'.
+              $badWin11Sdk=($info -match '(?i)UMDH didn.t find any allocations that have stacks collected') -and
+                           ($info -match '(?i)Traces could not be collected because the Stack Trace Database is full')
+              if($badWin11Sdk){ $class='MICROSOFT_WIN11_SDK_UMDH_KNOWN_BUG' }
+              elseif($info -match '(?i)stack.trace.database|UST|stack.trace'){ $class='STACK_DB_OTHER' }
               elseif($info -match '(?i)access.denied|access.is.denied|privilege'){ $class='PRIVILEGE' }
               elseif($info -match '(?i)invalid.*(switch|parameter)|usage:|syntax'){ $class='SYNTAX' }
               elseif($info -match '(?i)process.*(exited|not.found|cannot.open|could.not.open)'){ $class='PROCESS' }
@@ -79,7 +85,10 @@ jobs:
               $proc.Refresh()
               $alive=[int](-not $proc.HasExited)
               $filePresent=[int](Test-Path $before -PathType Leaf)
-              Write-Host "C545D_UMDH_CAPTURE_DIAG,exit=$captureExit,file=$filePresent,proc_alive=$alive,reason=$class,CI_only=1,raw_uploaded=0"
+              $toolVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($u)
+              $v=('{0}.{1}.{2}.{3}' -f $toolVersion.FileMajorPart,$toolVersion.FileMinorPart,$toolVersion.FileBuildPart,$toolVersion.FilePrivatePart)
+              $gflagsKeyPresent=[int](Test-Path $ifeo)
+              Write-Host "C545D_UMDH_CAPTURE_DIAG,exit=$captureExit,file=$filePresent,proc_alive=$alive,reason=$class,umdh_version=$v,ifeo_key=$gflagsKeyPresent,CI_only=1,raw_uploaded=0"
               throw 'UMDH baseline capture failed; diagnostic category above'
             }
             New-Item -ItemType File -Force -Path (Join-Path $dir 'allocate.signal') | Out-Null
