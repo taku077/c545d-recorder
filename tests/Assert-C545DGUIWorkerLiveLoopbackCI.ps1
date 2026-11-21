@@ -160,6 +160,7 @@ try {
     '$cipher | Set-Content -LiteralPath $secret -Encoding ASCII',
     'if(-not (Test-Path -LiteralPath $secret -PathType Leaf)){exit 3}',
     '[IO.File]::WriteAllText($phase,''DUMMY_DPAPI_WRITTEN'')',
+    '[IO.File]::WriteAllText($phase,''WORKER_INVOKED'')',
     'try {',
     ' & (Join-Path $OwnedStage ''RecordGUIWorker.ps1'') -SessionId $SessionId',
     ' if(-not $?){[IO.File]::WriteAllText($phase,''WORKER_RETURNED_FAILURE'');exit 3}',
@@ -226,7 +227,7 @@ try {
     [Environment]::SetEnvironmentVariable('PSModulePath',$previousModulePath,'Process')
   }
   $readySeen=$false
-  for($i=0;$i -lt 400;$i++){
+  for($i=0;$i -lt 1150;$i++){
     Start-Sleep -Milliseconds 100
     if($worker.HasExited){break}
     if(Test-Path -LiteralPath $ready){
@@ -249,14 +250,23 @@ try {
        'SECURESTRING_ERROR_RuntimeException',
        'SECURESTRING_ERROR_SecurityException',
        'SECURESTRING_ERROR_Other',
-       'DUMMY_DPAPI_WRITTEN','WORKER_RETURNED_FAILURE',
+       'DUMMY_DPAPI_WRITTEN','WORKER_INVOKED','WORKER_RETURNED_FAILURE',
        'WORKER_RETURNED_SUCCESS','WORKER_THREW')
     if($phaseValue -notin $allowed){$phaseValue='UNEXPECTED_PHASE'}
     $existsSecret=[int](Test-Path -LiteralPath (Join-Path $config 'camera_password.dpapi'))
     $existsReady=[int](Test-Path -LiteralPath $ready)
+    $controlExists=[int](Test-Path -LiteralPath $control -PathType Container)
+    $transcriptFolder=Join-Path $config 'Logs'
+    $logCount=if(Test-Path -LiteralPath $transcriptFolder){
+      @(Get-ChildItem -LiteralPath $transcriptFolder -Filter 'Recording_*.txt' -File -ErrorAction SilentlyContinue).Count
+    }else{0}
+    $privateFiles=if(Test-Path -LiteralPath (Join-Path $stage 'private-output')){
+      @(Get-ChildItem -LiteralPath (Join-Path $stage 'private-output') -Filter '*.mp4' -File -ErrorAction SilentlyContinue).Count
+    }else{0}
+    $workerCpuMs=if(-not $worker.HasExited){[int]$worker.TotalProcessorTime.TotalMilliseconds}else{0}
     $exited=[int]$worker.HasExited
     $exitNumber=if($worker.HasExited){[int]$worker.ExitCode}else{-999}
-    Write-Output "C545D_GUI_BOOTSTRAP_DIAG,phase=$phaseValue,worker_exited=$exited,worker_exit=$exitNumber,dummy_secret_exists=$existsSecret,ready_exists=$existsReady,real_camera=0"
+    Write-Output "C545D_GUI_BOOTSTRAP_DIAG,phase=$phaseValue,worker_exited=$exited,worker_exit=$exitNumber,dummy_secret_exists=$existsSecret,ready_exists=$existsReady,control_dir_exists=$controlExists,transcript_count=$logCount,mp4_count=$privateFiles,worker_cpu_ms=$workerCpuMs,real_camera=0"
     throw 'REAL_GUI_WORKER_NOT_READY'
   }
   $phase='TWO_MEDIA_MOUNTS'
