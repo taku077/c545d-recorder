@@ -142,6 +142,31 @@ jobs:
               $fake.Dispose()
             }
           }
+          # Test the dangerous startup gap: PowerShell GUI or recording
+          # worker exists but gst-launch has not been launched yet. Every
+          # fixture lives ONLY inside ephemeral GitHub RUNNER_TEMP, has no
+          # RTSP, credentials or production code, and is cleaned as owned child.
+          foreach($scriptName in @('C545D_App.ps1','RecordGUIWorker.ps1','Record.ps1')){
+            $fakeWorkerPath=Join-Path $env:RUNNER_TEMP $scriptName
+            if(Test-Path -LiteralPath $fakeWorkerPath){throw 'CI fixture path collision'}
+            [IO.File]::WriteAllText($fakeWorkerPath,'Start-Sleep -Seconds 45',[Text.Encoding]::ASCII)
+            $fakeWorker=$null
+            try {
+              $fakeWorker=Start-Process -FilePath $ps -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',('"'+$fakeWorkerPath+'"')) -WindowStyle Hidden -PassThru
+              Start-Sleep -Milliseconds 400
+              if($fakeWorker.HasExited){throw 'CI worker-only fixture exited prematurely'}
+              if(@(Get-Process -Name 'gst-launch-1.0','C545D_Recorder' -ErrorAction SilentlyContinue).Count -ne 0){
+                throw 'CI PowerShell-only fixture unexpectedly includes a recorder executable'
+              }
+              Check ('PowerShell-only '+$scriptName+' refused before gst startup') $candidate $true 3 ($blocked.Replace('reason=BLOCKED','reason=RECORDER_ACTIVE'))
+            } finally {
+              if($fakeWorker){
+                if(-not $fakeWorker.HasExited){$fakeWorker.Kill();[void]$fakeWorker.WaitForExit(5000)}
+                $fakeWorker.Dispose()
+              }
+              if(Test-Path -LiteralPath $fakeWorkerPath){Remove-Item -LiteralPath $fakeWorkerPath -Force}
+            }
+          }
           # Positive case begins with deliberately hostile inherited plugin
           # search variables. The tested script must isolate and restore
           # these values without touching user/system environment settings.
@@ -160,8 +185,8 @@ jobs:
             }
           }
           if((Get-FileHash $orig -Algorithm SHA256).Hash -ne $before -or (Get-FileHash $candidate -Algorithm SHA256).Hash -ne $beforeCandidate){throw 'Original binaries changed'}
-          if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 6){throw 'Missing numeric results'}
-          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,manifest_tamper_refused=1,contradictory_fingerprint_refused=1,active_recorder_refused=1,real_app_local_gio_loaded=1,wav_valid=1,plugin_overrides_suppressed=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
+          if((Get-Content artifacts/numeric/isolated_smoke_ci_results.txt).Count -ne 9){throw 'Missing numeric results'}
+          Write-Host 'C545D_WIN10_FUTURE_SMOKE_CI_PASS,server_refused=1,tamper_refused=1,manifest_tamper_refused=1,contradictory_fingerprint_refused=1,active_recorder_refused=1,powershell_gui_pre_gst_refused=1,powershell_worker_pre_gst_refused=1,powershell_recorder_pre_gst_refused=1,real_app_local_gio_loaded=1,wav_valid=1,plugin_overrides_suppressed=1,rollback=1,originals_unchanged=1,real_win10_tested=0,live_tapo_authorized=0'
           exit 0
       - uses: actions/upload-artifact@v4
         if: success()
