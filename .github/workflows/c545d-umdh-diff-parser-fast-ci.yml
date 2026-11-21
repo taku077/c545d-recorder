@@ -1,0 +1,21 @@
+name: C545D UMDH symbolized-diff safe classification selftest (NO Windows)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/Get-C545DUmdhSafeSummary.ps1'
+      - 'tests/Test-C545DUmdhSafeSummary.ps1'
+      - '.github/workflows/c545d-umdh-diff-parser-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Microsoft example, known GIO frames, unresolved frames, zero growth
+        shell: pwsh
+        run: |
+          ./tests/Test-C545DUmdhSafeSummary.ps1

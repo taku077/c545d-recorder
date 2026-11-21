@@ -50,24 +50,14 @@ function Snapshot([int]$point){
 }
 function Compare-C545DUmdhStacks([int]$left,[int]$right,[string]$before,[string]$after){
   $diff=Join-Path $dir ("diff_"+$left+"_"+$right+".txt")
-  & $Umdh $before $after > $diff 2>&1
-  if($LASTEXITCODE -ne 0){throw 'UMDH diff failed (raw suppressed)'}
-  $content=[IO.File]::ReadAllText($diff)
-  $headers=[regex]::Matches($content,'(?im)^\s*\+\s+(?:0x)?[0-9a-f]+\s+\([^)]*\)\s+[0-9a-f]+\s+allocs\s+BackTrace([0-9a-f]+)')
-  $afterText=[IO.File]::ReadAllText($after)
-  $gio=0;$glib=0
-  foreach($h in $headers){
-    $id=$h.Groups[1].Value.TrimStart('0')
-    if(-not $id){$id='0'}
-    $find=[regex]::Match($afterText,'(?is)\bby:\s*BackTrace0*'+[regex]::Escape($id)+'\b([\s\S]{0,4500})')
-    if($find.Success){
-      $stack=$find.Groups[1].Value
-      if($stack -match '(?i)gio-2[.]0-0'){ $gio++ }
-      if($stack -match '(?i)glib-2[.]0-0|gobject-2[.]0-0'){ $glib++ }
-    }
-  }
-  $positive=$headers.Count
-  Write-Host "C545D_GIO_UMDH_STACK,arm=$arm,cycles=$Cycles,window=$($left)_$right,positive_backtraces=$positive,has_gio_module=$gio,has_glib_module=$glib,exact_360_owner_proven=0,raw_uploaded=0,CI_only=1"
+  # UMDH -v resolves symbols in the local *diff*. Raw snapshots from
+  # -f are not symbol-resolved: searching them can falsely report 0 modules.
+  & $Umdh '-v' $before $after > $diff 2>&1
+  if($LASTEXITCODE -ne 0){throw 'UMDH symbolized diff failed (raw suppressed)'}
+  . (Join-Path $PSScriptRoot 'Get-C545DUmdhSafeSummary.ps1')
+  $summary=Get-C545DUmdhSafeSummary -Content ([IO.File]::ReadAllText($diff))
+  $positive=$summary.Positive
+  Write-Host "C545D_GIO_UMDH_STACK,arm=$arm,cycles=$Cycles,window=$($left)_$right,positive_backtraces=$positive,symbolized_backtraces=$($summary.Symbolized),unresolved_backtraces=$($summary.Unresolved),gio_module_stacks=$($summary.GIO),glib_module_stacks=$($summary.GLib),winrt_module_stacks=$($summary.WinRT),exact_360_owner_proven=0,raw_uploaded=0,CI_only=1"
   # A valid 0->16 UMDH diff may have zero positive stacks. The 360B
   # residual appeared late; do not treat an early plateau as tool failure.
   # A zero count at 192->256 means inconclusive attribution, not zero leak.

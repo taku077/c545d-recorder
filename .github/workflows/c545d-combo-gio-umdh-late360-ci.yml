@@ -1,11 +1,8 @@
 name: C545D targeted registry-only UMDH late360 recovery using prior control (CI ONLY)
+# The registry256 and prior nochange256 UMDH probes have finished.
+# Only dispatch manually after an explicit, focused attribution need:
+# parser-only edits must NEVER automatically repeat 256-cycle Windows probes.
 on:
-  push:
-    branches: ['investigate/c545d-status-only-monitor-20261120']
-    paths:
-      - '.github/workflows/c545d-combo-gio-umdh-late360-ci.yml'
-      - 'tests/gio_appinfo_umdh_gate_probe.c'
-      - 'tests/Invoke-C545DGioUmdhStackGate.ps1'
   workflow_dispatch:
 permissions:
   contents: read
