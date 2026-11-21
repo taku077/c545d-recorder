@@ -3,15 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `0e73e6d53c8ea45fc28c54432cc89d6940e7c1e5`
-- **PR updated at (UTC):** `2026-11-21T16:13:30Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/0e73e6d53c8ea45fc28c54432cc89d6940e7c1e5/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `75b5a171ec9eb7c6ca7c977f396bc5f7199b6a54`
+- **PR updated at (UTC):** `2026-11-21T16:19:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/75b5a171ec9eb7c6ca7c977f396bc5f7199b6a54/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44923387690](https://github.com/taku077/c545d-recorder/actions/runs/44923387690) |
+| C545D isolated Windows UST/UMDH allocation-stack toolchain preflight (CI ONLY) | in_progress | [#44923963197](https://github.com/taku077/c545d-recorder/actions/runs/44923963197) |
 
 ## Current development findings from the active PR
 
