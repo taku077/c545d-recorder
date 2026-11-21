@@ -319,8 +319,45 @@ try {
     if($wideRequested -eq 1 -and $teleRequested -eq 1){break}
   }
   if($wideRequested -ne 1 -or $teleRequested -ne 1){throw 'REAL_WORKER_DUAL_RTSP_NOT_READY'}
-  # Ensure both feeds produce media before generating the GUI-style stop.
-  Start-Sleep -Seconds 4
+  # Collect four 1-second snapshots from the ONLY private staged gst-launch
+  # and its exact GUI Worker; no host-wide process sampling, raw command
+  # lines, camera secrets, or files are published. A four-second trace is
+  # operational telemetry, never evidence of a zero long-run leak.
+  $resourceFirst=$null
+  $resourceLast=$null
+  $ownedGstExe=[IO.Path]::GetFullPath((Join-Path $bin 'gst-launch-1.0.exe'))
+  for($sampleNo=0;$sampleNo -lt 4;$sampleNo++){
+    if($worker.HasExited){throw 'WORKER_EXITED_DURING_RESOURCE_SAMPLE'}
+    $gstOwned=@(Get-Process -Name 'gst-launch-1.0' -ErrorAction SilentlyContinue |
+      Where-Object {
+        try {
+          $_.Path -and [string]::Equals([IO.Path]::GetFullPath($_.Path),
+             $ownedGstExe,[StringComparison]::OrdinalIgnoreCase)
+        } catch { $false }
+      })
+    if($gstOwned.Count -ne 1){throw 'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE'}
+    $gstProcess=$gstOwned[0]
+    $worker.Refresh()
+    $gstProcess.Refresh()
+    $resourceSample=[pscustomobject]@{
+      worker_private_b=[long]$worker.PrivateMemorySize64
+      worker_handles=[int]$worker.HandleCount
+      gst_private_b=[long]$gstProcess.PrivateMemorySize64
+      gst_handles=[int]$gstProcess.HandleCount
+      gst_cpu_ms=[long][Math]::Round($gstProcess.TotalProcessorTime.TotalMilliseconds)
+    }
+    $gstProcess.Dispose()
+    if($sampleNo -eq 0){$resourceFirst=$resourceSample}
+    $resourceLast=$resourceSample
+    Start-Sleep -Milliseconds 1000
+  }
+  if($resourceFirst.worker_private_b -le 0 -or
+     $resourceFirst.gst_private_b -le 0 -or
+     $resourceFirst.worker_handles -le 0 -or
+     $resourceFirst.gst_handles -le 0 -or
+     $resourceLast.gst_cpu_ms -lt $resourceFirst.gst_cpu_ms){
+    throw 'OWNED_RESOURCE_SAMPLES_INVALID'
+  }
   if($worker.HasExited){throw 'WORKER_EXITED_BEFORE_CTRL_C'}
   $phase='GUI_CTRL_C_SIGNAL'
   $signalScript=(Resolve-Path -LiteralPath 'tools/Send-C545DPrivateConsoleStopCI.ps1').Path
@@ -359,6 +396,18 @@ try {
      $stopExists -ne 1 -or $readyRemoved -ne 1){
     throw 'GUI_REAL_WORKER_STOP_POLICY_FAILED'
   }
+  # Confirm that the native gst process from our exact isolated bin was
+  # released after GUI Ctrl+C, not merely that PowerShell Worker exited.
+  $remainingStagedGst=@(Get-Process -Name 'gst-launch-1.0' -ErrorAction SilentlyContinue |
+    Where-Object {
+      try {
+        $_.Path -and [string]::Equals([IO.Path]::GetFullPath($_.Path),
+          $ownedGstExe,[StringComparison]::OrdinalIgnoreCase)
+      } catch { $false }
+    }).Count
+  if($remainingStagedGst -ne 0){throw 'STAGED_GST_REMAINS_AFTER_STOP'}
+  $cpuDeltaMs=[long]($resourceLast.gst_cpu_ms-$resourceFirst.gst_cpu_ms)
+  Write-Output "C545D_GUI_RESOURCE_STAGE,samples=4,worker_private_first_b=$($resourceFirst.worker_private_b),worker_private_last_b=$($resourceLast.worker_private_b),worker_handles_first=$($resourceFirst.worker_handles),worker_handles_last=$($resourceLast.worker_handles),gst_private_first_b=$($resourceFirst.gst_private_b),gst_private_last_b=$($resourceLast.gst_private_b),gst_handles_first=$($resourceFirst.gst_handles),gst_handles_last=$($resourceLast.gst_handles),gst_cpu_delta_ms=$cpuDeltaMs,staged_gst_remaining=0,real_camera=0"
   $outFiles=$mp4
   $phase='MP4_VERIFY'
   $f=$outFiles[0]
@@ -399,7 +448,10 @@ try {
     'REAL_GUI_WORKER_NOT_READY','REAL_WORKER_DUAL_RTSP_NOT_READY',
     'WORKER_EXITED_BEFORE_CTRL_C','GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN',
     'GUI_WORKER_FINALIZE_TIMEOUT','GUI_TRANSCRIPT_NOT_UNIQUE',
-    'GUI_REAL_WORKER_STOP_POLICY_FAILED')
+    'GUI_REAL_WORKER_STOP_POLICY_FAILED',
+    'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
+    'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
+    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP')
   $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
   Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
   throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
