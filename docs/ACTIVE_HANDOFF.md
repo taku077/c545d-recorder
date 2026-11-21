@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44883405114](https://github.com/taku077/c545d-recorder/actions/runs/44883405114) |
+| C545D real GUI worker Ctrl+C EOS dual localhost RTSP Windows CI ONLY | in_progress | [#44883402808](https://github.com/taku077/c545d-recorder/actions/runs/44883402808) |
 
 ## Current development findings from the active PR
 
