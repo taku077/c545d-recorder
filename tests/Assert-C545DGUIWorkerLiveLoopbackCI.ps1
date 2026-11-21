@@ -138,11 +138,18 @@ try {
     'if([IO.File]::ReadAllText((Join-Path $OwnedStage ''.c545d-ci-owned'')) -cne ''CI_MIRROR_ONLY_NOT_FOR_EXECUTION''){exit 3}',
     '[IO.File]::WriteAllText($phase,''GUARDS_PASS'')',
     '$env:LOCALAPPDATA=Join-Path $OwnedStage ''ci-localappdata''',
+    '[IO.File]::WriteAllText($phase,''LOCALAPPDATA_SET'')',
     '$conf=Join-Path $env:LOCALAPPDATA ''C545D_GStreamer''',
+    '[IO.File]::WriteAllText($phase,''CONFIG_PATH_BUILT'')',
     '$secret=Join-Path $conf ''camera_password.dpapi''',
+    '[IO.File]::WriteAllText($phase,''SECRET_PATH_BUILT'')',
     'if(Test-Path -LiteralPath $secret){exit 3}',
+    '[IO.File]::WriteAllText($phase,''BEFORE_DPAPI'')',
     '$fake=ConvertTo-SecureString ''CI_DUMMY_NOT_REAL'' -AsPlainText -Force',
-    'ConvertFrom-SecureString $fake | Set-Content -LiteralPath $secret -Encoding ASCII',
+    '[IO.File]::WriteAllText($phase,''SECURESTRING_CREATED'')',
+    '$cipher=ConvertFrom-SecureString $fake',
+    '[IO.File]::WriteAllText($phase,''DPAPI_ENCRYPTED'')',
+    '$cipher | Set-Content -LiteralPath $secret -Encoding ASCII',
     'if(-not (Test-Path -LiteralPath $secret -PathType Leaf)){exit 3}',
     '[IO.File]::WriteAllText($phase,''DUMMY_DPAPI_WRITTEN'')',
     'try {',
@@ -214,6 +221,8 @@ try {
     $bootFile=Join-Path $stage 'ci-bootstrap-phase'
     $phaseValue=if(Test-Path -LiteralPath $bootFile){[IO.File]::ReadAllText($bootFile)}else{'NO_BOOTSTRAP_PHASE'}
     $allowed=@('NO_BOOTSTRAP_PHASE','BOOTSTRAP_ENTER','GUARDS_PASS',
+       'LOCALAPPDATA_SET','CONFIG_PATH_BUILT','SECRET_PATH_BUILT',
+       'BEFORE_DPAPI','SECURESTRING_CREATED','DPAPI_ENCRYPTED',
        'DUMMY_DPAPI_WRITTEN','WORKER_RETURNED_FAILURE',
        'WORKER_RETURNED_SUCCESS','WORKER_THREW')
     if($phaseValue -notin $allowed){$phaseValue='UNEXPECTED_PHASE'}
