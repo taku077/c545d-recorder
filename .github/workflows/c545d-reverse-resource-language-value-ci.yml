@@ -1,9 +1,5 @@
 name: C545D reverse-language real MSIX original getter eligibility probe (CI ONLY)
 on:
-  push:
-    branches: ['investigate/c545d-status-only-monitor-20261120']
-    paths:
-      - '.github/workflows/c545d-reverse-resource-language-value-ci.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -59,7 +55,7 @@ jobs:
             # Do not upload raw package installer logs or environment.
             if(Test-Path -LiteralPath $raw) {
               Get-Content -LiteralPath $raw | Where-Object {
-                $_ -match '^(C545D_RESOURCE_NAME_REVERSE,|C545D_RESOURCE_NAME_INCONCLUSIVE,|C545D_RESOURCE_(OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE|CI_CLEANUP_EXECUTED),)'
+                $_ -match '^(C545D_RESOURCE_NAME_REVERSE,|C545D_RESOURCE_NAME_INCONCLUSIVE,|C545D_RESOURCE_(OS_ADD_OBSERVATION|OS_REMOVE_OBSERVATION|PACKAGE_PROBE_COMPLETE),|C545D_RESOURCE_CI_CLEANUP_EXECUTED=)'
               } | Set-Content -LiteralPath $numeric -Encoding utf8
             }
             Remove-Item -LiteralPath $raw -Force -ErrorAction SilentlyContinue
