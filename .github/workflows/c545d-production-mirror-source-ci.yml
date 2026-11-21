@@ -1,0 +1,91 @@
+name: C545D production Record.ps1 exact mirror source CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tools/New-C545DIsolatedProductionMirrorCI.ps1'
+      - 'Record.ps1'
+      - 'CommonSettings.ps1'
+      - 'tests/check_c545d_recording_contract.py'
+      - '.github/workflows/c545d-production-mirror-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  exact-mirror-without-camera:
+    runs-on: windows-2022
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/pinned-candidate
+      - name: Validate pure source mirroring and three refusal controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $script='tools/New-C545DIsolatedProductionMirrorCI.ps1'
+          $source=(Resolve-Path Record.ps1).Path
+          $settings=(Resolve-Path CommonSettings.ps1).Path
+          $candidate=(Resolve-Path artifacts/pinned-candidate/gio-2.0-0.dll).Path
+          $expectedSha='67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD'
+          if((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -cne $expectedSha){throw 'Saved candidate SHA differs'}
+          $tokens=$null;$parseErrors=$null
+          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count -ne 0){throw 'CI mirror PowerShell syntax invalid'}
+          $pinned='C545D_PRODUCTION_MIRROR,rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1,host_executed=0,rtsp_contacted=0,install_approved=0,live_tapo_authorized=0,reason=CI_ONLY_MIRROR_PASS'
+          $root=$env:RUNNER_TEMP
+          function NewFixture([bool]$alterCandidate,[bool]$junction){
+            $stage=Join-Path $root ('c545d-ci-production-mirror-'+[guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $stage | Out-Null
+            [IO.File]::WriteAllText((Join-Path $stage '.c545d-ci-owned'),'CI_MIRROR_ONLY_NOT_FOR_EXECUTION')
+            $bin=Join-Path $stage 'bin'
+            if($junction){
+              $external=Join-Path $root ('outside-fixture-'+[guid]::NewGuid().ToString('N'))
+              New-Item -ItemType Directory -Path $external | Out-Null
+              New-Item -ItemType Junction -Path $bin -Target $external | Out-Null
+            } else {
+              New-Item -ItemType Directory -Path $bin | Out-Null
+            }
+            Copy-Item (Join-Path $env:SystemRoot 'System32\ping.exe') (Join-Path $bin 'gst-launch-1.0.exe')
+            Copy-Item (Join-Path $env:SystemRoot 'System32\ping.exe') (Join-Path $bin 'gst-inspect-1.0.exe')
+            Copy-Item $candidate (Join-Path $bin 'gio-2.0-0.dll')
+            if($alterCandidate){[IO.File]::AppendAllText((Join-Path $bin 'gio-2.0-0.dll'),'0')}
+            return $stage
+          }
+          function Check([string]$label,[string]$src,[string]$stage,[int]$expectedCode,[string]$expected){
+            $lines=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script -RecordSource $src -SettingsSource $settings -StageRoot $stage)
+            if($LASTEXITCODE -ne $expectedCode -or $lines.Count -ne 1 -or $lines[0] -cne $expected){
+              foreach($line in $lines){if(([string]$line).StartsWith('C545D_PRODUCTION_MIRROR,')){Write-Host $line}}
+              throw ('Unexpected gate: '+$label)
+            }
+          }
+          $stage=NewFixture $false $false
+          Check 'Exact mirror accepted' $source $stage 0 $pinned
+          $original=[IO.File]::ReadAllText($source)
+          $clone=[IO.File]::ReadAllText((Join-Path $stage 'Record.ps1'))
+          $quoted=(Join-Path $stage 'bin').Replace("'","''")
+          $injected='$bin = [IO.Path]::GetFullPath('''+$quoted+''')'
+          if(($original.Split(@('$bin = Find-GstBin'),[StringSplitOptions]::None).Count -ne 2) -or
+             $clone -cne $original.Replace('$bin = Find-GstBin',$injected)){throw 'Unexpected production source diff'}
+          if([IO.File]::ReadAllText((Join-Path $stage 'CommonSettings.ps1')) -cne
+             [IO.File]::ReadAllText($settings)){throw 'Source settings differ'}
+          python tests/check_c545d_recording_contract.py Record.ps1
+          if($LASTEXITCODE -ne 0){throw 'Original recording contract failed'}
+          python tests/check_c545d_recording_contract.py (Join-Path $stage 'Record.ps1')
+          if($LASTEXITCODE -ne 0){throw 'Mirror recording contract failed'}
+          $badSource=Join-Path $root 'Record.ps1'
+          [IO.File]::WriteAllText($badSource,$original.Replace('$bin = Find-GstBin','$bin = Get-Command gst-launch-1.0.exe'))
+          Check 'Changed source anchor blocked' $badSource (NewFixture $false $false) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=1').Replace('CI_ONLY_MIRROR_PASS','BAD_ANCHOR')
+          Check 'Modified candidate refused' $source (NewFixture $true $false) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','CANDIDATE_DIFFERENT')
+          Check 'Junction bin refused' $source (NewFixture $false $true) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','UNSAFE_BIN')
+          Write-Host 'C545D_PRODUCTION_MIRROR_CI_PASS,one_statement_delta=1,source_and_settings_unchanged=1,recording_contract_both_pass=1,changed_anchor_refused=1,tampered_candidate_refused=1,junction_refused=1,host_executed=0,live_tapo_authorized=0,installer_modified=0'
