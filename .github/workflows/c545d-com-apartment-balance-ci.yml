@@ -1,0 +1,38 @@
+name: C545D isolated Windows COM apartment balance contract (no GLib DLL)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_com_apartment_balance_ci.c'
+      - 'tests/patch_glib_2824_parser_com_balance_ci.py'
+      - '.github/workflows/c545d-com-apartment-balance-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-windows-com-contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Validate the diagnostic-only GLib 2.82.4 patch's source anchors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/patch_glib_2824_parser_com_balance_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Patch guard selftest failed'}
+      - name: Compile and run real Win32 STA, S_FALSE, MTA mismatch and legacy negative control
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /W4 /WX /MD /TC tests/c545d_com_apartment_balance_ci.c /Fe:c545d_com_apartment_balance_ci.exe /link ole32.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC independent COM contract build failed'}
+          $lines=@(& .\c545d_com_apartment_balance_ci.exe)
+          if($LASTEXITCODE -ne 0){throw 'Windows COM contract runtime failed'}
+          $expected='C545D_COM_APARTMENT_CONTRACT_PASS,STA_OK=1,STA_SFALSE=1,MTA_CHANGED_MODE_GUARDED=1,legacy_failure_exposed=1,GIO_DLL_UNTESTED=1,windows_runner_only=1,user_host_modified=0'
+          if(@($lines | Where-Object {$_ -ceq $expected}).Count -ne 1){throw 'Expected exact COM success marker missing'}
+          $lines | ForEach-Object {Write-Host $_}
+          Write-Host 'C545D_COM_APARTMENT_WIN_CI_PASS,real_com=1,old_GIO_binary_tested=0,new_windows_memory_runs=0,host_modified=0'
