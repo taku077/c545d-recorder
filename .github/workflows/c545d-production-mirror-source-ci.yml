@@ -89,3 +89,4 @@ jobs:
           Check 'Modified candidate refused' $source (NewFixture $true $false) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','CANDIDATE_DIFFERENT')
           Check 'Junction bin refused' $source (NewFixture $false $true) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','UNSAFE_BIN')
           Write-Host 'C545D_PRODUCTION_MIRROR_CI_PASS,one_statement_delta=1,source_and_settings_unchanged=1,recording_contract_both_pass=1,changed_anchor_refused=1,tampered_candidate_refused=1,junction_refused=1,host_executed=0,live_tapo_authorized=0,installer_modified=0'
+          exit 0
