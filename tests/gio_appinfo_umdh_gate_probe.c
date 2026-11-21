@@ -318,8 +318,12 @@ static int c545d_umdh_pause_cycle(int cycle)
     char marker[48], release[48];
     HANDLE h;
     int n;
-    if (!enabled || strcmp(enabled, "1") != 0 ||
-        (cycle != 192 && cycle != 256))
+    const char *early = getenv("C545D_UMDH_EARLY_GATE");
+    int early_mode = early && strcmp(early, "1") == 0;
+    if (!enabled || strcmp(enabled, "1") != 0)
+        return 0;
+    if (cycle != 0 && !(early_mode ? (cycle == 16) :
+                                  (cycle == 192 || cycle == 256)))
         return 0;
     snprintf(marker, sizeof(marker), "stage_%d.signal", cycle);
     snprintf(release, sizeof(release), "resume_%d.signal", cycle);
@@ -373,6 +377,10 @@ int main(int argc, char **argv)
     report_types("baseline", 0);
     report_heaps("baseline", 0);
     report_vm("baseline", 0);
+    if (c545d_umdh_pause_cycle(0) != 0) {
+        if (hkey) { RegDeleteValueW(hkey, value_name); RegCloseKey(hkey); }
+        return 9;
+    }
 
     for (i = 1; i <= cycle_count; i++) {
         /* Different data each iteration guarantees a LAST_SET notification. */
