@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tools/New-C545DIsolatedProductionMirrorCI.ps1'
+      - 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
       - 'Record.ps1'
       - 'CommonSettings.ps1'
       - 'tests/check_c545d_recording_contract.py'
@@ -88,5 +89,43 @@ jobs:
           Check 'Changed source anchor blocked' $badSource (NewFixture $false $false) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=1').Replace('CI_ONLY_MIRROR_PASS','BAD_ANCHOR')
           Check 'Modified candidate refused' $source (NewFixture $true $false) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','CANDIDATE_DIFFERENT')
           Check 'Junction bin refused' $source (NewFixture $false $true) 3 $pinned.Replace('rendered=1,exact_one_statement=1,source_syntax=1,candidate_pinned=1','rendered=0,exact_one_statement=0,source_syntax=0,candidate_pinned=0').Replace('CI_ONLY_MIRROR_PASS','UNSAFE_BIN')
+          # Second independent CI-only layer changes ONLY private output_folder
+          # in a mirrored CommonSettings.ps1; never alter production settings.
+          $overlayScript='tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
+          $overlayExpected='C545D_PRIVATE_OUTPUT_MIRROR,patched=1,single_assignment=1,source_syntax=1,private_only=1,host_executed=0,rtsp_contacted=0,install_approved=0,live_tapo_authorized=0,reason=CI_PRIVATE_OUTPUT_MIRROR_PASS'
+          $overlayLines=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $overlayScript -StageRoot $stage -OriginalSettingsSource $settings)
+          if($LASTEXITCODE -ne 0 -or $overlayLines.Count -ne 1 -or $overlayLines[0] -cne $overlayExpected){
+            foreach($line in $overlayLines){if(([string]$line).StartsWith('C545D_PRIVATE_OUTPUT_MIRROR,')){Write-Host $line}}
+            throw 'Private output overlay rejected valid fixture'
+          }
+          $originalSettings=[IO.File]::ReadAllText($settings)
+          $isolatedSettings=[IO.File]::ReadAllText((Join-Path $stage 'CommonSettings.ps1'))
+          $targetOutput=Join-Path $stage 'private-output'
+          $assignment='$s.output_folder = '''+$targetOutput.Replace("'","''")+''''
+          if($originalSettings.Split(@('return $s'),[StringSplitOptions]::None).Count -ne 2 -or
+             $isolatedSettings -cne $originalSettings.Replace('return $s',$assignment+[Environment]::NewLine+'    return $s')){
+            throw 'Private settings changed anything beyond one output-folder assignment'
+          }
+          $fakeHome=Join-Path $stage 'synthetic-config-home'
+          $fakeSettings=Join-Path $fakeHome 'C545D_GStreamer'
+          New-Item -ItemType Directory -Path $fakeSettings -Force | Out-Null
+          [IO.File]::WriteAllText((Join-Path $fakeSettings 'settings.json'),
+            '{"camera_ip":"192.0.2.11","camera_user":"ci_fixture","output_folder":"C:\\outside-do-not-use"}')
+          $oldLocal=$env:LOCALAPPDATA
+          try {
+            $env:LOCALAPPDATA=$fakeHome
+            . (Join-Path $stage 'CommonSettings.ps1')
+            $settingsFixture=Read-C545DSettings
+            if($settingsFixture.output_folder -cne $targetOutput){throw 'Settings were not redirected into private output'}
+          } finally {
+            $env:LOCALAPPDATA=$oldLocal
+          }
+          $again=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $overlayScript -StageRoot $stage -OriginalSettingsSource $settings)
+          $blocked=$overlayExpected.Replace('patched=1,single_assignment=1,source_syntax=1','patched=0,single_assignment=0,source_syntax=0').Replace('CI_PRIVATE_OUTPUT_MIRROR_PASS','SOURCE_ALREADY_CHANGED')
+          if($LASTEXITCODE -ne 3 -or $again.Count -ne 1 -or $again[0] -cne $blocked){
+            throw 'Second settings overlay was not refused'
+          }
+          if([IO.File]::ReadAllText($settings) -cne $originalSettings){throw 'Original settings script changed'}
+          Write-Host 'C545D_PRIVATE_OUTPUT_ISOLATION_CI_PASS,one_settings_assignment=1,synthetic_output_redirected=1,rerun_refused=1,original_settings_unchanged=1,credentials_read=0,recording_executed=0'
           Write-Host 'C545D_PRODUCTION_MIRROR_CI_PASS,one_statement_delta=1,source_and_settings_unchanged=1,recording_contract_both_pass=1,changed_anchor_refused=1,tampered_candidate_refused=1,junction_refused=1,host_executed=0,live_tapo_authorized=0,installer_modified=0'
           exit 0
