@@ -3,16 +3,19 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5e3348b9d2af7ece5f5449d3a2d72e0fb6b0456b`
-- **PR updated at (UTC):** `2026-11-21T14:17:47Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5e3348b9d2af7ece5f5449d3a2d72e0fb6b0456b/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f38978b602f531f5da3efa0d8b9146866e98ad90`
+- **PR updated at (UTC):** `2026-11-21T14:20:00Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f38978b602f531f5da3efa0d8b9146866e98ad90/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44913191027](https://github.com/taku077/c545d-recorder/actions/runs/44913191027) |
-| C545D archived original WinRT reverse resource language value audit (no rerun) | success | [#44913187802](https://github.com/taku077/c545d-recorder/actions/runs/44913187802) |
+| C545D active development handoff auto-refresh | in_progress | [#44913379045](https://github.com/taku077/c545d-recorder/actions/runs/44913379045) |
+| C545D real signed same-FullName localized DisplayName resource-refresh CI ONLY | in_progress | [#44913375858](https://github.com/taku077/c545d-recorder/actions/runs/44913375858) |
+| C545D real resource-only MSIX event provenance Windows CI ONLY | in_progress | [#44913375791](https://github.com/taku077/c545d-recorder/actions/runs/44913375791) |
+| C545D real resource-only MSIX GAppInfoMonitor pre-query regression CI ONLY | in_progress | [#44913375773](https://github.com/taku077/c545d-recorder/actions/runs/44913375773) |
+| C545D status-only notifier genuine MSIX event regression CI ONLY | in_progress | [#44913375747](https://github.com/taku077/c545d-recorder/actions/runs/44913375747) |
 
 ## Current development findings from the active PR
 
