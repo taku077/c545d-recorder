@@ -5,6 +5,7 @@ on:
     paths:
       - 'tests/analyze_gio_cached_residual_plateau_guard.py'
       - 'tests/analyze_gio_cached_residual_epochs.py'
+      - 'tests/analyze_gio_cached_gobject_cleanup.py'
       - '.github/workflows/c545d-archived-residual-late-epochs-ci.yml'
   workflow_dispatch:
 permissions:
@@ -48,6 +49,28 @@ jobs:
           grep -qx 'C545D_LATE_EPOCH_GUARD_PASS,old_windows_runs=3,new_windows_runs=0,control_subtracted=1,private_late_positive=2of3,exact_360_bin_late_positive=3of3,no_proven_zero_leak=1,no_proven_infinite_plateau=1,allocation_stacks_attributed=0,host_validated=0' artifacts/numeric/c545d_late_epoch_gate.txt
           test "$(grep -c '^C545D_LATE_EPOCH_NUMERIC,' artifacts/numeric/c545d_late_epoch_gate.txt)" -eq 3
           echo 'C545D_CACHED_LATE_EPOCH_REANALYSIS_PASS,reused_original_windows_artifacts=3,new_windows_runs=0,real_camera=0'
+      - name: Audit the seven live GObject types at archived 256 and optional cleanup points
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_gio_cached_gobject_cleanup.py --selftest
+          python3 tests/analyze_gio_cached_gobject_cleanup.py --root saved | tee artifacts/numeric/c545d_gobject_cleanup_numeric.txt
+          test "$(grep -c '^C545D_SAVED_GOBJECT_COHORT,' artifacts/numeric/c545d_gobject_cleanup_numeric.txt)" -eq 6
+          grep -E '^C545D_SAVED_GOBJECT_CLEANUP_PASS,archived_windows_runs=3,arms=2,modes=2,types=7,cleanup_available=[01],new_windows_runs=0,MSVC_Combo_GObject_257_258_unavailable=1,PrivateUsage_owner_proven=0,user_host_modified=0        if: success()
+        with:
+          name: c545d-saved-late-epoch-no-windows-numeric-only
+          path: artifacts/numeric/c545d_late_epoch_gate.txt
+          if-no-files-found: error
+          retention-days: 7
+ artifacts/numeric/c545d_gobject_cleanup_numeric.txt
+          echo 'C545D_SAVED_GOBJECT_CLEANUP_CI_PASS,archived_runs=3,new_windows_runs=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-gobject-cleanup-aggregate-no-windows
+          path: artifacts/numeric/c545d_gobject_cleanup_numeric.txt
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         if: success()
         with:
