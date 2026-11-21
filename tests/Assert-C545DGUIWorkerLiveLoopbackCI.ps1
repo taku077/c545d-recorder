@@ -193,7 +193,7 @@ try {
   $svrOut=Join-Path $stage 'server.stdout'
   $svrErr=Join-Path $stage 'server.stderr'
   $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $temp -RedirectStandardOutput $svrOut -RedirectStandardError $svrErr
-  $ready='C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=330,pcma_buffers_per_stream=550,real_camera=0'
+  $rtspReadyLine='C545D_FINITE_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,video_frames_per_stream=330,pcma_buffers_per_stream=550,real_camera=0'
   for($i=0;$i -lt 160;$i++){
     Start-Sleep -Milliseconds 100
     if($server.HasExited){break}
@@ -202,7 +202,7 @@ try {
         $fd=[IO.File]::Open($svrOut,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
         try {
           $rdr=[IO.StreamReader]::new($fd)
-          $serverReady=$rdr.ReadToEnd().Contains($ready)
+          $serverReady=$rdr.ReadToEnd().Contains($rtspReadyLine)
         } finally {$fd.Dispose()}
       } catch [IO.IOException] {}
     }
