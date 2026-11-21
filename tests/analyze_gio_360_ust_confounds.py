@@ -19,10 +19,10 @@ END = ("cycle", 256)
 MODES = ("core", "combo")
 ARMS = ("nochange", "registry")
 
-def treatment_effect(data: dict[str, dict], metric: str) -> int:
+def treatment_effect(data: dict[str, dict]) -> int:
     # The actual SAME Windows CI run's nochange counterfactual.
-    return ((data["registry"][metric][END] - data["registry"][metric][START])
-          - (data["nochange"][metric][END] - data["nochange"][metric][START]))
+    return ((data["registry"][END] - data["registry"][START])
+          - (data["nochange"][END] - data["nochange"][START]))
 
 def inspect(group: dict[str, list[str]]) -> list[str]:
     # Full content, all four 256-cycle arms and two separate 16-cycle parity
@@ -45,7 +45,7 @@ def inspect(group: dict[str, list[str]]) -> list[str]:
             )
         effect = treatment_effect({
             arm: data[arm]["bins"][360] for arm in ARMS
-        }, 360)
+        })
         expected = {"core": 7, "combo": 5}[mode]
         if effect != expected:
             raise ValueError("original same-run 360B controlled effect changed")
@@ -75,10 +75,7 @@ def selftest() -> None:
     def effect(no_a, no_b, reg_a, reg_b):
         points = {"nochange": {START: no_a, END: no_b},
                   "registry": {START: reg_a, END: reg_b}}
-        return treatment_effect({
-            "nochange": {360: points["nochange"]},
-            "registry": {360: points["registry"]}
-        }, 360)
+        return treatment_effect(points)
     assert effect(46, 45, 49, 49) == 1
     assert effect(46, 45, 49, 54) == 6
     assert effect(46, 45, 49, 48) == 0
