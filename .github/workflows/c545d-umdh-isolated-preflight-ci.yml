@@ -1,0 +1,98 @@
+name: C545D isolated Windows UST/UMDH allocation-stack toolchain preflight (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_umdh_stack_preflight.c'
+      - '.github/workflows/c545d-umdh-isolated-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-toolchain:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Discover Debugging Tools and test isolated synthetic allocation stacks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          function Find-DebuggerTool([string]$name) {
+            $c=Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+            if($c){return $c.Source}
+            foreach($folder in @(
+              "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64",
+              "$env:ProgramFiles\Windows Kits\10\Debuggers\x64",
+              "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x86"
+            )) {
+              $path=Join-Path $folder $name
+              if(Test-Path $path -PathType Leaf){return $path}
+            }
+            return $null
+          }
+          $g=Find-DebuggerTool 'gflags.exe'
+          $u=Find-DebuggerTool 'umdh.exe'
+          $gf=[int][bool]$g; $uf=[int][bool]$u
+          if(-not($g -and $u)){
+            Write-Host "C545D_UMDH_PREFLIGHT,gflags=$gf,umdh=$uf,stack_capture=0,reason=TOOLS_ABSENT,CI_only=1,host_modified=0"
+            exit 0
+          }
+          $exeName='c545d_umdh_stack_preflight.exe'
+          $ifeo="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\$exeName"
+          # Never overwrite inherited machine policy even on a disposable runner.
+          if(Test-Path $ifeo){throw 'Synthetic image IFEO already exists; refusing change'}
+          $dir=Join-Path $env:RUNNER_TEMP 'c545d_umdh_synthetic'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          & cl.exe /nologo /W4 /MT /O2 /TC tests/c545d_umdh_stack_preflight.c "/Fe:$dir\$exeName" | Out-Null
+          if($LASTEXITCODE -ne 0){throw 'Synthetic MSVC build failed'}
+          $proc=$null; $ustChanged=$false
+          function Wait-Flag([string]$file) {
+            for($n=0;$n -lt 200;$n++){
+              if(Test-Path $file -PathType Leaf){return}
+              Start-Sleep -Milliseconds 100
+            }
+            throw 'Synthetic process handshake timed out'
+          }
+          try {
+            & $g /i $exeName +ust > $null 2>&1
+            if($LASTEXITCODE -ne 0){throw 'UST enable command failed'}
+            $ustChanged=$true
+            $env:OANOCACHE='1'
+            $proc=Start-Process -FilePath (Join-Path $dir $exeName) -WorkingDirectory $dir -PassThru
+            Wait-Flag (Join-Path $dir 'ready.signal')
+            $before=Join-Path $dir 'before.txt'; $after=Join-Path $dir 'after.txt'
+            & $u "-p:$($proc.Id)" "-f:$before" > $null 2>&1
+            if($LASTEXITCODE -ne 0 -or -not(Test-Path $before)){throw 'UMDH baseline capture failed'}
+            New-Item -ItemType File -Force -Path (Join-Path $dir 'allocate.signal') | Out-Null
+            Wait-Flag (Join-Path $dir 'allocated.signal')
+            & $u "-p:$($proc.Id)" "-f:$after" > $null 2>&1
+            if($LASTEXITCODE -ne 0 -or -not(Test-Path $after)){throw 'UMDH allocation capture failed'}
+            $diff=Join-Path $dir 'diff.txt'
+            & $u $before $after > $diff 2>&1
+            if($LASTEXITCODE -ne 0){throw 'UMDH diff failed'}
+            # Do not print or upload raw addresses, symbol paths, heap snapshots
+            # or user data. Only count positive stack deltas in local CI output.
+            $matched=([regex]::Matches(
+              [IO.File]::ReadAllText($diff),
+              '(?im)^\s*\+\s+(?:0x)?[0-9a-f]+\s+\([^)]*\)\s+[0-9a-f]+\s+allocs\s+BackTrace[0-9a-f]+'
+            )).Count
+            if($matched -lt 1){throw 'No positive UMDH allocation-stack delta found'}
+            Write-Host "C545D_UMDH_PREFLIGHT,gflags=1,umdh=1,stack_capture=1,positive_stacks=$matched,CI_only=1,host_modified=0,raw_uploaded=0"
+          } finally {
+            if($proc){
+              New-Item -ItemType File -Force -Path (Join-Path $dir 'exit.signal') | Out-Null
+              if(-not $proc.WaitForExit(3000)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+            }
+            if($ustChanged){
+              & $g /i $exeName -ust > $null 2>&1
+              if($LASTEXITCODE -ne 0){throw 'Runner UST cleanup failed'}
+              # Only remove a per-image key which was proven absent before test.
+              if(Test-Path $ifeo){Remove-Item $ifeo -Recurse -Force}
+            }
+            Remove-Item Env:OANOCACHE -ErrorAction SilentlyContinue
+            Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+          }
