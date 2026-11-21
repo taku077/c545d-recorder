@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44898663009](https://github.com/taku077/c545d-recorder/actions/runs/44898663009) |
+| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#44898660863](https://github.com/taku077/c545d-recorder/actions/runs/44898660863) |
 
 ## Current development findings from the active PR
 
