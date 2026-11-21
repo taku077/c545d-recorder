@@ -548,6 +548,20 @@ $encrypted=ConvertFrom-SecureString $pass
   $nativeMatches=[regex]::Matches($text,'GStreamer returned; exitCode=(-?[0-9]+); stopMarker=(True|False)')
   $nativeExit=if($nativeMatches.Count -gt 0){[int]$nativeMatches[$nativeMatches.Count-1].Groups[1].Value}else{999}
   $markerAtReturn=[int]($nativeMatches.Count -gt 0 -and $nativeMatches[$nativeMatches.Count-1].Groups[2].Value -ceq 'True')
+  # Original worker/recorder already log Windows console handler counters.
+  # Publish only bounded scalar counts, never the transcript or sensitive
+  # host paths, private camera settings, or credential-bearing process args.
+  $nativeCtrlCLog=[regex]::Matches($text,'GStreamer returned; exitCode=-?[0-9]+; stopMarker=(?:True|False); consoleCtrlCEvents=([0-9]+)')
+  $pendingCtrlCLog=[regex]::Matches($text,'Record\.ps1 returned; stopMarker=(?:True|False); pendingCtrlCEvents=([0-9]+)')
+  $workerConsoleEventsAtGst=-1
+  $workerConsoleEventsPending=-1
+  if($nativeCtrlCLog.Count -gt 0){
+    $workerConsoleEventsAtGst=[int]$nativeCtrlCLog[$nativeCtrlCLog.Count-1].Groups[1].Value
+  }
+  if($pendingCtrlCLog.Count -gt 0){
+    $workerConsoleEventsPending=[int]$pendingCtrlCLog[$pendingCtrlCLog.Count-1].Groups[1].Value
+  }
+  Write-Output "C545D_GUI_CONSOLE_HANDLER_STAGE,events_at_gst_return=$workerConsoleEventsAtGst,events_pending_after_record=$workerConsoleEventsPending,worker_exit=$recordExit,real_camera=0"
   if($CiLiveNamer){
     $phase='LIVE_NAMER_DRAIN'
     $finalRx='^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_\d{2}-\d{2}(?:_\d{2})?\.mp4$'
