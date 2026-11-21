@@ -1,0 +1,55 @@
+name: C545D three archived GIO source-stage heap bins (no Windows rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_saved_stage_bins.py'
+      - '.github/workflows/c545d-saved-stage-heap-bins-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  three-existing-archives:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44579422831
+          repository: taku077/c545d-recorder
+          name: c545d-gio-residual-stage-isolation
+          github-token: ${{ github.token }}
+          path: saved/44579422831
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44555197012
+          repository: taku077/c545d-recorder
+          name: c545d-gio-residual-stage-isolation
+          github-token: ${{ github.token }}
+          path: saved/44555197012
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44537380799
+          repository: taku077/c545d-recorder
+          name: c545d-gio-residual-stage-isolation
+          github-token: ${{ github.token }}
+          path: saved/44537380799
+      - name: Reanalyze exact-size bins in existing four stage-ablation arms only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_saved_stage_bins.py --selftest
+          python tests/analyze_gio_saved_stage_bins.py --root saved | tee artifacts/numeric/saved_source_stage_bins.txt
+          grep -qx 'C545D_SAVED_STAGE_BIN64_PASS,archived_windows_runs=3,stages=4,matched_arms=2,bin_sizes=6,new_windows_runs=0,msvc_parity_not_proven=1,allocation_owner_unproven=1,host_approved=0' artifacts/numeric/saved_source_stage_bins.txt
+          test "$(grep -c '^C545D_SAVED_STAGE_BIN64,' artifacts/numeric/saved_source_stage_bins.txt)" -eq 72
+          echo 'C545D_SAVED_STAGE_BIN_AUDIT_PASS,prior_windows_runs_reused=3,new_windows_runs=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-3run-stage-bin-numeric-only
+          path: artifacts/numeric/saved_source_stage_bins.txt
+          retention-days: 7
+          if-no-files-found: error

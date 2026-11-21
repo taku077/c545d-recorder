@@ -1,0 +1,75 @@
+name: C545D production mirror real pinned GStreamer media CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-production-mirror-real-sdk-media-ci.yml'
+      - 'tests/Assert-C545DProductionMirrorRealSdkCI.ps1'
+      - 'tests/Assert-GStreamerOverlaySplitMux.ps1'
+      - 'tools/New-C545DIsolatedProductionMirrorCI.ps1'
+      - 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
+      - 'Record.ps1'
+      - 'CommonSettings.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pinned-real-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/pinned-candidate
+      - name: Install official SDK on isolated Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk-1.28.8.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item -LiteralPath $installer).Length -lt 15000000){throw 'SDK installer incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          "C545D_MIRROR_SDK=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Validate source, real app-local DLL, synthetic two H264 plus AAC MP4 and rollback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script=(Resolve-Path tests/Assert-C545DProductionMirrorRealSdkCI.ps1).Path
+          $tok=$null;$errs=$null
+          [Management.Automation.Language.Parser]::ParseFile($script,[ref]$tok,[ref]$errs) | Out-Null
+          if($errs.Count -ne 0){throw 'Integrated script PowerShell syntax invalid'}
+          $candidate=(Resolve-Path artifacts/pinned-candidate/gio-2.0-0.dll).Path
+          $manifest=(Resolve-Path artifacts/pinned-candidate/manifest.txt).Path
+          $ref=(Resolve-Path docs/CORE_GIO_SDK_1288_REFERENCE.json).Path
+          $rows=@(& pwsh -NoProfile -NonInteractive -File $script -SdkRoot $env:C545D_MIRROR_SDK -CandidateDll $candidate -CandidateManifest $manifest -ReferenceManifest $ref)
+          # A child failure can reveal ONLY these fixed numeric classification
+          # booleans; never forward full camera/host paths or native stderr.
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_PRESTOP_FAILURE_DIAG,native_nonzero=1,direct_native_invocation=1,settings_error=[01],dpapi_error=[01],element_error=[01],decoder_error=[01],aac_error=[01],graph_observed=[01],stop_observed=[01]$'){
+              Write-Host $row
+            }
+          }
+          if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1 -or
+             $rows[0] -cnotmatch '^C545D_PRODUCTION_MIRROR_REAL_SDK_CI_PASS,source_mirror=1,private_settings_output=1,official_sdk_pinned=1,real_private_exe=1,real_candidate_gio_loaded=1,giosink_wav=1,synthetic_dual_rtp_h264_aac=1,segments=[2-8],mp4_decode=1,eos=1,originals_unchanged=1,owned_rollback=1,recorder_prestop_preflight=1,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0$'){
+            throw 'Strict integrated media runtime result mismatch'
+          }
+          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
+          $rows[0] | Set-Content artifacts/numeric/mirror_real_sdk.txt -Encoding ascii
+          Write-Host $rows[0]
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-production-mirror-real-sdk-NOT-FOR-HOST-numeric
+          path: artifacts/numeric/mirror_real_sdk.txt
+          retention-days: 7
+          if-no-files-found: error

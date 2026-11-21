@@ -1,0 +1,31 @@
+name: C545D archive-only localized WinRT DisplayName numeric classification
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_saved_localized_display.py'
+      - '.github/workflows/c545d-saved-localized-display-analysis-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  classify-prior-failure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44911762107
+          name: c545d-real-resource-localized-display-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved/44911762107
+      - name: Classify original WinRT getter values from saved sanitized flags only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/analyze_c545d_saved_localized_display.py --selftest
+          python tests/analyze_c545d_saved_localized_display.py --input saved/44911762107/resource_gio_numeric.txt
+          echo 'C545D_ARCHIVED_LOCALIZED_CLASSIFICATION_CI_PASS,windows_reruns=0,host_changes=0'

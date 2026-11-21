@@ -1,0 +1,80 @@
+name: C545D actual gst-launch app-local GIO loader proof (CI only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/Assert-C545DGioProcessLoaderCI.ps1'
+      - '.github/workflows/c545d-core-gio-actual-process-loader-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  actual-gst-launch-module:
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - name: Fetch the exact official GStreamer 1.28.8 SDK into disposable runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-1.28.8.exe'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          Invoke-WebRequest $url -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'GStreamer SDK download truncated'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'GStreamer SDK installer failure'}
+          $ref=Join-Path $sdk 'bin\gio-2.0-0.dll'
+          $rc=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core-rc/manifest.txt -Raw
+          $referenceSha=(Get-FileHash -LiteralPath $ref -Algorithm SHA256).Hash
+          $candidateSha=(Get-FileHash -LiteralPath $rc -Algorithm SHA256).Hash
+          if($referenceSha -ne 'A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B' -or
+             $candidateSha -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$referenceSha") -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$candidateSha")){
+            throw 'Official SDK/candidate artifact integrity or provenance mismatch'
+          }
+          "C545D_GIO_LOADER_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'C545D_GIO_LOADER_INPUT_SHA_PASS,official_1288=1,candidate_rc=1'
+      - name: Inspect syntax and observe module path of live official and isolated gst-launch processes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t=$null
+          $parseErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Assert-C545DGioProcessLoaderCI.ps1).Path,
+            [ref]$t,[ref]$parseErrors)|Out-Null
+          if($parseErrors.Count -gt 0){throw 'CI module inspector script syntax error'}
+          New-Item -ItemType Directory -Path artifacts/numeric -Force | Out-Null
+          $work=Join-Path $env:RUNNER_TEMP 'c545d-loader-proof'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $rc=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Assert-C545DGioProcessLoaderCI.ps1 -SdkRoot $env:C545D_GIO_LOADER_SDK_ROOT -CandidateDll $rc -WorkRoot $work |
+            Tee-Object -FilePath artifacts/numeric/actual_loader.txt
+          if($LASTEXITCODE -ne 0){throw 'Actual gst-launch process loader isolation failed'}
+          $txt=Get-Content artifacts/numeric/actual_loader.txt -Raw
+          if($txt -notmatch 'C545D_GIO_LOADER_OBSERVATION,mode=installed,module_expected=1,output_valid=1,process_exit=0,CI_only=1' -or
+             $txt -notmatch 'C545D_GIO_LOADER_OBSERVATION,mode=isolated,module_expected=1,output_valid=1,process_exit=0,CI_only=1' -or
+             $txt -notmatch 'C545D_GIO_REAL_PROCESS_LOADER_CI_PASS,installed_exe_uses_official=1,PATH_override_did_not_bypass_app_dir=1,isolated_exe_uses_candidate=1,live_module_path_confirmed=1,original_sdk_unchanged=1,synthetic_GIO_audio_write=1,recorder_host_modified=0'){
+            throw 'Missing strict actual process DLL path observations'
+          }
+          Write-Host 'C545D_GIO_ACTUAL_PROCESS_CI_PASS,ordinary_launcher_selects_official=1,private_launcher_selects_candidate=1,no_host_action=1'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-core-gio-live-module-path-numeric-only
+          path: artifacts/numeric/actual_loader.txt
+          retention-days: 7
+          if-no-files-found: error

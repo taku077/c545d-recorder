@@ -1,0 +1,49 @@
+# C545D actual Record.ps1 + finite localhost dual-RTSP Windows CI — development gate
+
+**CI-only, not approved for user's Windows 10 recording host.** Do not install candidate DLLs, change user settings/registry, stop active capture or touch actual Tapo RTSP URLs, credentials or video.
+
+## Evidence from first actual source-mirror live RTSP experiments (2026-11-21)
+
+- [CI #44880791076 FAILED](https://github.com/taku077/c545d-recorder/actions/runs/44880791076) but entered the real source-mirrored Record.ps1 recording path, launched once, returned, generated one private synthetic MP4, and wrote a post-start STOP marker. The test failed BEFORE media integrity checking because the recorder did not classify the return as an authorized stop. This is not a candidate GIO or Win10 host failure.
+- [CI #44881056736 FAILED](https://github.com/taku077/c545d-recorder/actions/runs/44881056736) added exact numeric diagnostics: launch=1, launch_count=1, returned=1, final STOP marker=1, **stop_at_gst_return=0**, **policy_reconnect=1**, **gst_exit=0**, eos_message=0, MP4_count=1, first_mp4_bytes=6,549,174, rtsp_error=0, record_exit_nonzero=0. The safe stop marker was not set when GStreamer returned; the later marker prevented an additional RTSP attempt, but the recorder correctly evaluated its *current* state as reconnect. Do NOT interpret this as proven MP4 decode or user-host stop failure.
+- The initial CI test-controller watched for an MP4 growing beyond 5,000 bytes before writing the stop marker. That test strategy was too late or variable because MP4 container writes can be delayed. It is not an error in the unchanged production STOP policy.
+- The revised CI-only source [e17d856](https://github.com/taku077/c545d-recorder/commit/e17d856234d4de5e52d83e166b9726e1e0f74fb7) now has GStreamer media-configure callbacks emitting fixed-safe numeric stream1/stream6 mount evidence when actual RTSP sessions are constructed. The new stop watcher [a410376](https://github.com/taku077/c545d-recorder/commit/a410376893e5d7f93c190f53bc1511e4a6da51d9) reads only that private CI server output and sets the authorized stop marker 6 seconds AFTER *both* RTSP sessions exist, before the 22-second finite sources conclude; it records explicit wide/tele requested flags and requires stop_at_gst_return=1 plus stop policy. Workflow whitelist updated in [f209c35](https://github.com/taku077/c545d-recorder/commit/f209c3558acd00e41711cec9cdb4b774d4203223).
+- Follow-up [Windows CI #44881283742](https://github.com/taku077/c545d-recorder/actions/runs/44881283742) must be checked for final numeric results before claiming success. Two overlapping intermediate builds #44881244220/#44881275484 were also started as files were updated; prioritize the latest coherent HEAD. Do not repeat successful pinned 6-core fingerprints or WPR/UMDH analysis.
+
+## Previously verified independent prerequisites
+
+- [#44874736247](https://github.com/taku077/c545d-recorder/actions/runs/44874736247) SUCCESS: official pinned GStreamer1.28.8 MSVC SDK, actual loaded candidate GIO, 5 synthetic H264/AAC MP4 fragments independently decoded.
+- [#44878301067](https://github.com/taku077/c545d-recorder/actions/runs/44878301067) SUCCESS: two genuine TCP localhost RTSP sources /stream1 and /stream6 at 127.0.0.1:554, H264 + PCMA audio on both and four decoded media paths.
+- [#44879915942](https://github.com/taku077/c545d-recorder/actions/runs/44879915942) SUCCESS: byte-equivalent source mirror of actual Record.ps1 starts under PowerShell5.1 with dummy DPAPI and **pre-existing** STOP marker, validates decoder/AAC/graph startup and exits before RTSP. Direct native PS5.1 invocation is proven for GitHub Windows dummy DPAPI; previously attempted Start-Process and managed launcher variants failed this isolated dummy password test. They are NOT evidence of a user host failure.
+
+## New finite localhost RTSP integration probe (NOT YET QUALIFIED)
+
+Sources: [CI integration script](../tests/Assert-C545DRecorderLiveLoopbackCI.ps1), [finite RTSP source](../tests/c545d_ci_finite_rtsp_server.c) and [Windows workflow](../.github/workflows/c545d-recorder-live-loopback-ci.yml).
+
+The CI runner makes a strictly owned isolated GUID folder under RUNNER_TEMP with a checked ownership marker and reparse-safe cleanup. It verifies the official SIX core SDK DLL SHA256 values and fixed candidate GIO checksum. It stages only private copies of genuine GStreamer executables and candidate DLL, then calls the already-qualified AST single-assignment mirror helpers. The cloned Record.ps1 is byte-equivalent except its single SDK bin assignment, and cloned CommonSettings changes only its private output location. Original 3600-second splitmux, 2560x720 15fps, x264 medium QP24, avdec_h264, AAC mono 48kHz 192k target and existing stop/reconnect policies remain unchanged.
+
+Only fake LOCALAPPDATA settings (IP 127.0.0.1, dummy user, dummy PS5.1 DPAPI secret) are used. The new MSVC-built GStreamer RTSP server refuses to run outside Windows GitHub Actions and listens **only on 127.0.0.1:554** with two distinct H264 1280x720@15fps sources and PCMA/8000 mono audio. Both servers produce a finite 330 video buffers and 550 PCMA audio buffers; this probes a **naturally ending RTSP server**, not the GUI Ctrl+C stop path.
+
+The test invokes actual mirrored Record.ps1 directly with Windows PowerShell5.1 to retain proven DPAPI semantics. A CI-only background job observes the private synthetic MP4 file, waits a short bounded period and writes a private stop marker to prevent reconnect AFTER the finite media source ends. It does not send a Ctrl+C signal, kill the production recorder, connect to any real camera or modify installed DLLs. If the RTP pipeline does not terminate naturally, GitHub's bounded job timeout fails the experiment rather than pretending EOS worked. All raw media and potentially path-bearing logs are deleted with private scratch, and only fixed numeric diagnostic lines are allowed in CI.
+
+If the cloned recorder returns, CI requires one launch, recognized stop marker and stop policy, exactly one finalized MP4, H264/AAC 2560x720@15fps and AAC mono 48kHz caps from gst-discoverer, independent actual H264 and AAC decode, unchanged source/DLL hashes, and owner-verified rollback. A source end with a nonzero GStreamer exit code or unfinalized MP4 is not success.
+
+Initial run [#44880791076](https://github.com/taku077/c545d-recorder/actions/runs/44880791076) was started on [e7c68c3](https://github.com/taku077/c545d-recorder/commit/e7c68c3dc0bd94961d5594da2ed810035dbcd690). Verify its final run and numeric logs before claiming a result.
+
+## VERIFIED — real Record.ps1 live against two synthetic localhost RTSP mounts (2026-11-21)
+
+**[Windows2022 CI #44881283742 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44881283742)**, job 136776925282, source head [f209c35](https://github.com/taku077/c545d-recorder/commit/f209c3558acd00e41711cec9cdb4b774d4203223), sanitized numeric artifact ID 14697768577 (expires 2026-11-28T07:41:39Z). All strict final gates completed:
+- Actual cloned production Record.ps1 executed from a disposable CI-owned mirror, no host changes or camera credentials, original GStreamer CLI and pinned candidate GIO.
+- Real localhost RTSP server media-configure callbacks confirmed **both /stream1 AND /stream6** were requested. (This confirms RTSP session construction for each mount, not independently all frames or physical two-lens sync.)
+- Recorder launched one real GStreamer H264/AAC recording attempt and returned normally with native GStreamer exit 0, with post-start stop marker already present at return, authorized exit policy STOP (not RECONNECT), and EOS completion message in recorder stdout.
+- Exactly **one private MP4** produced, **6,547,122 bytes**; gst-discoverer accepted 2560x720, 15fps H264, 48kHz mono AAC, and real GStreamer decoded both audio/video tracks. Output removed by owner-validated rollback, no synthetic video or raw log uploaded. Original source and candidate DLL bytes remained unchanged.
+- Exact CI diagnostic: C545D_RECORDER_LIVE_RTSP_STAGE,launch=1,launch_count=1,returned=1,source_stop_marker=1,stop_at_gst_return=1,wide_rtsp_requested=1,tele_rtsp_requested=1,policy_stop=1,policy_reconnect=0,gst_exit=0,eos_message=1,mp4_count=1,first_mp4_bytes=6547122,rtsp_error=0,record_exit_nonzero=0,real_camera=0.
+- Exact pass: C545D_RECORDER_REAL_SOURCE_LOCAL_RTSP_CI_PASS,real_recorder=1,rtsp_two_mounts=1,mp4_h264_aac=1,mp4_decodable=1,inflight_stop_marker=1,source_eos=1,gui_ctrl_c_tested=0,real_tapo_tested=0,real_hourly_split_tested=0,install_approved=0,owned_rollback=1.
+
+Earlier concurrent versions from intermediate source edits **#44881244220 FAILED** and #44881275484 are not the authoritative final workflow. In #44881244220, the initial stop watcher still used delayed MP4 writes: stop_at_gst_return=0, policy_reconnect=1, gst_exit=0, 1 MP4; the revised two-mount media-configure watcher fixed this race. The validated test is the complete latest workflow #44881283742.
+
+This proves a short **source-ended** recording from two localhost RTSP mounts through the actual mirrored recorder and one decodable MP4. It does NOT prove the GUI/worker's Ctrl+C-triggered EOS, repeated reconnection, precise two-lens NTP sync, actual 3600s file split, or real Win10/physical Tapo long-run CPU/PrivateUsage/Key-handle slopes. Those remain separate gates. Host installation remains HOLD.
+
+## Strict limits
+
+Even a successful CI is NOT a test of genuine GUI Ctrl+C, in-flight controlled EOS, reconnect after unsolicited network errors, camera authentication, real Tapo inter-lens timestamps, a 3600s segment, or 24x365 Win10 CPU/PrivateUsage/Key-handle slopes. Keep host deployment HOLD, ask for no user action, and do not revisit completed WPR/UMDH or request repeated multihour tests.

@@ -1,0 +1,52 @@
+name: C545D core-only MSVC saved 64-cycle evidence reanalysis only
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-only-msvc-ab64-saved-analysis-ci.yml'
+      - 'tests/analyze_c545d_core_msvc_ab64.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze-saved:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reuse four completed 64-cycle MSVC numeric logs without re-running Windows tests
+        uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-msvc-64cycle-ab-numeric-only
+          repository: taku077/c545d-recorder
+          run-id: 44759302126
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Independently analyze exact Key/PrivateUsage and natural handle cleanup using strict gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find artifacts -maxdepth 1 -name '*-64.txt' -type f | wc -l)" -eq 4
+          python3 tests/analyze_c545d_core_msvc_ab64.py --root artifacts | tee artifacts/ab64_analysis.txt
+          grep -q 'C545D_CORE_ONLY_MSVC_64_AB_CORRECTED_PASS' artifacts/ab64_analysis.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artifacts/ab64_corrected_summary.json').read_text())
+          assert d['modes']['candidate_registry']['handles'] <= 4
+          assert d['modes']['candidate_registry']['key'] <= 4
+          assert d['modes']['official_registry']['key'] > 100
+          assert d['real_windows10_tapo_verified'] is False
+          assert d['leak_free_claim'] is False
+          print("C545D_SAVED_EVIDENCE_INDEPENDENT_CHECK_PASS,repeated_windows_cycles=0,zero_leak_not_claimed=1")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-msvc-core-only-saved-64cycle-corrected-summary
+          path: |
+            artifacts/ab64_corrected_summary.json
+            artifacts/ab64_analysis.txt
+          retention-days: 7
+          if-no-files-found: error

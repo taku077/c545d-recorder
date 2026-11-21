@@ -1,0 +1,81 @@
+name: C545D GIO exact MSVC SDK whole-plugin static import closure (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-sdk-static-import-closure-ci.yml'
+      - 'tests/analyze_c545d_gio_sdk_imports.py'
+      - 'tests/test_analyze_c545d_gio_sdk_imports.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sdk-static-abi:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          run-id: 44757713497
+          repository: taku077/c545d-recorder
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read-only import parser and its ordinal negative controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install --disable-pip-version-check --no-input pefile==2024.8.26
+          if($LASTEXITCODE -ne 0){throw 'pefile parser installation failed'}
+          python tests/test_analyze_c545d_gio_sdk_imports.py
+          if($LASTEXITCODE -ne 0){throw 'PE/GIO name and ordinal rejection tests failed'}
+      - name: Install pinned official SDK on disposable runner (no host recording PC)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk-1.28.8.exe'
+          Invoke-WebRequest -Uri 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'Official SDK incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'Pinned official SDK setup failure'}
+          "C545D_SDK_STATIC_SCAN_ROOT=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compare full official MSVC SDK static GIO import closure vs exact proven candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $rc=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core-rc/manifest.txt -Raw
+          $actual=(Get-FileHash $rc -Algorithm SHA256).Hash
+          if($actual -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$actual") -or
+             $manifest -notmatch 'C545D_RELEASE_CANDIDATE_STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){
+            throw 'Original proven CI-only candidate identity not established'
+          }
+          $output=(Resolve-Path artifacts).Path + '\sdk_gio_static_abi_numeric.json'
+          python tests/analyze_c545d_gio_sdk_imports.py --sdk-root $env:C545D_SDK_STATIC_SCAN_ROOT --candidate $rc --numeric-summary $output
+          if($LASTEXITCODE -ne 0){throw 'Official SDK complete GIO PE static import closure failed'}
+          $report=Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+          if($report.sdk_pe_files_scanned -lt 35 -or $report.sdk_modules_importing_gio -lt 1 -or
+             $report.sdk_exports -ne 2047 -or $report.candidate_exports -ne 2047 -or
+             $report.candidate_unresolved_name_imports -ne 0 -or
+             $report.candidate_unresolved_ordinal_imports -ne 0 -or
+             $report.candidate_mismatched_ordinal_imports -ne 0 -or
+             $report.candidate_new_direct_dll_dependencies -ne 0 -or
+             $report.dynamic_imports_checked -ne $false -or $report.windows10_tapo_tested -ne $false){
+            throw 'Missing strict static PE ABI or CI-only scope assertion'
+          }
+          Write-Host 'C545D_GIO_SDK_STATIC_ABI_GATE_PASS,all_official_modules_scanned=1,export_names_exact=2047,static_imports_satisfied=1,ordinal_imports_verified=1,SDK_unchanged=1,host_modified=0,dynamic_imports_not_proven=1'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-gio-official-msvc-sdk-static-abi-numeric-only
+          path: artifacts/sdk_gio_static_abi_numeric.json
+          retention-days: 7
+          if-no-files-found: error

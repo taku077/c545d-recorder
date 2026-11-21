@@ -15,7 +15,8 @@ param(
   [switch]$InjectParserFailureOnce,
   [switch]$ObserveAppInfoMonitor,
   [switch]$SkipCiGioRegistryStimulus,
-  [switch]$AssertVersionedFixtureDisplayName
+  [switch]$AssertVersionedFixtureDisplayName,
+  [switch]$ObserveStatusEventProvenance
 )
 $ErrorActionPreference='Stop'
 if($AssertVersionedFixtureDisplayName -and (-not $SkipCiGioRegistryStimulus -or -not $ObserveNaturalGioRefresh)) {
@@ -195,6 +196,8 @@ public static class C545DWatchInterop {
   public static extern int Snapshot(IntPtr watch, out UInt64 generation, out UInt64 locale);
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_close", CallingConvention=CallingConvention.Cdecl)]
   public static extern void Close(IntPtr watch);
+  [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_status_event_count", CallingConvention=CallingConvention.Cdecl)]
+  public static extern int StatusEventCount(IntPtr watch, out UInt64 observed);
   [DllImport(@"__DLL__", EntryPoint="c545d_dedicated_ci_completion_counters", CallingConvention=CallingConvention.Cdecl)]
   public static extern int Completion(IntPtr watch, out UInt64 installing,
                                       out UInt64 updating, out UInt64 uninstalling);
@@ -293,6 +296,15 @@ public static class C545DGioRealMSIX {
   Scan-NaturalGio 3
   Observe-Monitor 23
   Scan-Gio 3
+  if($ObserveStatusEventProvenance) {
+    # Genuine Windows PackageCatalog callbacks ONLY: synthetic force_status_only
+    # never increments this native counter. Do not infer status-only stimulus
+    # from install/update/uninstall or from a zero count in this fixture.
+    [UInt64]$realStatusEvents=0
+    $rc=[C545DWatchInterop]::StatusEventCount($watch,[ref]$realStatusEvents)
+    if($rc -ne 0) {throw "C545D_REAL_STATUS_EVENT_READ_FAILED,status=$rc"}
+    "C545D_REAL_STATUS_EVENT_PROVENANCE,real_OS_PackageStatusChanged_callbacks=$realStatusEvents,synthetic_force_calls=0,disposable_MSIX_only=true,CI_only=1"
+  }
   "C545D_REAL_PACKAGECATALOG_EVENT_PASS,install_delta=$($g1-$g0),update_delta=$($g2-$g1),uninstall_delta=$($g3-$g2),total_delta=$($g3-$g0),install_complete=$doneInstall,update_complete=$doneUpdate,uninstall_complete=$doneUninstall,no_synthetic_notifications=true,only_ci_package_events_counted=true,gio_same_process=$([bool]$GioScanDll),CI_only=true"
 }
 finally {

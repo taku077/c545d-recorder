@@ -1,0 +1,55 @@
+name: C545D archived UWP API boundary 190/194/196B heap-bin audit (no rerun)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_saved_uwp_boundary_bins.py'
+      - '.github/workflows/c545d-saved-uwp-boundary-heap-bins-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  existing-three-win2022-artifacts-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44579422709
+          repository: taku077/c545d-recorder
+          name: c545d-gio-uwp-api-boundaries
+          github-token: ${{ github.token }}
+          path: saved/44579422709
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44555197215
+          repository: taku077/c545d-recorder
+          name: c545d-gio-uwp-api-boundaries
+          github-token: ${{ github.token }}
+          path: saved/44555197215
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44537408775
+          repository: taku077/c545d-recorder
+          name: c545d-gio-uwp-api-boundaries
+          github-token: ${{ github.token }}
+          path: saved/44537408775
+      - name: Validate all archived 16-cycle manifests and compare six bins across ten stages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_saved_uwp_boundary_bins.py --selftest
+          python tests/analyze_gio_saved_uwp_boundary_bins.py --root saved | tee artifacts/numeric/uwp_boundaries.txt
+          grep -qx 'C545D_SAVED_UWP_BOUNDARY_PASS,old_windows_runs=3,stages=10,arms=2,sizes=6,windows_reruns=0,semantic_ablation_only=1,allocation_stacks_unproven=1,host_approved=0' artifacts/numeric/uwp_boundaries.txt
+          test "$(grep -c '^C545D_SAVED_UWP_BOUNDARY_BIN,' artifacts/numeric/uwp_boundaries.txt)" -eq 180
+          echo 'C545D_SAVED_UWP_BOUNDARY_AUDIT_PASS,old_runs_reused=3,new_windows_runs=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-saved-uwp-stage-bins-numeric
+          path: artifacts/numeric/uwp_boundaries.txt
+          retention-days: 7
+          if-no-files-found: error

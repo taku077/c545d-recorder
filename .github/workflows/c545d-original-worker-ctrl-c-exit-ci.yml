@@ -1,0 +1,52 @@
+name: C545D unchanged Windows PowerShell worker Ctrl+C exit microgate CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-original-worker-ctrl-c-exit-ci.yml'
+      - 'tests/Assert-C545DWorkerCtrlCExitCI.ps1'
+      - 'RecordGUIWorker.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-worker-console-handler:
+    runs-on: windows-2022
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run three private original-worker Ctrl+C handling and exit status trials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=(Resolve-Path tests/Assert-C545DWorkerCtrlCExitCI.ps1).Path
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile($src,[ref]$tokens,[ref]$errors)
+          if($errors.Count -ne 0){
+            foreach($e in $errors){
+              Write-Host "C545D_WORKER_CTRL_C_PARSE_DIAG,line=$($e.Extent.StartLineNumber),id=$($e.ErrorId)"
+            }
+            throw 'CI private worker test harness does not parse'
+          }
+          $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $rows=@(& $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $src 2>$null)
+          $expected='C545D_ORIGINAL_WORKER_CTRL_C_CI,trials=3,passed=3,handler_count_verified=1,phase=PASS,original_worker=1,private_stub=1,real_rtsp=0,real_camera=0,host_modified=0,reason=PASS'
+          $matches=@($rows | Where-Object {([string]$_) -ceq $expected})
+          if($LASTEXITCODE -ne 0 -or $matches.Count -ne 1){
+            foreach($row in $rows){
+              if(([string]$row) -cmatch '^C545D_ORIGINAL_WORKER_CTRL_C_CI,trials=3,passed=[0-3],handler_count_verified=[01],phase=[A-Z_]+,original_worker=1,private_stub=1,real_rtsp=0,real_camera=0,host_modified=0,reason=[A-Z_]+$'){
+                Write-Host $row
+              }
+            }
+            throw 'Original worker control handler/exit status not qualified'
+          }
+          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
+          $matches[0] | Set-Content -LiteralPath artifacts/numeric/original-worker-ctrlc-only.txt -Encoding ascii
+          Write-Host $matches[0]
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-original-worker-ctrl-c-exit-CI-only
+          path: artifacts/numeric/original-worker-ctrlc-only.txt
+          if-no-files-found: error
+          retention-days: 7

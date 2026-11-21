@@ -115,6 +115,36 @@ c545d_ci_scan_fixture_display_name(int stage)
   return fresh?1:-61;
 }
 
+/* CI ONLY: verify public GAppInfo display text on the SAME process and
+ * unchanged main package FullName. Run only AFTER a genuine PackageCatalog
+ * terminal event was observed, without any registry-write trigger.
+ * This does not expose installed application IDs or names in artifacts.
+ */
+__declspec(dllexport) int __cdecl
+c545d_ci_scan_resource_display_value(int stage, int reverse)
+{
+  if (stage < 1 || stage > 3 || reverse != 1) return -70;
+  GList *list = g_app_info_get_all();
+  int english = 0, french = 0;
+  for (GList *p = list; p; p = p->next)
+    {
+      const char *name = g_app_info_get_display_name (G_APP_INFO(p->data));
+      if (name && strcmp (name, "English synthetic resource value") == 0)
+        english++;
+      if (name && strcmp (name, "French synthetic resource value") == 0)
+        french++;
+    }
+  g_list_free_full (list, g_object_unref);
+  const gboolean expected = stage == 2 ?
+    (english == 1 && french == 0) :
+    (english == 0 && french == 1);
+  printf ("C545D_GIO_RESOURCE_DISPLAY,stage=%d,fresh=%d,"
+          "english=%d,french=%d,reverse=1,CI_only=1\n",
+          stage, expected ? 1 : 0, english, french);
+  fflush (stdout);
+  return expected ? 1 : -71;
+}
+
 /* CI only: let eight callers compete for one *genuine* pending package
  * generation. Every thread queries public GAppInfo; no synthetic events
  * and no registry writes occur until the existing positive control later.

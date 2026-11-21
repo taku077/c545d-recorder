@@ -1,0 +1,114 @@
+name: C545D dummy config and DPAPI private settings CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-private-fixture-config-ci.yml'
+      - 'CommonSettings.ps1'
+      - 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dummy-credentials:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove isolated fake config and DPAPI in Windows PowerShell 5.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+          $stage=Join-Path $root ('c545d-ci-production-mirror-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          [IO.File]::WriteAllText((Join-Path $stage '.c545d-ci-owned'),'CI_MIRROR_ONLY_NOT_FOR_EXECUTION')
+          $src=(Resolve-Path CommonSettings.ps1).Path
+          $originalHash=(Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
+          Copy-Item -LiteralPath $src -Destination (Join-Path $stage 'CommonSettings.ps1')
+          $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $rows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'tools/New-C545DPrivateOutputSettingsMirrorCI.ps1' -StageRoot $stage -OriginalSettingsSource $src)
+          if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1 -or
+             $rows[0] -cne 'C545D_PRIVATE_OUTPUT_MIRROR,patched=1,single_assignment=1,source_syntax=1,private_only=1,host_executed=0,rtsp_contacted=0,install_approved=0,live_tapo_authorized=0,reason=CI_PRIVATE_OUTPUT_MIRROR_PASS'){throw 'Private settings overlay failed'}
+          $configRoot=Join-Path $stage 'synthetic-localappdata'
+          $configDir=Join-Path $configRoot 'C545D_GStreamer'
+          New-Item -ItemType Directory -Path $configDir | Out-Null
+          $fake=@{camera_ip='127.0.0.1';camera_user='ci_dummy';output_folder='C:\INVALID_DO_NOT_WRITE'}
+          $fake | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $configDir 'settings.json') -Encoding utf8
+          # Only a local, ephemeral dummy password is DPAPI-protected. Never
+          # touch or copy the real user's camera password or profile.
+          $dummy=ConvertTo-SecureString 'ci_only_not_a_real_camera_password' -AsPlainText -Force
+          ConvertFrom-SecureString $dummy | Set-Content -LiteralPath (Join-Path $configDir 'camera_password.dpapi') -Encoding ascii
+          $oldHome=$env:LOCALAPPDATA
+          try {
+            $env:LOCALAPPDATA=$configRoot
+            . (Join-Path $stage 'CommonSettings.ps1')
+            $settings=Read-C545DSettings
+            $secret=Read-C545DPassword
+            $privateOut=Join-Path $stage 'private-output'
+            if($settings.camera_ip -cne '127.0.0.1' -or
+               $settings.camera_user -cne 'ci_dummy' -or
+               $settings.output_folder -cne $privateOut -or
+               -not (Test-Path -LiteralPath $privateOut -PathType Container) -or
+               $null -eq $secret){throw 'Dummy config path/secret isolation failed'}
+            $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+            try {
+              if([Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) -cne 'ci_only_not_a_real_camera_password'){
+                throw 'Ephemeral DPAPI fixture failed to round-trip'
+              }
+            } finally {
+              [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+            }
+          } finally {
+            $env:LOCALAPPDATA=$oldHome
+          }
+          if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -cne $originalHash){throw 'Original source mutated'}
+          Write-Host 'C545D_CI_DUMMY_CAMERA_CONFIG_PASS,synthetic_ip=1,private_output=1,dpapi_fixture=1,original_settings_unchanged=1,user_secret_read=0,user_camera_contacted=0'
+          # Check actual PS5.1 DPAPI across TWO different child processes.
+          # Previous same-process pwsh7 fixture did not cover this exact gate.
+          $writerFile=Join-Path $stage 'ci-dummy-dpapi-write-51.ps1'
+          $readerFile=Join-Path $stage 'ci-dummy-dpapi-read-51.ps1'
+          $passwordFile=Join-Path $configDir 'camera_password.dpapi'
+          $writerCode=@(
+            'param([string]$OutFile)',
+            '$dummy=ConvertTo-SecureString ''dummy_ci_only_password_not_real'' -AsPlainText -Force',
+            'ConvertFrom-SecureString $dummy | Set-Content -LiteralPath $OutFile -Encoding ASCII'
+          )
+          $readerCode=@(
+            'param([string]$CopiedSettings)',
+            '. $CopiedSettings',
+            '$s=Read-C545DSettings',
+            '$secret=Read-C545DPassword',
+            '$ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)',
+            'try { $match=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) -ceq ''dummy_ci_only_password_not_real'' }',
+            'finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }',
+            'if(-not $match -or $s.camera_ip -cne ''127.0.0.1''){exit 3}',
+            'Write-Output ''C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'''
+          )
+          [IO.File]::WriteAllText($writerFile,($writerCode -join [Environment]::NewLine))
+          [IO.File]::WriteAllText($readerFile,($readerCode -join [Environment]::NewLine))
+          $env:LOCALAPPDATA=$configRoot
+          try {
+            & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $writerFile -OutFile $passwordFile
+            if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $passwordFile -PathType Leaf)){
+              throw 'PS51 dummy password generator failed'
+            }
+            $readerRows=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $readerFile -CopiedSettings (Join-Path $stage 'CommonSettings.ps1') 2>$null)
+            if($LASTEXITCODE -ne 0 -or $readerRows.Count -ne 1 -or
+               $readerRows[0] -cne 'C545D_CROSSPROCESS_DUMMY_DPAPI_PASS,writer_ps51=1,reader_ps51=1,localappdata_private=1,user_secret_accessed=0'){
+              throw 'PS51 cross-process dummy decrypt blocked'
+            }
+            Write-Host $readerRows[0]
+          } finally {
+            $env:LOCALAPPDATA=$oldHome
+          }
+          $links=@(Get-ChildItem -LiteralPath $stage -Recurse -Force | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+          if($links.Count -ne 0 -or
+             [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\') -cne $root -or
+             [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-owned')) -cne 'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){
+            throw 'Unsafe private fixture cleanup'
+          }
+          Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
+          if(Test-Path -LiteralPath $stage){throw 'Private fixture remained'}
+          Write-Host 'C545D_CI_DUMMY_CONFIG_ROLLBACK_PASS,private_tree_deleted=1,production_modified=0'
+          exit 0

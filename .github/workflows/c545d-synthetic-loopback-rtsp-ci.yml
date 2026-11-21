@@ -1,0 +1,175 @@
+name: C545D localhost dual synthetic RTSP Windows CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_synthetic_loopback_rtsp_ci.c'
+      - '.github/workflows/c545d-synthetic-loopback-rtsp-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  loopback-rtsp:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install pinned official SDK to CI runner only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'c545d-rtsp-sdk'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d-rtsp-sdk.exe'
+          Invoke-WebRequest -Uri 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'Official SDK install failed'}
+          $ref=Get-Content docs/CORE_GIO_SDK_1288_REFERENCE.json -Raw | ConvertFrom-Json
+          $bin=Join-Path $sdk 'bin'
+          if($ref.sdk -cne 'gstreamer-1.0-msvc-x86_64-1.28.8' -or $ref.install_approved -ne $false -or
+             @($ref.dll_sha256.PSObject.Properties.Name).Count -ne 6){throw 'Reference format invalid'}
+          $known=@{
+            'gio-2.0-0.dll'='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
+            'glib-2.0-0.dll'='CAF29CFC1467E3A3E5E91F0F649BD7A501107D9B3C32A2866B08E2ECFA209E3E'
+            'gobject-2.0-0.dll'='811DAB4B420E520D91AC3FE5202975CC90CAF2C53EF2F8F0FCE8F8588A735C7A'
+            'gmodule-2.0-0.dll'='86BE81A7011EC07E1992CE7A742AD881A80AE38583BBCFFBF973498D4748DAC5'
+            'intl-8.dll'='2EF6A23F712FD7B9BF72B2FEF1A1FD5CDE27BA88F7D164E9E6DE18936C1F51B0'
+            'z-1.dll'='B84851F9084247F466C076EE993BD5A92F3462466C4877B5C4ECC4125743A060'
+          }
+          foreach($name in $known.Keys){
+            if(([string]$ref.dll_sha256.PSObject.Properties[$name].Value).ToUpperInvariant() -cne $known[$name] -or
+               (Get-FileHash -LiteralPath (Join-Path $bin $name) -Algorithm SHA256).Hash -cne $known[$name]){throw 'Official SDK SHA different'}
+          }
+          "C545D_RTSP_CI_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build C RTSP server/client, verify both stream mounts and rollback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=$env:C545D_RTSP_CI_SDK
+          $lib=Join-Path $sdk 'lib'
+          $include=Join-Path $sdk 'include'
+          if(-not (Test-Path -LiteralPath (Join-Path $lib 'gstrtspserver-1.0.lib')) -or
+             -not (Test-Path -LiteralPath (Join-Path $include 'gstreamer-1.0\gst\rtsp-server\rtsp-server.h'))){throw 'MSVC SDK RTSP server development libraries unavailable'}
+          $root=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+          $stage=Join-Path $root ('c545d-synthetic-rtsp-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          [IO.File]::WriteAllText((Join-Path $stage '.c545d-ci-owned'),'C545D_RTSP_LOOPBACK_ONLY')
+          $exe=Join-Path $stage 'c545d_loopback_rtsp_ci.exe'
+          $compilerArgs=@('/nologo','/W4','/MD','/O2','/TC',
+             ('/I'+(Join-Path $include 'gstreamer-1.0')),
+             ('/I'+(Join-Path $include 'glib-2.0')),
+             ('/I'+(Join-Path $lib 'glib-2.0\include')),
+             'tests/c545d_synthetic_loopback_rtsp_ci.c',
+             ('/Fe:'+$exe),'/link',('/LIBPATH:'+$lib),
+             'gstrtspserver-1.0.lib','gstreamer-1.0.lib','gobject-2.0.lib','glib-2.0.lib')
+          & cl.exe @compilerArgs
+          if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $exe)){throw 'Synthetic RTSP native compile failed'}
+          $prior=@{}
+          foreach($k in @('PATH','GST_REGISTRY','GST_PLUGIN_SCANNER','GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0','GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0')){
+            $prior[$k]=[Environment]::GetEnvironmentVariable($k,'Process')
+          }
+          $server=$null;$client=$null;$passed=$false;$phase='BEFORE_SERVER'
+          try {
+            $env:PATH="$(Join-Path $sdk 'bin');$($prior['PATH'])"
+            $env:GST_REGISTRY=Join-Path $stage 'registry.bin'
+            $env:GST_PLUGIN_SCANNER=Join-Path $sdk 'libexec\gstreamer-1.0\gst-plugin-scanner.exe'
+            $env:GST_PLUGIN_PATH=''
+            $env:GST_PLUGIN_PATH_1_0=''
+            $env:GST_PLUGIN_SYSTEM_PATH=''
+            $env:GST_PLUGIN_SYSTEM_PATH_1_0=Join-Path $sdk 'lib\gstreamer-1.0'
+            $so=Join-Path $stage 'server.stdout'
+            $se=Join-Path $stage 'server.stderr'
+            $server=Start-Process -FilePath $exe -ArgumentList 'server' -PassThru -WorkingDirectory $root -RedirectStandardOutput $so -RedirectStandardError $se
+            $phase='SERVER_STARTED'
+            $ready='C545D_SYNTHETIC_RTSP_SERVER,ready=1,loopback_only=1,port=554,streams=2,real_camera=0'
+            $seen=$false
+            for($i=0;$i -lt 120;$i++){
+              Start-Sleep -Milliseconds 100
+              # Start-Process keeps redirected stdout open until child exits.
+              # Read using a sharing mode that permits the owner to write.
+              if(Test-Path -LiteralPath $so){
+                try {
+                  $fs=[IO.File]::Open($so,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+                  try {
+                    $reader=[IO.StreamReader]::new($fs)
+                    if($reader.ReadToEnd().Contains($ready)){$seen=$true}
+                  } finally {
+                    $fs.Dispose()
+                  }
+                } catch [System.IO.IOException] {
+                  # Transient Windows stdout handle-sharing contention.
+                }
+              }
+              if($seen){break}
+              if($server.HasExited){break}
+            }
+            if(-not $seen){throw 'Local RTSP server did not bind'}
+            $phase='SERVER_READY'
+            $co=Join-Path $stage 'client.stdout'
+            $ce=Join-Path $stage 'client.stderr'
+            $client=Start-Process -FilePath $exe -ArgumentList 'client' -PassThru -WorkingDirectory $root -RedirectStandardOutput $co -RedirectStandardError $ce
+            $phase='CLIENT_STARTED'
+            if(-not $client.WaitForExit(40000)){throw 'Local RTSP client timeout'}
+            if($client.ExitCode -ne 0){
+              $clientLines=@(Get-Content -LiteralPath $co -ErrorAction SilentlyContinue)
+              foreach($line in $clientLines){
+                # The native helper prints only fixed-safe numeric fields.
+                if($line -cmatch '^C545D_SYNTHETIC_RTSP_CLIENT,pass=0,(reason=PARSE|loopback_only=1,streams=2,video_branches=2,audio_branches=2,v0_present=[01],a0_present=[01],v1_present=[01],a1_present=[01],real_camera=0)$'){
+                  Write-Host $line
+                }
+              }
+              $detail=if(Test-Path -LiteralPath $ce){Get-Content -LiteralPath $ce -Raw}else{''}
+              $classes=@('no element','could not link','not-negotiated','could not connect','unauthorized','error from element','Internal data stream error','404')
+              foreach($token in $classes){
+                $flag=[int]($detail.IndexOf($token,[StringComparison]::OrdinalIgnoreCase) -ge 0)
+                $safeKey=$token.Replace(' ','_').Replace('-','_')
+                Write-Host ("C545D_RTSP_MEDIA_DIAG,"+$safeKey+"="+$flag)
+              }
+              throw 'Synthetic RTSP negotiation failed'
+            }
+            $phase='CLIENT_EXIT_0'
+            $result=@(Get-Content -LiteralPath $co)
+            $expected='C545D_SYNTHETIC_RTSP_CLIENT,pass=1,loopback_only=1,streams=2,video_branches=2,audio_branches=2,v0_present=1,a0_present=1,v1_present=1,a1_present=1,real_camera=0'
+            if($result.Count -ne 1 -or $result[0] -cne $expected){throw 'Strict RTSP numeric output mismatch'}
+            $passed=$true
+            Write-Host 'C545D_SYNTHETIC_LOOPBACK_RTSP_CI_PASS,port554=1,loopback=1,stream1=1,stream6=1,video=2,audio=2,tcp=1,real_camera=0,host_modified=0'
+          } catch {
+            $type='BLOCKED'
+            if($_.Exception.Message -eq 'Local RTSP server did not bind'){$type='SERVER_NOT_READY'}
+            if($_.Exception.Message -eq 'Local RTSP client timeout'){$type='CLIENT_TIMEOUT'}
+            if($_.Exception.Message -eq 'Synthetic RTSP negotiation failed'){$type='MEDIA_REJECTED'}
+            if($_.Exception.Message -eq 'Strict RTSP numeric output mismatch'){$type='NUMERIC_MISMATCH'}
+            Write-Host ("C545D_RTSP_STAGE_CI,reason="+$type+",phase="+$phase+",server_seen="+[int]($null -ne $server)+",client_seen="+[int]($null -ne $client)+",real_camera=0,host_modified=0")
+            throw 'SANITIZED_RTSP_CI_FAILED'
+          } finally {
+            if($client){
+              if(-not $client.HasExited){try{$client.Kill();[void]$client.WaitForExit(5000)}catch{}}
+              $client.Dispose()
+            }
+            if($server){
+              if(-not $server.HasExited){try{$server.Kill();[void]$server.WaitForExit(5000)}catch{}}
+              $server.Dispose()
+            }
+            foreach($k in $prior.Keys){[Environment]::SetEnvironmentVariable($k,$prior[$k],'Process')}
+            # A child whose CWD points into the stage can pin the directory
+            # even after process termination. Both child CWDs are now the
+            # trusted RUNNER_TEMP parent, not the deletion target.
+            Start-Sleep -Milliseconds 500
+            Write-Host ("C545D_RTSP_PRE_CLEANUP_CI,media_checks_passed="+[int]$passed+",staged_processes_disposed=1")
+            $item=Get-Item -LiteralPath $stage -Force
+            $links=@(Get-ChildItem -LiteralPath $stage -Force -Recurse | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+            if(-not $item.PSIsContainer -or
+               ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+               $links.Count -ne 0 -or
+               [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\') -cne $root -or
+               [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-owned')) -cne 'C545D_RTSP_LOOPBACK_ONLY'){
+              throw 'Fail-closed owned temp cleanup refusal'
+            }
+            Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
+          }
+          if(-not $passed -or (Test-Path -LiteralPath $stage)){throw 'No RTSP + rollback PASS'}
+          Write-Host 'C545D_SYNTHETIC_RTSP_ROLLBACK_CI_PASS,owned_temp_removed=1,recorder_executed=0,install_approved=0'

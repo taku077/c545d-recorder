@@ -1,0 +1,24 @@
+name: C545D production 2xRTSP hourly MP4 configuration invariants (STATIC ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'Record.ps1'
+      - 'tests/check_c545d_recording_contract.py'
+      - 'tests/test_check_c545d_recording_contract.py'
+      - '.github/workflows/c545d-recording-contract-static-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  no-camera-no-hour-long-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact source contract and negative mutation controls
+        run: |
+          set -euo pipefail
+          python3 tests/check_c545d_recording_contract.py Record.ps1
+          python3 -m unittest discover -s tests -p 'test_check_c545d_recording_contract.py' -v
+          echo 'C545D_SOURCE_CONTRACT_CI_PASS,configured_3600s=1,2xRTSP_mapping=1,aac=1,eos=1,mutant_rejections=6,real_hourly_mp4_not_tested=1,real_tapo_not_tested=1'

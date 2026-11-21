@@ -1,0 +1,121 @@
+name: C545D official SDK six-core-DLL read-only fingerprint and fail-closed CI
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-gio-dependency-fingerprint-ci.yml'
+      - 'tools/Test-C545DCoreGioDependencyGraphReadOnly.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  readonly-dependency-fingerprint:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core-rc
+      - name: Install pinned original 1.28.8 MSVC SDK on disposable Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-1.28.8.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'Official SDK incomplete'}
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'Official SDK install failed'}
+          "C545D_CORE_GRAPH_SDK_BIN=$(Join-Path $sdk 'bin')" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Generate exact six-DLL fingerprint and test read-only matching and rejection modes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null;$errors=$null
+          $source=(Resolve-Path tools/Test-C545DCoreGioDependencyGraphReadOnly.ps1).Path
+          [System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0){throw "Read-only PE hash script parser errors: $($errors.Count)"}
+          $text=Get-Content $source -Raw
+          foreach($mutator in @('Copy-Item','Remove-Item','Move-Item','Start-Process','Stop-Process','Set-Content','Set-ItemProperty','Add-Content','New-ItemProperty','WriteAllBytes')){
+            if($text -match ('(?im)^\s*'+[regex]::Escape($mutator)+'\b')){
+              throw 'Read-only fingerprint script attempted a mutator'
+            }
+          }
+          New-Item -ItemType Directory -Path artifacts/numeric -Force | Out-Null
+          $names=@('gio-2.0-0.dll','glib-2.0-0.dll','gobject-2.0-0.dll','gmodule-2.0-0.dll','intl-8.dll','z-1.dll')
+          $expectedGio='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
+          $candidateSha='67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD'
+          $bin=$env:C545D_CORE_GRAPH_SDK_BIN
+          $candidate=(Resolve-Path artifacts/core-rc/gio-2.0-0.dll).Path
+          if((Get-FileHash $candidate -Algorithm SHA256).Hash -ne $candidateSha){throw 'Original candidate changed'}
+          $hashes=@{}
+          foreach($name in $names){
+            $dll=Join-Path $bin $name
+            if(-not (Test-Path $dll -PathType Leaf)){throw 'Missing official SDK dependency'}
+            $hashes[$name]=(Get-FileHash $dll -Algorithm SHA256).Hash
+          }
+          if($hashes['gio-2.0-0.dll'] -ne $expectedGio){throw 'Unknown official GIO reference SDK'}
+          $manifest=[ordered]@{
+            schema=1
+            sdk='gstreamer-1.0-msvc-x86_64-1.28.8'
+            install_approved=$false
+            candidate_sha256=$candidateSha
+            dll_sha256=$hashes
+          }
+          $reference=(Join-Path (Resolve-Path artifacts/numeric).Path 'official_six_core_dll_reference.json')
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content $reference -Encoding utf8
+          $sdkHashBefore=$hashes['gio-2.0-0.dll']
+          function Check([string]$label,[string]$targetBin,[string]$targetCandidate,[string]$targetRef,[int]$expectedExit,[string]$expected){
+            $out=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-C545DCoreGioDependencyGraphReadOnly.ps1 -GStreamerBin $targetBin -CandidateDll $targetCandidate -ReferenceManifest $targetRef)
+            if($LASTEXITCODE -ne $expectedExit){throw "Wrong graph scan exit for $label"}
+            $numeric=($out | Where-Object {$_ -match '^C545D_GIO_CORE_GRAPH_PREFLIGHT,'} | Select-Object -Last 1)
+            if($numeric -notmatch $expected -or $numeric -notmatch 'install_approved=0'){
+              throw "Wrong graph scan outcome: $label"
+            }
+            $numeric | Add-Content artifacts/numeric/graph_readonly_checks.txt
+          }
+          Check 'official_exact' $bin $candidate $reference 0 'manifest_valid=1,core_found=6,core_hash_matched=6,core_pe_x64=6,missing=0,hash_mismatch=0,invalid_pe=0,candidate_valid=1,graph_match=1,install_approved=0,reason=READ_ONLY_GRAPH_MATCH'
+          $fakeBin=Join-Path $env:RUNNER_TEMP 'fake-six-core'
+          New-Item -ItemType Directory -Path $fakeBin -Force | Out-Null
+          foreach($name in $names){Copy-Item (Join-Path $bin $name) $fakeBin}
+          $tampered=Join-Path $fakeBin 'glib-2.0-0.dll'
+          $f=[IO.File]::Open($tampered,[IO.FileMode]::Append)
+          try{$f.WriteByte(0)}finally{$f.Dispose()}
+          Check 'tampered_core_dependency' $fakeBin $candidate $reference 3 'manifest_valid=1,core_found=6,core_hash_matched=5,core_pe_x64=6,missing=0,hash_mismatch=1,invalid_pe=0,candidate_valid=1,graph_match=0,install_approved=0,reason=UNKNOWN_RUNTIME_DLL_HASH'
+          $badCandidate=Join-Path $env:RUNNER_TEMP 'fake-candidate.dll'
+          Copy-Item $candidate $badCandidate
+          $f=[IO.File]::Open($badCandidate,[IO.FileMode]::Append)
+          try{$f.WriteByte(0)}finally{$f.Dispose()}
+          Check 'tampered_candidate' $bin $badCandidate $reference 3 'manifest_valid=1,core_found=6,core_hash_matched=6,core_pe_x64=6,missing=0,hash_mismatch=0,invalid_pe=0,candidate_valid=0,graph_match=0,install_approved=0,reason=BAD_CANDIDATE'
+          $missingBin=Join-Path $env:RUNNER_TEMP 'missing-six-core'
+          New-Item -ItemType Directory -Path $missingBin -Force | Out-Null
+          foreach($name in $names | Where-Object {$_ -ne 'intl-8.dll'}){
+            Copy-Item (Join-Path $bin $name) $missingBin
+          }
+          Check 'missing_dependency' $missingBin $candidate $reference 3 'manifest_valid=1,core_found=5,core_hash_matched=5,core_pe_x64=5,missing=1,hash_mismatch=0,invalid_pe=0,candidate_valid=1,graph_match=0,install_approved=0,reason=MISSING_CORE_DLL'
+          if((Get-FileHash $candidate -Algorithm SHA256).Hash -ne $candidateSha -or
+             (Get-FileHash (Join-Path $bin 'gio-2.0-0.dll') -Algorithm SHA256).Hash -ne $sdkHashBefore){
+            throw 'Read-only candidate/reference accidentally modified'
+          }
+          if((Get-Content artifacts/numeric/graph_readonly_checks.txt).Count -ne 4){
+            throw 'Not all strict graph negative controls executed'
+          }
+          Write-Host 'C545D_CORE_SDK_GRAPH_CI_PASS,official_six_hashes_pinned=1,exact_reference_allowed_readonly=1,tampered_dependency_blocked=1,bad_candidate_blocked=1,missing_dependency_blocked=1,installed_host_changed=0'
+          $global:LASTEXITCODE=0
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-six-core-msvc-1288-official-fingerprint-numeric-only
+          path: |
+            artifacts/numeric/official_six_core_dll_reference.json
+            artifacts/numeric/graph_readonly_checks.txt
+          retention-days: 7
+          if-no-files-found: error

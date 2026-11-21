@@ -1,0 +1,64 @@
+name: C545D pinned core GIO SHA manifest vs genuine Windows CI artifact
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-core-gio-manifest-provenance-ci.yml'
+      - 'docs/CORE_GIO_SDK_1288_REFERENCE.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-pinned-public-sdk-hashes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-six-core-msvc-1288-official-fingerprint-numeric-only
+          repository: taku077/c545d-recorder
+          run-id: 44773038639
+          github-token: ${{ github.token }}
+          path: artifacts/source
+      - name: Verify exact source-run manifest and four strict Windows negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,re
+          from pathlib import Path
+          pinned=Path("docs/CORE_GIO_SDK_1288_REFERENCE.json")
+          source=Path("artifacts/source/official_six_core_dll_reference.json")
+          a=json.loads(pinned.read_text(encoding="utf-8"))
+          b=json.loads(source.read_text(encoding="utf-8-sig"))
+          assert a == b, "committed reference differs from Windows-run source artifact"
+          assert a["schema"]==1 and a["sdk"]=="gstreamer-1.0-msvc-x86_64-1.28.8"
+          assert a["install_approved"] is False
+          assert a["candidate_sha256"].lower()=="67b9f7246e4744fef7ee1ead3bed4ce2179c6f0465ec68a92d01dd12b4a3ccad"
+          assert set(a["dll_sha256"])=={
+              "gio-2.0-0.dll","glib-2.0-0.dll","gobject-2.0-0.dll",
+              "gmodule-2.0-0.dll","intl-8.dll","z-1.dll"
+          }
+          assert a["dll_sha256"]["gio-2.0-0.dll"].lower()=="a875107c180fb248236d1e96e14f362f117124df2fee1237fa2142b7b363941b"
+          assert all(re.fullmatch(r"[A-F0-9]{64}",v) for v in a["dll_sha256"].values())
+          sourceLog=Path("artifacts/source/graph_readonly_checks.txt").read_text(encoding="utf-8-sig").splitlines()
+          assert len(sourceLog)==4 and all(x.startswith("C545D_GIO_CORE_GRAPH_PREFLIGHT,") and "install_approved=0" in x for x in sourceLog)
+          assert sum("graph_match=1" in x and "reason=READ_ONLY_GRAPH_MATCH" in x for x in sourceLog)==1
+          for reason in ("UNKNOWN_RUNTIME_DLL_HASH","BAD_CANDIDATE","MISSING_CORE_DLL"):
+              assert sum(f"graph_match=0,install_approved=0,reason={reason}" in x for x in sourceLog)==1,reason
+          digest=hashlib.sha256(pinned.read_bytes()).hexdigest()
+          Path("artifacts/pinned_manifest_check.txt").write_text(
+              "C545D_PINNED_CORE_GIO_MANIFEST_PASS,source_run=44773038639,"
+              "hashes=6,positive=1,negative=3,untrusted_host_data=0,install_approved=0,"
+              "committed_file_sha256="+digest+"\n",encoding="ascii")
+          print("C545D_PINNED_CORE_GIO_MANIFEST_PASS,exact_public_reference=1,hashes=6,negative_controls=3,host_modified=0")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-pinned-official-sdk-core-manifest-provenance-numeric-only
+          path: artifacts/pinned_manifest_check.txt
+          retention-days: 7
+          if-no-files-found: error

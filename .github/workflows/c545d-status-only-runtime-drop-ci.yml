@@ -1,0 +1,121 @@
+name: C545D WinRT watcher post-init failure and GIO fallback CI ONLY
+
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-status-only-runtime-drop-ci.yml'
+      - 'tests/patch_glib_appinfo_native_spontaneous_diagnostic.py'
+      - 'tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py'
+      - 'tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py'
+      - 'tests/c545d_gio_runtime_drop_ci.c'
+      - 'tests/c545d_winrt_runtime_drop_ci.cpp'
+      - 'tests/patch_c545d_winrt_runtime_drop_ci.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  failclosed-watch:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build and check native post-init MTA watcher failure (synthetic CI)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native MTA spontaneous patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native status-only patch failed'}
+          py tests/patch_c545d_winrt_runtime_drop_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Runtime-fault injection patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_full_watch.dll /link /IMPLIB:artifacts/c545d_full_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'Native WinRT watcher build failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/c545d_winrt_runtime_drop_ci.cpp /Fe:artifacts/c545d_runtime_drop_native.exe
+          if($LASTEXITCODE -ne 0){throw 'Native fault-test build failed'}
+          & ./artifacts/c545d_runtime_drop_native.exe (Resolve-Path artifacts/c545d_full_watch.dll).Path | Tee-Object -FilePath artifacts/native_runtime.txt
+          if($LASTEXITCODE -ne 0){throw 'Native post-init watcher failure safety test failed'}
+          $log=Get-Content artifacts/native_runtime.txt -Raw
+          if($log -notmatch 'C545D_RUNTIME_DROP_NATIVE_CI_PASS,initial_snapshot=1,faulted_snapshot_rejected=1,no_invalid_epoch_returned=1,COM_registered=4,COM_revoked=4,shutdown_errors=0,refs=0,pending_opens=0,pending_closes=0,live_watches=0') {
+            throw 'Missing strict owner-MTA teardown / stale-epoch rejection evidence'
+          }
+      - name: Patch and compile full GLib 2.82.4 WinRT monitor/cache build
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_uwp_api_isolation.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_displayname_cache_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          python tests/patch_glib_appinfo_monitor_worker_diagnostic.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_appinfo_native_spontaneous_diagnostic.py glib-src/gio/gwin32appinfo.c glib-src/gio/gwin32packageparser.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o ../artifacts/c545d_gio_runtime_drop.exe ../tests/c545d_gio_runtime_drop_ci.c $(pkg-config --cflags --libs gio-2.0) -ladvapi32'
+          test -f artifacts/c545d_gio_runtime_drop.exe
+      - name: Verify in-process GIO AppInfo before and after owner-MTA unavailability
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export C545D_DIAG_UWP_CACHE_DISPLAYNAME=1
+          export C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=1
+          export C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=1
+          export C545D_DIAG_APPINFO_MONITOR_UNSOLICITED=1
+          export C545D_DIAG_UWP_C_BRIDGE_DLL="$(cygpath -w "$PWD/artifacts/c545d_full_watch.dll")"
+          unset C545D_DIAG_UWP_BRIDGE_INJECT_SCAN C545D_DIAG_UWP_CACHE_REFRESH_EVERY C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE C545D_CI_FORCE_RUNTIME_UNAVAILABLE || true
+          meson devenv -C glib-build "$PWD/artifacts/c545d_gio_runtime_drop.exe" > artifacts/runtime_gio.txt 2>&1
+          grep -q '^C545D_GIO_RUNTIME_DROP_CI_PASS,baseline_apps=' artifacts/runtime_gio.txt
+          python - <<'PY'
+          import pathlib,re
+          text=pathlib.Path("artifacts/runtime_gio.txt").read_text(encoding="utf-8",errors="replace")
+          matches=re.findall(r'C545D_WINRT_BRIDGE,scans=([0-9]+),injections=([0-9]+),evictions=([0-9]+),errors=([0-9]+),ready=([01])',text)
+          # scans counts only successfully polled native epochs; once the
+          # watch fails, a legitimate GLib parser rebuild keeps scans=1.
+          # Prove a second REAL parser invocation via separate report lines
+          # and growing bridge failure counter, not via scans>=2.
+          assert len(matches)>=2,(matches,'GIO did not actually rebuild')
+          assert int(matches[0][3])==0 and matches[0][4]=='1',(matches,'initial healthy watch missing')
+          assert any(int(row[3])>0 and row[4]=='1' for row in matches[1:]),(matches,'runtime watcher failure not observed on rebuilt parser')
+          cache=re.findall(r'C545D_DISPLAY_CACHE,hits=([0-9]+),misses=([0-9]+),entries=([0-9]+)',text)
+          assert len(cache)>=2,(cache,'GIO cache refresh not observed')
+          assert int(cache[0][2])>0 and int(cache[-1][2])==0,(cache,'failed watcher did not evict cached DisplayName entries')
+          assert "C545D_GIO_RUNTIME_DROP_CI_PASS" in text,'missing exact app-info parity proof'
+          print("C545D_RUNTIME_GIO_FAILCLOSED_ANALYZER_PASS,in_process_pre_post=1,"
+                "native_watcher_released_before_refresh=1,glib_bridge_failure_observed=1,"
+                "name_hash_parity=1,CI_only=1")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-post-init-watch-failure-numeric
+          path: |
+            artifacts/native_runtime.txt
+            artifacts/runtime_gio.txt
+          retention-days: 7
+          if-no-files-found: warn

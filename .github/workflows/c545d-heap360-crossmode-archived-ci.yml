@@ -1,0 +1,63 @@
+name: C545D saved GIO 360-byte bin early-vs-late cross-mode analysis CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_heap360_crossmode.py'
+      - '.github/workflows/c545d-heap360-crossmode-archived-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare-four-old-numeric-only-records:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get original 256-cycle Windows 2022 saved record 1
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44533452892
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44533452892
+      - name: Get original saved 256-cycle record 2
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44537371920
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44537371920
+      - name: Get original saved 256-cycle record 3
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44545844200
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/44545844200
+      - name: Get previous original 16-cycle WinRT API stage ablation
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44489681603
+          name: c545d-gio-uwp-api-boundaries
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: saved/old16
+      - name: Validate paired exact 360-byte counts and explicit non-attribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/numeric
+          python tests/analyze_gio_heap360_crossmode.py --selftest
+          python tests/analyze_gio_heap360_crossmode.py --root saved --old16 saved/old16 | tee artifacts/numeric/c545d_heap360_crossmode.txt
+          grep -qx 'C545D_HEAP360_CROSSMODE_PASS,original_256_runs=3,original_16_runs=1,new_windows_runs=0,late360_equal_default_cache=3of3,early16_all_zero=4of4,settled_360_unchanged=6of6,heap_size_does_not_identify_owner=1,no_proven_leak_source=1,real_host=0' artifacts/numeric/c545d_heap360_crossmode.txt
+          test "$(grep -c '^C545D_HEAP360_ARCHIVE,' artifacts/numeric/c545d_heap360_crossmode.txt)" -eq 3
+          test "$(grep -c '^C545D_HEAP360_SETTLED,' artifacts/numeric/c545d_heap360_crossmode.txt)" -eq 6
+          echo 'C545D_HEAP360_ARCHIVE_CI_PASS,reused_numeric_artifacts=4,new_windows_measurements=0,physical_host=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-heap360-archived-crossmode-numeric
+          path: artifacts/numeric/c545d_heap360_crossmode.txt
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,53 @@
+name: C545D status-only native AppInfoMonitor synthetic event safety (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_c545d_winrt_status_only_listener_ci.py'
+      - 'tests/c545d_status_only_native_sink_ci.cpp'
+      - '.github/workflows/c545d-status-only-monitor-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  status-only-native:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build native status-only watcher from exact PR61 source patches
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Base PR61 native monitor patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Status-only native monitor patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_status_only_watch.dll /link /IMPLIB:artifacts/c545d_status_only_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'C++/WinRT watcher compile failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/c545d_status_only_native_sink_ci.cpp /Fe:artifacts/c545d_status_only_native_test.exe
+          if($LASTEXITCODE -ne 0){throw 'Status-only native test compile failed'}
+      - name: Verify synthetic status-only dispatch and fail-safe native cleanup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./artifacts/c545d_status_only_native_test.exe (Resolve-Path artifacts/c545d_status_only_watch.dll).Path | Tee-Object -FilePath artifacts/status_only_numeric.txt
+          if($LASTEXITCODE -ne 0){throw 'Status-only notifier test failed'}
+          $log=Get-Content artifacts/status_only_numeric.txt -Raw
+          if($log -notmatch 'C545D_STATUS_ONLY_SYNTHETIC_CI_PASS,synthetic_status_notifications=2,no_listener_callback_after_detach=1,stale_token_rejected=1,inflight_detach_waited=1'){
+            throw 'Missing exact native safety evidence'
+          }
+          if($log -notmatch 'OS_PackageStatusChanged_NOT_observed=1,CI_only=1'){
+            throw 'False claim of real OS status-only evidence'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-status-only-native-numeric
+          path: artifacts/status_only_numeric.txt
+          retention-days: 7
+          if-no-files-found: warn
