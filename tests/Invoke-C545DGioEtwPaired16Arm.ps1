@@ -56,7 +56,7 @@ try {
   # No pre-baseline capture or true quiescence proof is claimed.
   Invoke-SafeXperf 'kernel' @('-on','BASE')
   $kernelOn=$true
-  Invoke-SafeXperf 'heap' @('-start','HeapSession','-heap','-pids',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-stackwalk','HeapAlloc+HeapRealloc')
+  Invoke-SafeXperf 'heap' @('-start','HeapSession','-heap','-pids',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-MaxFile','512','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc')
   $heapOn=$true
   if(-not $proc.WaitForExit(90000)){throw 'GIO sixteen-cycle test exceeded 90s'}
   if($proc.ExitCode -ne 0){throw 'GIO 16-cycle process failed'}
@@ -69,7 +69,11 @@ try {
   $kernelOn=$false
   if(-not(Test-Path $etl -PathType Leaf)){throw 'No local ETW trace generated'}
   $len=(Get-Item $etl).Length
-  if($len -lt 512 -or $len -gt 100MB){throw 'Unbounded ETW output'}
+  $maxTraceBytes=768MB
+  Write-Host "C545D_GIO_ETW16_LOCAL_SIZE,arm=$Arm,bytes=$len,max_bytes=$maxTraceBytes,raw_uploaded=0"
+  if($len -lt 512 -or $len -gt $maxTraceBytes){
+    throw 'ETW local trace over bounded size; no allocation owner inferred'
+  }
   $oldSymbols=$env:_NT_SYMBOL_PATH
   try {
     $env:_NT_SYMBOL_PATH='srv*'+(Join-Path $local 'symbol_cache_local_only')+'*https://msdl.microsoft.com/download/symbols'
