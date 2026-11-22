@@ -50,7 +50,7 @@ jobs:
           $rows=@(& py tests/audit_c545d_sdk_appinfo_imports.py --sdk $sdk)
           if($LASTEXITCODE -ne 0 -or $rows.Count -ne 6){
             $safe=@($rows | Where-Object {
-              $_ -cmatch '^C545D_SDK_APPINFO_IMPORT_FAIL,reason=INVALID_SDK_OR_PE_IMPORTS,no_allocator_owner_inferred=1$'
+              $_ -cmatch '^C545D_SDK_APPINFO_IMPORT_FAIL,reason=(pefile_missing|unverified_sdk_layout|incomplete_or_unbounded_sdk_images|too_many_unreadable_PE_images|expected_sdk_binary_groups_missing|UNEXPECTED_OR_FILE_ERROR),no_allocator_owner_inferred=1$'
             })
             if($safe.Count -eq 1){Write-Host $safe[0]}
             else {Write-Host 'C545D_SDK_APPINFO_IMPORT_FAIL,reason=SCHEMA_OR_RUNTIME_ERROR,no_allocator_owner_inferred=1'}
