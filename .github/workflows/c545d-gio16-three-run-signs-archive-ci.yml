@@ -1,0 +1,60 @@
+name: C545D GIO16 three independent archived heap-commit sign triangulation
+# Ubuntu only: replay three existing sanitized Windows CI runs.
+# No camera, no recorder host, no GIO/Windows run, no new measurements.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio16_three_run_signs.py'
+      - '.github/workflows/c545d-gio16-three-run-signs-archive-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline-three-source-signs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject invalid source counts, duplicate runs, and sign inversions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio16_three_run_signs.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44995353780
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: archive-region
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45000301159
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: archive-owner
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45020938670
+          name: c545d-gio-eight-bands-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: archive-bands
+      - name: Verify exact original artifacts independently, then report sign-only concordance
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in archive-region archive-owner archive-bands; do
+            test "$(find "$d" -type f | wc -l)" -eq 1
+            test -f "$d/combo16-scanfree-summary.txt"
+          done
+          python3 tests/analyze_c545d_gio16_three_run_signs.py \
+            --region archive-region/combo16-scanfree-summary.txt \
+            --owner archive-owner/combo16-scanfree-summary.txt \
+            --bands archive-bands/combo16-scanfree-summary.txt \
+            > triangulation.txt
+          grep -Fx 'C545D_GIO16_TRIANGULATION_PASS,independent_windows_source_runs=3,matched_0_16_positive_private=3,matched_0_16_positive_reported_region_commit=3,matched_0_16_negative_heapwalk_busy=3,cross_run_magnitudes_not_pooled=1,original_256_not_interpreted_from_16=1,precise_allocation_owner_proven=0,whole_heap_commit_coverage_proven=0,global_quiescence_proven=0,bounded_plateau_proven=0,host_recorder_tested=0,new_windows_runs=0' triangulation.txt
+          echo 'C545D_GIO16_TRIANGULATION_CI_PASS,source_runs=44995353780_45000301159_45020938670,Windows_reruns=0,private_inputs=0,host_untouched=1'
