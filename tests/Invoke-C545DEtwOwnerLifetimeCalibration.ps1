@@ -137,7 +137,7 @@ try {
   if(-not(Test-Path $etl) -or (Get-Item $etl).Length -lt 512 -or
      (Get-Item $etl).Length -gt 128MB){throw 'Missing, empty or excessive private ETL'}
   Check-Xperf 'totals' @('-i',$etl,'-o',$totals,'-a','heap','-totals')
-  Check-Xperf 'filtered_outstanding' @('-i',$etl,'-o',$sizes,'-a','heap','-stacks','-size360361','-top','100')
+  Check-Xperf 'filtered_outstanding' @('-i',$etl,'-o',$sizes,'-a','heap','-stacks','-size','360','361','-top','100')
   if(-not(Test-Path $totals) -or -not(Test-Path $sizes) -or
      (Get-Item $totals).Length -lt 40 -or (Get-Item $sizes).Length -lt 40){
     throw 'No heap owner-capable offline action output'
