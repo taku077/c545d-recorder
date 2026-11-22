@@ -49,10 +49,9 @@ c545d_watch_trace_update (gboolean registered)
 }
 '''
 
-CALLBACK = """  g_object_unref (key);\n}"""
-CALLBACK_PATCHED = """  c545d_watch_trace_update (FALSE);
-  g_object_unref (key);
-}"""
+CALLBACK = """  g_free (status_block);"""
+CALLBACK_PATCHED = """  g_free (status_block);
+  c545d_watch_trace_update (FALSE);"""
 
 SUCCESS = """  if (status == STATUS_PENDING || status == STATUS_SUCCESS)
     return TRUE;"""
@@ -78,7 +77,7 @@ def patch(s: str) -> str:
     body = s[a:b]
     if body.count(CALLBACK) != 1 or "g_free (status_block);" not in body:
         raise ValueError("APC_ownership_contract_changed")
-    # Instrument BEFORE the terminal unref in the completion callback.
+    # Instrument when IO_STATUS_BLOCK is actually freed, BEFORE rearm.
     body = body.replace(CALLBACK, CALLBACK_PATCHED)
     s = s[:a] + HELPER + "\n" + body + s[b:]
     a, b = region(s, "gboolean\ng_win32_registry_key_watch (",
@@ -94,10 +93,15 @@ def patch(s: str) -> str:
 
 def selftest(s: str) -> None:
     good = patch(s)
-    assert good.count(MARKER) == 2
+    assert good.count(MARKER) == 1
+    a, b = region(s, "static VOID NTAPI\nkey_changed (", "/**\n * g_win32_registry_key_watch:")
+    callback_mutant = s[:a] + s[a:b].replace(CALLBACK, "  /* no status free */", 1) + s[b:]
+    a, b = region(s, "gboolean\ng_win32_registry_key_watch (",
+                  "/**\n * g_win32_registry_key_erase_change_indicator:")
+    status_mutant = s[:a] + s[a:b].replace(SUCCESS, "  if (status == STATUS_PENDING)\n    return TRUE;", 1) + s[b:]
     invalid = [
-        s.replace(CALLBACK, "  /* no unref */\n}", 1),
-        s.replace(SUCCESS, "  if (status == STATUS_PENDING)\n    return TRUE;", 1),
+        callback_mutant,
+        status_mutant,
         good,
         s.replace("static VOID NTAPI\nkey_changed (", "static VOID NTAPI\nkey_mutated (", 1),
         s.replace("gboolean\ng_win32_registry_key_watch (", "gboolean\ng_win32_registry_key_watch_changed (", 1),
