@@ -7,6 +7,7 @@ on:
     paths:
       - 'tests/c545d_etw_owner_lifetime_calibration.c'
       - 'tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1'
+      - 'tests/analyze_c545d_xperf_size360_totals_calibration.py'
       - '.github/workflows/c545d-etw-owner-lifetime-calibration-ci.yml'
   workflow_dispatch:
 permissions:
@@ -32,6 +33,8 @@ jobs:
             foreach($e in $errors){Write-Host ("C545D_OWNER_CAL_SYNTAX_DIAGNOSTIC,line={0},column={1},id={2}" -f $e.Extent.StartLineNumber,$e.Extent.StartColumnNumber,$e.ErrorId)}
             throw 'Owner calibration controller syntax rejected'
           }
+          & py tests/analyze_c545d_xperf_size360_totals_calibration.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Xperf filtered totals negative fixtures failed'}
           & ./tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1 -SelfTest
           if(-not $?){throw 'Owner calibration source safety fixture rejected'}
       - name: Run short exact known alloc/free Xperf capability in isolated runner
