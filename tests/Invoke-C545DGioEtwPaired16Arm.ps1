@@ -56,7 +56,7 @@ try {
   # No pre-baseline capture or true quiescence proof is claimed.
   Invoke-SafeXperf 'kernel' @('-on','BASE')
   $kernelOn=$true
-  Invoke-SafeXperf 'heap' @('-start','HeapSession','-heap','-pids',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-MaxFile','512','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc')
+  Invoke-SafeXperf 'heap' @('-start','HeapSession','-heap','-pids',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-MaxFile','256','-FileMode','Circular','-stackwalk','HeapAlloc+HeapRealloc')
   $heapOn=$true
   if(-not $proc.WaitForExit(90000)){throw 'GIO sixteen-cycle test exceeded 90s'}
   if($proc.ExitCode -ne 0){throw 'GIO 16-cycle process failed'}
@@ -69,7 +69,7 @@ try {
   $kernelOn=$false
   if(-not(Test-Path $etl -PathType Leaf)){throw 'No local ETW trace generated'}
   $len=(Get-Item $etl).Length
-  $maxTraceBytes=768MB
+  $maxTraceBytes=512MB
   Write-Host "C545D_GIO_ETW16_LOCAL_SIZE,arm=$Arm,bytes=$len,max_bytes=$maxTraceBytes,raw_uploaded=0"
   if($len -lt 512 -or $len -gt $maxTraceBytes){
     throw 'ETW local trace over bounded size; no allocation owner inferred'
@@ -93,13 +93,14 @@ try {
   if($numericOnly -notmatch '^classification=module_frame_occurrences,'){
     throw 'Expected sanitized report shape missing'
   }
-  $safeOutput="C545D_GIO_ETW16_MODULE_COUNTS,arm=$Arm,$numericOnly"
+  # Circular ETL is a bounded diagnostic sample, not a full history.
+  $safeOutput="C545D_GIO_ETW16_MODULE_COUNTS,arm=$Arm,$numericOnly,trace_circular=1,earlier_heap_events_may_be_lost=1"
   if($safeOutput -notmatch '^C545D_GIO_ETW16_MODULE_COUNTS,arm=(nochange|registry),[A-Za-z0-9_,=]+$'){
     throw 'Unsafe summary output shape rejected'
   }
   Set-Content -Path (Join-Path $Root ("etw-"+$Arm+"-safe.txt")) -Encoding ascii -Value $safeOutput
   Write-Host $safeOutput
-  Write-Host "C545D_GIO_ETW16_ARM_PASS,arm=$Arm,cycles=16,raw_etl_uploaded=0,matched_control_not_in_this_arm=1,prebaseline_trace_proven=0,source_owner_proven=0"
+  Write-Host "C545D_GIO_ETW16_ARM_PASS,arm=$Arm,cycles=16,raw_etl_uploaded=0,matched_control_not_in_this_arm=1,prebaseline_trace_proven=0,trace_circular=1,earlier_heap_events_may_be_lost=1,source_owner_proven=0"
   $success=$true
 } finally {
   if($heapOn){& $xperf -stop HeapSession *> $rawLocal}
