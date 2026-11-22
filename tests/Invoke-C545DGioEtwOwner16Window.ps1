@@ -129,6 +129,22 @@ try {
      (Get-Item $etl).Length -gt 512MB){
     throw 'ETW local file empty or exceeds bounded capacity'
   }
+  # Whole-heap -totals can be interpreted separately even when Xperf
+  # -stacks formatting is not safely parseable. This is not source ownership.
+  $total=Join-Path $local 'heap_totals_private.txt'
+  $totalOK=0
+  & $xperf -i $etl -o $total -a heap -totals *> $rawLocal
+  if($LASTEXITCODE -eq 0 -and (Test-Path $total) -and (Get-Item $total).Length -gt 40){
+    $totLine=@(& py tests/analyze_c545d_xperf_general_totals_ci.py --report $total --arm $Arm 2> $rawLocal)
+    $matched=@($totLine | Where-Object {$_ -match ('^C545D_GIO_ETW_HEAP_TOTALS_NUMERIC,arm='+$Arm+',[A-Za-z0-9_,=]+$')})
+    if($LASTEXITCODE -eq 0 -and $matched.Count -eq 1){
+      New-Item -ItemType Directory -Path (Join-Path $Root 'numeric') -Force | Out-Null
+      $matched[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-totals-summary-only.txt")) -Encoding ascii
+      Write-Host $matched[0]
+      $totalOK=1
+    }
+  }
+  if($totalOK -ne 1){Write-Host "C545D_GIO_ETW_TOTALS_PARSE_GAP,arm=$Arm,global_out_unproven=1,raw_uploaded=0"}
   $env:_NT_SYMBOL_PATH="$env:RUNNER_TEMP;srv*$(Join-Path $local 'symbols_private')*https://msdl.microsoft.com/download/symbols"
   Invoke-SafeXperf 'unfiltered_source_stacks' @('-i',$etl,'-o',$stack,
       '-symbols','-a','heap','-stacks','-top','1024')
@@ -139,6 +155,13 @@ try {
   $safe=@(& py tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --report $stack --arm $Arm 2> $rawLocal)
   $counts=@($safe | Where-Object {$_ -match ('^C545D_GIO_ETW_OWNER_STACK_COHORT,arm='+$Arm+',[A-Za-z0-9_,=]+$')})
   if($LASTEXITCODE -ne 0 -or $counts.Count -ne 1){
+    $diag=@(& py tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --report $stack --arm $Arm --diagnose 2> $rawLocal)
+    $allow=@($diag | Where-Object {$_ -match ('^C545D_GIO_ETW_STACK_PARSE_DIAGNOSTIC,arm='+$Arm+',[A-Za-z0-9_,=]+$')})
+    if($LASTEXITCODE -eq 0 -and $allow.Count -eq 1){
+      New-Item -ItemType Directory -Path (Join-Path $Root 'numeric') -Force | Out-Null
+      $allow[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-stack-gap-summary-only.txt")) -Encoding ascii
+      Write-Host $allow[0]
+    }
     throw 'Incomplete or unsafely parsed source stack cohort report'
   }
   $numericOnly=$counts[0]

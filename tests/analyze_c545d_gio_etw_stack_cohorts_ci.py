@@ -145,6 +145,44 @@ def analyze(source: str, *, arm: str) -> str:
     return ",".join(fields)
 
 
+REASONS = {
+    "invalid_or_oversized_stack_report", "missing_or_ambiguous_global_top_section",
+    "ambiguous_global_section", "heap_stack_metric_missing_or_duplicated",
+    "invalid_heap_counts", "invalid_heap_kb", "invalid_heap_sizes",
+    "no_allocations_recorded", "ambiguous_top_section",
+    "no_source_stack_rows", "stack_rows_exceeded",
+    "aggregate_source_rows_exceed_global"
+}
+def diagnose(raw: str, arm: str) -> str:
+    # A diagnostic is not a leak claim; its fields are strictly numerical
+    # and enum-only, no stacks, paths, registry keys, symbols or addresses.
+    reason = "NONE"
+    try:
+        analyze(raw, arm=arm)
+    except ValueError as exc:
+        candidate = str(exc).split(",", 1)[0]
+        reason = candidate if candidate in REASONS else "OTHER_REJECTED"
+    parts = [x.strip() for x in DASH.split(raw) if x.strip()]
+    global_parts = [x for x in parts if GLOBAL.search(x)]
+    glob_alloc = glob_out = glob_valid = 0
+    if len(global_parts) == 1:
+        try:
+            metrics = num(global_parts[0])
+            glob_alloc, glob_out, glob_valid = metrics[0], metrics[2], 1
+        except ValueError:
+            pass
+    return (
+        "C545D_GIO_ETW_STACK_PARSE_DIAGNOSTIC,"
+        f"arm={arm},reason={reason},global_headers={len(GLOBAL.findall(raw))},"
+        f"top_headers={len(TOP.findall(raw))},"
+        f"dash_parts={len(parts)},"
+        f"alloc_lines={len(METRICS['alloc'].findall(raw))},"
+        f"out_lines={len(METRICS['out'].findall(raw))},"
+        f"realloc_lines={len(METRICS['realloc'].findall(raw))},"
+        f"global_valid={glob_valid},global_alloc={glob_alloc},global_out={glob_out},"
+        "full_source_classification_proven=0,raw_uploaded=0"
+    )
+
 def selftest() -> None:
     head = ("GLOBAL ALLOCATIONS:\nAlloc : 12, 2.0 KB\n"
             "Realloc : 0\nOutstanding : 3, 0.5 KB\n"
@@ -182,6 +220,7 @@ def selftest() -> None:
         except ValueError:
             continue
         raise AssertionError(f"invalid_etw_stack_accepted,index={index}")
+    assert "reason=missing_or_ambiguous_global_top_section" in diagnose(valid.replace("TOP 1024:", "MISSING:"), "registry")
     print("C545D_GIO_ETW_STACK_COHORT_SELFTEST_PASS,positive=2,negative=8,"
           "source_stack_coverage_gated=1,unknown_frames_not_discarded=1,"
           "raw_symbols_output=0,real_GIO_tested=0")
@@ -190,6 +229,7 @@ def selftest() -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--selftest", action="store_true")
+    p.add_argument("--diagnose", action="store_true")
     p.add_argument("--report", type=Path)
     p.add_argument("--arm", choices=("nochange", "registry"))
     a = p.parse_args()
@@ -199,7 +239,7 @@ def main() -> None:
     if a.report is None or a.arm is None:
         p.error("--arm and --report required")
     raw = a.report.read_text(encoding="utf-8-sig", errors="replace")
-    print(analyze(raw, arm=a.arm))
+    print(diagnose(raw, arm=a.arm) if a.diagnose else analyze(raw, arm=a.arm))
 
 if __name__ == "__main__":
     main()

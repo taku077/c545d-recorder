@@ -7,6 +7,7 @@ on:
     paths:
       - 'tests/Invoke-C545DGioEtwOwner16Window.ps1'
       - 'tests/analyze_c545d_gio_etw_stack_cohorts_ci.py'
+      - 'tests/analyze_c545d_xperf_general_totals_ci.py'
       - 'tests/patch_gio_probe_etw_phase_fence_ci.py'
       - '.github/workflows/c545d-gio-etw-owner-stack-paired16-ci.yml'
   workflow_dispatch:
@@ -28,6 +29,8 @@ jobs:
           $ErrorActionPreference='Stop'
           py tests/analyze_gio_combo_msvc256.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Invalid 256-cycle analyzer selftest'}
+          py tests/analyze_c545d_xperf_general_totals_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Xperf global numeric totals selftest failed'}
           py tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Source stack owner parser selftest failed'}
           $tokens=$null
@@ -208,9 +211,11 @@ jobs:
           (@($etw)+@($watch)+@($phases)) | ForEach-Object {Write-Host $_}
           Write-Host 'C545D_GIO_ETW_OWNER_PAIR_CI_PASS,arms=2,total_cycles=16,etw_traced_cycles=4,prelatewindow=1,precleanup=1,seq=1,no_lost_events=1,source_cohorts_aggregated=1,full_global_idle_unproven=1,real_leak_unproven=1,raw_uploaded=0,host_untouched=1'
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
           name: c545d-gio-etw-source-cohort-numeric-only
-          path: artifacts/numeric/gio-etw-source-cohorts-only.txt
-          if-no-files-found: error
+          path: |
+            artifacts/numeric/etw-*-summary-only.txt
+            artifacts/numeric/gio-etw-source-cohorts-only.txt
+          if-no-files-found: warn
           retention-days: 60
