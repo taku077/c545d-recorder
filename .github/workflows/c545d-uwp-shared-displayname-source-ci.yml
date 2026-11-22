@@ -5,6 +5,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/patch_glib_uwp_displayname_shared_bytes_ci.py'
+      - 'tests/patch_glib_uwp_shared_bytes_source_smoke_ci.py'
       - '.github/workflows/c545d-uwp-shared-displayname-source-ci.yml'
   workflow_dispatch:
 permissions:
@@ -36,6 +37,7 @@ jobs:
           python3 tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$app"
           python3 tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$app" "$parser"
           python3 tests/patch_glib_uwp_displayname_shared_bytes_ci.py "$parser"
+          python3 tests/patch_glib_uwp_shared_bytes_source_smoke_ci.py "$parser"
           git -C "$RUNNER_TEMP/glib" diff --check
           python3 - "$parser" <<'PY'
           import pathlib,sys
@@ -47,5 +49,7 @@ jobs:
           assert s.count("c545d_bridge_epoch_still_valid (before)") == 1
           assert s.count("c545d_cache_display_report ();") == 1
           assert s.count("C545D_CI_CACHE_SHARED_BYTES") == 1
+          assert s.count("C545D_SHARED_BYTES_SOURCE_SMOKE_PASS") == 1
+          assert s.count('if (g_getenv ("C545D_CI_CACHE_REF_SMOKE") != NULL)') == 1
           print("C545D_CACHE_SHARED_BYTES_SOURCE_PASS,pinned_tag=2_82_4,epoch_checked=1,cache_hit_utf16_allocations=0,old_gio_unmodified=1,windows_runs=0")
           PY
