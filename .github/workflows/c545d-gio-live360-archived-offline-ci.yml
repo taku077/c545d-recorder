@@ -1,0 +1,40 @@
+name: C545D live360 saved GIO16 numeric archive independent replay
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_live360_archived.py'
+      - '.github/workflows/c545d-gio-live360-archived-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-windows-archive-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate archival row integrity, counter math, and safe fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_live360_archived.py --selftest
+          echo 'C545D_GIO_LIVE360_ARCHIVE_STATIC_GATE_PASS,negative=10,windows_runs=0'
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45018787046
+          name: c545d-gio-live360-safe-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: saved
+      - name: Replay only original numeric GIO16 artifact without new Windows trial
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find saved -type f | wc -l)" -eq 1
+          test -f saved/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_gio_live360_archived.py \
+            --source saved/combo16-scanfree-summary.txt | tee /tmp/c545d_gio16_live360_checked.txt
+          grep -Fx 'C545D_GIO_LIVE360_ARCHIVE_PASS,source_run=45018787046,artifact_id=14753270867,snapshot_rows=8,controlled_windows=3,registry_net_360_0_16=0,registry_net_360_0_18=0,controlled_private_usage_0_16=176128,reported_region_commit_0_16=176128,heapwalk_busy_0_16=-20308,owner_unproven=1,address_reuse_unexcluded=1,old_256_unmodified=1,windows_reruns=0,real_recorder_untested=1' /tmp/c545d_gio16_live360_checked.txt
+          echo 'C545D_GIO_LIVE360_ARCHIVE_REPLAY_CI_PASS,windows_runs=0,new_gio_runs=0,original_256_rerun=0,private_data_uploaded=0'
