@@ -23,8 +23,6 @@ jobs:
           $ErrorActionPreference='Stop'
           py tests/audit_c545d_sdk_appinfo_imports.py --selftest
           if($LASTEXITCODE -ne 0){throw 'PE import scanner selftest failed'}
-          py -m pip install --disable-pip-version-check pefile==2024.8.26
-          if($LASTEXITCODE -ne 0){throw 'Pinned PE parser package installation failed'}
       - uses: actions/download-artifact@v4
         with:
           repository: taku077/c545d-recorder
@@ -47,6 +45,14 @@ jobs:
           if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){
             throw 'SDK baseline hash did not match previously validated reference'
           }
+          # Explicit --target avoids Python user-site differences after
+          # the SDK installer modifies process environment / PATH entries.
+          $depRoot=Join-Path $env:RUNNER_TEMP 'c545d_pe_reader'
+          py -m pip install --disable-pip-version-check --target $depRoot pefile==2023.2.7
+          if($LASTEXITCODE -ne 0){throw 'Explicit isolated PE parser installation failed'}
+          $env:PYTHONPATH="$depRoot;$env:PYTHONPATH"
+          & py -c "import pefile; print('C545D_PE_READER_READY,isolation=1,version=2023_2_7')"
+          if($LASTEXITCODE -ne 0){throw 'PE parser import precondition absent after explicit target install'}
           $rows=@(& py tests/audit_c545d_sdk_appinfo_imports.py --sdk $sdk)
           if($LASTEXITCODE -ne 0 -or $rows.Count -ne 6){
             $safe=@($rows | Where-Object {
