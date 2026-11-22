@@ -33,7 +33,7 @@ APPINFO_TAIL_NEW = '''  /* CI-only: this scan has passed monitor notification di
     {
       LARGE_INTEGER c545d_qpc;
       if (QueryPerformanceCounter (&c545d_qpc))
-        g_print ("C545D_CI_APPINFO_QPC,phase=worker_after_notify,ordinal=%d,qpc=%lld\n",
+        g_print ("C545D_CI_APPINFO_QPC,phase=worker_after_notify,ordinal=%d,qpc=%lld\\n",
                  g_atomic_int_get (&c545d_ci_trace_active_worker),
                  (long long) c545d_qpc.QuadPart);
     }
@@ -109,6 +109,7 @@ def selftest() -> None:
     assert "precleanup_ready_before" in patched_probe
     assert "trace_stopped_ack" in patched_probe
     assert patched_app.count("C545D_CI_APPINFO_QPC") == 2  # regular phase + post-notify
+    assert r'worker_after_notify,ordinal=%d,qpc=%lld\n"' in patched_app  # C escaped LF
     assert patched_probe.count("C545D_CI_ETW_FENCE_QPC") == 2
     negatives = 0
     cases = [
