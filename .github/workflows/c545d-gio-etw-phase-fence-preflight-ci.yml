@@ -26,7 +26,13 @@ jobs:
           python3 tests/patch_gio_probe_heapregion_ci.py "$tmp/disposable.c"
           python3 tests/patch_gio_probe_per_heap_owner_ci.py "$tmp/disposable.c"
           python3 tests/patch_gio_probe_etw_phase_fence_ci.py "$tmp/disposable.c" --selftest
+          cp "$tmp/disposable.c" "$tmp/disposable_late.c"
           python3 tests/patch_gio_probe_etw_phase_fence_ci.py "$tmp/disposable.c"
           grep -Fq 'baseline_ready.signal' "$tmp/disposable.c"
           grep -Fq 'precleanup_ready.signal' "$tmp/disposable.c"
-          echo 'C545D_GIO_ETW_FENCE_PREFLIGHT_CI_PASS,existing_probe_overlays=4,preworkload_capture=1,pre_cleanup_stop=1,whole_process_quiescence_proven=0,Windows_runs=0,host_untouched=1'
+          python3 tests/patch_gio_probe_etw_phase_fence_ci.py "$tmp/disposable_late.c" --late-window
+          grep -Fq 'late_window_ready.signal' "$tmp/disposable_late.c"
+          grep -Fq 'i == cycle_count - 3' "$tmp/disposable_late.c"
+          grep -Fq 'precleanup_ready.signal' "$tmp/disposable_late.c"
+          ! grep -Fq 'baseline_ready.signal' "$tmp/disposable_late.c"
+          echo 'C545D_GIO_ETW_FENCE_PREFLIGHT_CI_PASS,existing_probe_overlays=4,preworkload_capture=1,late_window_cycles=4,total_test_cycles=16,pre_cleanup_stop=1,whole_process_quiescence_proven=0,Windows_runs=0,host_untouched=1'
