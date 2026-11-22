@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `46ee2c0e250f222dea78684eb27ac89358b35569`
-- **PR updated at (UTC):** `2026-11-22T19:39:23Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/46ee2c0e250f222dea78684eb27ac89358b35569/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `22dfcfb045c3722bb2149fa4e8a6b32cd69c7172`
+- **PR updated at (UTC):** `2026-11-22T19:40:02Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/22dfcfb045c3722bb2149fa4e8a6b32cd69c7172/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45061987469](https://github.com/taku077/c545d-recorder/actions/runs/45061987469) |
-| C545D GIO ETW stop-worker QPC source-contract preflight | failure | [#45061985856](https://github.com/taku077/c545d-recorder/actions/runs/45061985856) |
+| C545D active development handoff auto-refresh | in_progress | [#45062047303](https://github.com/taku077/c545d-recorder/actions/runs/45062047303) |
+| C545D Windows GIO late 4 cycles of 16 source-stack ETW owner census | in_progress | [#45062045123](https://github.com/taku077/c545d-recorder/actions/runs/45062045123) |
 
 ## Current development findings from the active PR
 
