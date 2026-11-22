@@ -49,5 +49,6 @@ jobs:
           python3 tests/analyze_c545d_combo256_cache_owner_scope.py \
             --root archived --cache-source tests/patch_glib_uwp_displayname_cache_diagnostic.py | tee /tmp/c545d_cache_owner.txt
           grep -Fx 'C545D_COMBO256_CACHE_BOUND_PASS,original_windows_run=44918598339,original_256_rerun=0,other_windows_rerun=0,real_camera_tested=0,user_host_modified=0' /tmp/c545d_cache_owner.txt
-          grep -Fx 'C545D_COMBO256_CACHE_BOUND_INFERENCE,final_registry_cache_entries_greater_than_nochange=0,unbounded_entry_count_growth_observed=0,cache_replacement_transient_bytes_unknown=1,private_committed_ownership_from_cache_proven=0,cache_cannot_be_shipped_without_freshness_fix=1,heap_allocator_highwater_excluded=0,global_worker_APC_quiescence_proven=0' /tmp/c545d_cache_owner.txt
+          grep -Fx 'C545D_COMBO256_CACHE_BOUND_INFERENCE,observed_cache_cardinality_growth=0,all_allocation_lifetimes_observed=0,cache_replacement_transient_bytes_unknown=1,private_commit_owner_proven=0,diagnostic_cache_freshness_production_safe=0,heap_allocator_highwater_excluded=0,global_worker_APC_quiescence_proven=0' /tmp/c545d_cache_owner.txt
+          grep -E '^C545D_COMBO256_CACHE_BOUND_NUMERIC,source_run=44918598339,nochange_reports=1,nochange_hits=0,nochange_misses=32,nochange_entries=32,registry_reports=258,registry_hits=8224,registry_misses=32,registry_entries=32,' /tmp/c545d_cache_owner.txt
           echo 'C545D_COMBO256_SCOPE_OFFLINE_CI_PASS,windows_runs=0,original_256_run=44918598339,user_host_modified=0'
