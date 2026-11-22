@@ -43,7 +43,7 @@ static int c545d_ci_etw_phase_fence (const wchar_t *ready, const wchar_t *releas
 }
 '''
 
-def patch(src: str) -> str:
+def patch(src: str, *, late_window: bool = False) -> str:
     if "c545d_ci_etw_phase_fence" in src:
         raise ValueError("disposable_fence_already_present")
     if src.count(PRE) != 1 or src.count(POST) != 1:
@@ -53,8 +53,18 @@ def patch(src: str) -> str:
         raise ValueError("misordered_probe_phase")
     # Insert helper outside main so there is no public API or ABI change.
     src = src[:start] + HELPER + "\n" + src[start:]
-    src = src.replace(PRE, PRE +
-      '    if (!c545d_ci_etw_phase_fence(L"baseline_ready.signal", L"trace_armed.signal")) return 8;\n', 1)
+    if late_window:
+        # The original 16 cycles still run. Trace only cycles 13-16:
+        # no arbitrary new 4h/256-cycle workload, and no lost startup data
+        # is needed for a scoped *late allocation-lifetime* inference.
+        loop = "    for (i = 1; i <= cycle_count; i++) {\n"
+        if src.count(loop) != 1:
+            raise ValueError("late_cycle_loop_anchor_missing_or_duplicated")
+        src = src.replace(loop, loop +
+          '        if (i == cycle_count - 3 && !c545d_ci_etw_phase_fence(L"late_window_ready.signal", L"trace_armed.signal")) return 8;\n', 1)
+    else:
+        src = src.replace(PRE, PRE +
+          '    if (!c545d_ci_etw_phase_fence(L"baseline_ready.signal", L"trace_armed.signal")) return 8;\n', 1)
     src = src.replace(POST, POST +
       '    if (!c545d_ci_etw_phase_fence(L"precleanup_ready.signal", L"trace_stopped.signal")) return 9;\n', 1)
     assert src.count("c545d_ci_etw_phase_fence(") == 2
@@ -62,7 +72,11 @@ def patch(src: str) -> str:
 
 def selftest(src: str) -> None:
     good = patch(src)
+    late = patch(src, late_window=True)
     assert "SleepEx(50, TRUE)" in good
+    assert "late_window_ready.signal" in late
+    assert "baseline_ready.signal" not in late
+    assert "i == cycle_count - 3" in late
     for i, bad in enumerate((
         src.replace(PRE, "", 1),
         src.replace(POST, "", 1),
@@ -75,19 +89,32 @@ def selftest(src: str) -> None:
         except ValueError:
             continue
         raise AssertionError(f"timing_fence_invalid_probe_accepted,index={i}")
-    print("C545D_CI_ETW_PROBE_FENCE_SELFTEST_PASS,positive=1,negative=5,host_modified=0")
+    # When late-window source is accidentally changed, fail rather than
+    # silently fall back to capturing all sixteen cycles.
+    try:
+        patch(src.replace("    for (i = 1; i <= cycle_count; i++) {", "    for (;;){", 1),
+              late_window=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mutated_late_window_loop_accepted")
+    print("C545D_CI_ETW_PROBE_FENCE_SELFTEST_PASS,positive=2,negative=6,host_modified=0")
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("path", type=Path)
     p.add_argument("--selftest", action="store_true")
+    p.add_argument("--late-window", action="store_true")
     a = p.parse_args()
     original = a.path.read_text(encoding="utf-8")
     if a.selftest:
         selftest(original)
         return
-    a.path.write_text(patch(original), encoding="utf-8")
-    print("C545D_CI_ETW_PROBE_FENCE_PATCH_PASS,window=after_baseline_before_cleanup,whole_process_idle_proven=0")
+    a.path.write_text(patch(original, late_window=a.late_window), encoding="utf-8")
+    if a.late_window:
+        print("C545D_CI_ETW_PROBE_FENCE_PATCH_PASS,window=last4_of_16_before_cleanup,whole_process_idle_proven=0")
+    else:
+        print("C545D_CI_ETW_PROBE_FENCE_PATCH_PASS,window=after_baseline_before_cleanup,whole_process_idle_proven=0")
 
 if __name__ == "__main__":
     main()
