@@ -258,6 +258,50 @@ jobs:
               }
             }
           }
+      # Fail-closed QPC postmortem on the SAME nochange and registry processes.
+      # Uses local source logs only; no second workload, symbols or ETL upload.
+      - name: Extract numeric GIO worker activity through Xperf stop bracket
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $root=Join-Path (Get-Location).Path 'artifacts'
+          New-Item -ItemType Directory -Force (Join-Path $root 'numeric') | Out-Null
+          $out=Join-Path $root 'numeric/etw-worker-stop-qpc-only.txt'
+          $errorFile=Join-Path $env:RUNNER_TEMP 'c545d_qpc_error_private.txt'
+          $valid=0
+          foreach($arm in @('nochange','registry')){
+            $log=Join-Path $root ("combo-"+$arm+"-16.txt")
+            if(-not(Test-Path $log -PathType Leaf)){
+              Write-Host "C545D_GIO_ETW_WORKER_QPC_GAP,arm=$arm,reason=ARM_LOG_MISSING,raw_uploaded=0"
+              continue
+            }
+            $result=@(& py tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py --report $log --arm $arm 2> $errorFile)
+            $rc=$LASTEXITCODE
+            $safe=@($result | Where-Object {
+              $_ -match ('^C545D_GIO_ETW_WORKER_STOP_QPC,arm='+$arm+',[A-Za-z0-9_,=]+        if: always()
+        with:
+          name: c545d-gio-etw-source-cohort-numeric-only
+          path: |
+            artifacts/numeric/etw-*-summary-only.txt
+            artifacts/numeric/same-run-resource-only.txt
+            artifacts/numeric/etw-worker-stop-qpc-only.txt
+            artifacts/numeric/gio-etw-source-cohorts-only.txt
+          if-no-files-found: warn
+          retention-days: 60
+)
+            })
+            if($rc -eq 0 -and $safe.Count -eq 1){
+              $safe[0] | Add-Content -Path $out -Encoding ascii
+              Write-Host $safe[0]
+              $valid++
+            } else {
+              Write-Host "C545D_GIO_ETW_WORKER_QPC_GAP,arm=$arm,reason=FENCE_OR_WORKER_TIMELINE_INVALID,raw_uploaded=0"
+            }
+          }
+          Write-Host "C545D_GIO_ETW_WORKER_QPC_COVERAGE,valid=$valid,needed=2,global_idle_proven=0,raw_uploaded=0"
+          if($valid -ne 2){throw 'QPC stop-worker lifetime is not proven for both arms'}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
