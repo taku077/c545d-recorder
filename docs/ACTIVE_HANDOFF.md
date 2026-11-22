@@ -11,6 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
+| C545D active development handoff auto-refresh | in_progress | [#45044518151](https://github.com/taku077/c545d-recorder/actions/runs/45044518151) |
 | C545D synthetic complete-interval heap owner ETW calibration | in_progress | [#45044515162](https://github.com/taku077/c545d-recorder/actions/runs/45044515162) |
 
 ## Current development findings from the active PR
