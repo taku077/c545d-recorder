@@ -1,0 +1,42 @@
+name: C545D revalidate original Combo scan-free GObject/heap rebound (no Windows)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_combo16_archived.py'
+      - '.github/workflows/c545d-combo16-scanfree-archive-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-run-numeric-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44990673986
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: saved
+      - name: Reject corrupt saved GObject/heap evidence and retain only aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_combo16_archived.py --selftest
+          mkdir -p artifacts/numeric
+          python3 tests/analyze_c545d_combo16_archived.py \
+            --file saved/combo16-scanfree-summary.txt | tee artifacts/numeric/scanfree_verified.txt
+          grep -Fx 'C545D_COMBO16_ARCHIVE_AUDIT_PASS,source_run=44990673986,Windows_reruns=0,source_mode=combo,GAppInfo_query_final_skipped=1,post_cleanup_worker_rebuild_plausible_not_proven=1,native_allocation_owner_unknown=1,360B_longrun_rate_unproven=1,user_PC_untested=1' artifacts/numeric/scanfree_verified.txt
+          test "$(grep -c '^C545D_COMBO16_SAVED_' artifacts/numeric/scanfree_verified.txt)" -eq 2
+          echo 'C545D_COMBO16_ARCHIVE_CI_SUCCESS,old_win2022_run=1,new_windows_runs=0,raw_user_information_uploaded=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-combo16-verified-numeric-graph-only
+          path: artifacts/numeric/scanfree_verified.txt
+          if-no-files-found: error
+          retention-days: 90
