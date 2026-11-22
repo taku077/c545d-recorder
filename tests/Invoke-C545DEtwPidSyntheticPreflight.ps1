@@ -15,7 +15,7 @@ function Assert-PidOnly([string[]]$ArgsList) {
   }
 }
 if($SelfTest) {
-  Assert-PidOnly @('-start','HeapSession','-heap','-Pid','1234','-stackwalk','HeapAlloc+HeapRealloc')
+  Assert-PidOnly -ArgsList @('-start','HeapSession','-heap','-Pid','1234','-stackwalk','HeapAlloc+HeapRealloc')
   $bad=@(
     @('-start','HeapSession','-heap','-PidNewProcess','foo.exe','-stackwalk','HeapAlloc+HeapRealloc'),
     @('-start','HeapSession','-heap','-Pid','123','TracingFlags','-stackwalk','HeapAlloc+HeapRealloc'),
@@ -24,7 +24,7 @@ if($SelfTest) {
     @('-start','HeapSession','-heap','-Pid','123','-stackwalk','HeapAlloc'))
   foreach($case in $bad) {
     $rejected=$false
-    try { Assert-PidOnly $case } catch { $rejected=$true }
+    try { Assert-PidOnly -ArgsList $case } catch { $rejected=$true }
     if(-not $rejected){throw 'Unsafe trace fixture accepted'}
   }
   Write-Host 'C545D_ETW_PID_SYNTHETIC_SELFTEST_PASS,negatives=5,positives=1,host_modified=0'
