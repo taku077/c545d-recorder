@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7609324a6a3977f1cef1e98a42508cd314cc5275`
-- **PR updated at (UTC):** `2026-11-22T08:27:49Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7609324a6a3977f1cef1e98a42508cd314cc5275/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ff41b4cd5ddd98cc244114156ab2f178e1317e63`
+- **PR updated at (UTC):** `2026-11-22T08:28:10Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ff41b4cd5ddd98cc244114156ab2f178e1317e63/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45002930448](https://github.com/taku077/c545d-recorder/actions/runs/45002930448) |
+| C545D active development handoff auto-refresh | in_progress | [#45002956083](https://github.com/taku077/c545d-recorder/actions/runs/45002956083) |
+| C545D original Combo256 HeapWalk cbData versus PrivateUsage scope audit | failure | [#45002954709](https://github.com/taku077/c545d-recorder/actions/runs/45002954709) |
 
 ## Current development findings from the active PR
 
