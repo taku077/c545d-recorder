@@ -1,0 +1,67 @@
+name: C545D archived 256-cycle private high-water and churn audit (offline)
+# Analyze original + 3 prior DIFFERENT Windows experiments using saved artifacts only.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_saved256_highwater.py'
+      - '.github/workflows/c545d-saved256-highwater-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-four-arm-plus-three-older-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source guards, simple monotonic/oscillating/constant fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_saved256_highwater.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: original
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44533452892
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: older/44533452892
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44537371920
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: older/44537371920
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44545844200
+          name: c545d-display-cache-256-diagnostic
+          github-token: ${{ github.token }}
+          path: older/44545844200
+      - name: Confirm old exact sources and independently classify highs vs live memory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f original/ab64_safe_trace.txt
+          for id in 44533452892 44537371920 44545844200; do
+            test -f "older/$id/cache_nochange_256.log"
+            test -f "older/$id/cache_registry_256.log"
+          done
+          python3 tests/analyze_c545d_saved256_highwater.py \
+            --source original --older older | tee /tmp/c545d_highwater.txt
+          test "$(grep -c '^C545D_256_HIGHWATER_EPOCH,' /tmp/c545d_highwater.txt)" -eq 24
+          test "$(grep -c '^C545D_256_HIGHWATER_OLDER_CACHE,' /tmp/c545d_highwater.txt)" -eq 3
+          test "$(grep -c '^C545D_256_HIGHWATER_ORIGINAL_SUMMARY,' /tmp/c545d_highwater.txt)" -eq 1
+          grep -Fx 'C545D_256_HIGHWATER_PASS,source_original=44918598339,older_archived_runs=3,original_processes=4,per_cycle_checkpoints=257,original_windows_rerun=0,all_outputs_numeric_only=1,permanent_plateau_proven=0,production_changes=0' /tmp/c545d_highwater.txt
+          echo 'C545D_256_HIGHWATER_CI_PASS,windows_runs=0,user_host_untouched=1,root_cause_unproven=1'
