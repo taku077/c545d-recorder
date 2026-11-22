@@ -1,0 +1,63 @@
+name: C545D AppInfo async phase trace source and numeric selftest (fast)
+# No Windows runner, camera, recorder, registry writes or DLL install.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_appinfo_phase_trace_ci.py'
+      - 'tests/patch_gio_probe_phase_census_ci.py'
+      - 'tests/analyze_c545d_appinfo_phase_trace.py'
+      - '.github/workflows/c545d-appinfo-phase-trace-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-chronology-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict negative-case parser and fail-closed patch selftests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/patch_glib_appinfo_phase_trace_ci.py --selftest
+          python3 tests/patch_gio_probe_scanfree_ci.py --selftest
+          python3 tests/patch_gio_probe_phase_census_ci.py --selftest
+          python3 tests/analyze_c545d_appinfo_phase_trace.py --selftest
+      - name: Pin original GLib source and apply only disposable diagnostic timing patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$temp/glib"
+          python3 tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$temp/glib/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_appinfo_phase_trace_ci.py "$temp/glib/gio/gwin32appinfo.c"
+          git -C "$temp/glib" diff --check
+          python3 - "$temp/glib/gio/gwin32appinfo.c" <<'PY'
+          from pathlib import Path
+          import sys
+          s = Path(sys.argv[1]).read_text(encoding="utf-8")
+          for token in ("registry_callback", "worker_begin", "worker_scan_end",
+                        "parser_begin", "parser_end", "worker_unlocked"):
+              assert s.count(f'"{token}"') == 1, token
+          assert s.count("C545D_CI_APPINFO_TRACE,phase=%s") == 1
+          assert "g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error)" in s
+          print("C545D_APPINFO_TRACE_PINNED_SOURCE_PASS,glib=2.82.4,"
+                "distinct_phases=6,external_exports_changed=0")
+          PY
+          cp tests/gio_appinfo_key_handle_probe.c "$temp/disposable.c"
+          python3 tests/patch_gio_probe_scanfree_ci.py "$temp/disposable.c"
+          python3 tests/patch_gio_probe_phase_census_ci.py "$temp/disposable.c"
+          python3 - "$temp/disposable.c" <<'PY'
+          from pathlib import Path
+          import sys
+          s = Path(sys.argv[1]).read_text(encoding="utf-8")
+          for name in ("after_cleanup", "idle_begin", "idle_end", "scanfree_cleanup"):
+              assert s.count(f"phase={name}") == 1, name
+          assert 'if (!c545d_ci_scanfree_final)' in s
+          print("C545D_PROBE_PHASE_DISPOSABLE_SOURCE_PASS,"
+                "phase_markers=4,appinfo_final_public_query_skipped=1")
+          PY
+          echo 'C545D_APPINFO_PHASE_FAST_CI_PASS,windows_runs=0,real_host_untested=1'
