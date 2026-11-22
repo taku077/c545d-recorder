@@ -74,6 +74,12 @@ function Call-Xperf([string]$Phase,[string[]]$ArgsList) {
     elseif($message -match '(?i)already.exists|in.use|already.running|duplicate'){$reason='SESSION_COLLISION'}
     elseif($message -match '(?i)invalid|incorrect|unknown|syntax|usage:'){$reason='COMMAND_UNSUPPORTED'}
     elseif($message -match '(?i)buffer|memory'){$reason='BUFFER_LIMIT'}
+    elseif($message -match '(?i)start|service|provider'){$reason='PROVIDER_OR_START'}
+    $words=@('pid','pids','process','heap','heapalloc','stackwalk','buffer','session','logger','start','enable','event','supported','unknown','failed','trace','etw')
+    $seen=@($words | Where-Object { $message -match "(?i)\\b$([regex]::Escape($_))\\b" })
+    $codeMatch=[regex]::Match($message,'(?i)(?<![0-9a-f])0x[0-9a-f]{8}(?![0-9a-f])')
+    $statusCode=if($codeMatch.Success){$codeMatch.Value.ToUpperInvariant()}else{'NONE'}
+    Write-Host "C545D_ETW_FAILURE_FINGERPRINT,phase=$Phase,code=$statusCode,word_families=$($seen -join ';'),raw_uploaded=0"
     throw "C545D_ETW_PHASE_FAILED,phase=$Phase,reason=$reason,raw_uploaded=0"
   }
 }
@@ -89,7 +95,7 @@ try {
   }
   $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
   Wait-Flag 'ready.signal'
-  $etwArgs=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','64','-MinBuffers','8','-MaxBuffers','16','-stackwalk','HeapAlloc+HeapRealloc')
+  $etwArgs=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-stackwalk','HeapAlloc+HeapRealloc')
   Assert-PidOnly -ArgsList $etwArgs
   Call-Xperf -Phase 'kernel' -ArgsList @('-on','BASE')
   $kernelStarted=$true
