@@ -61,6 +61,10 @@ def audit(group: dict[str, list[str]]) -> list[str]:
         for mode in source.MODES for arm in source.ARMS
     }
     result = []
+    pinned_blocks = {
+        "core": (3891, 3273, 430, 3472, -13366, 13463),
+        "combo": (-111, 106, -4, 45, -13394, 13349),
+    }
     for mode in source.MODES:
         parsed = {arm: source.parse(group, mode, arm) for arm in source.ARMS}
         for arm in source.ARMS:
@@ -73,6 +77,7 @@ def audit(group: dict[str, list[str]]) -> list[str]:
                 f"final258_heaps={observed['settled_cleanup', 258][2]},"
                 "heap_identity_known=0,individual_heap_commit_known=0"
             )
+        observed_counts = []
         for left, right in WINDOWS:
             reg, no = snapshots[mode, "registry"], snapshots[mode, "nochange"]
             d = {}
@@ -80,6 +85,7 @@ def audit(group: dict[str, list[str]]) -> list[str]:
                 regdiff = reg[right][index] - reg[left][index]
                 nodiff = no[right][index] - no[left][index]
                 d[metric] = (regdiff, nodiff, regdiff - nodiff)
+            observed_counts.append(d["busy_blocks"][2])
             if (d["busy_cbData"][2] !=
                     source.difference(parsed, "heap", left, right)):
                 raise ValueError("GIO_HEAP busy total versus old parser changed")
@@ -96,6 +102,27 @@ def audit(group: dict[str, list[str]]) -> list[str]:
                 "heap_count_is_not_alloc_count=1,"
                 "commit_ownership_unproven=1"
             )
+        if tuple(observed_counts) != pinned_blocks[mode]:
+            raise ValueError("old matched busy-block counts changed")
+        if any(
+            snapshots[mode, arm][point][2] != 4
+            for arm in source.ARMS for point in source.CHECKS
+        ):
+            raise ValueError("source run's four stable enumerated heaps changed")
+        total_256 = sum(observed_counts[:4])
+        total_258 = sum(observed_counts)
+        if (total_256, total_258) != (
+                (11066, 11163) if mode == "core" else (36, -9)):
+            raise AssertionError("pinned original busy-block identity invalid")
+        result.append(
+            "C545D_SAVED256_HEAP_ENUM_FINAL,"
+            f"mode={mode},controlled_blocks_0_256={total_256},"
+            f"controlled_blocks_0_258={total_258},"
+            "enumerated_heaps_all_points=4,"
+            "heap_handles_identical_proven=0,"
+            "busy_blocks_not_all_native_allocations=1,"
+            "private_commit_ownership_proven=0"
+        )
     result.append(
         "C545D_SAVED256_HEAP_ENUM_PASS,"
         "source_run=44918598339,source_arms=4,checkpoints_per_arm=7,"
