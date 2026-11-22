@@ -62,7 +62,14 @@ jobs:
           $exe=Join-Path $root 'cache_ab.exe'
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           & cl.exe @(@('/nologo','/W4','/WX','/O2','/MD','/TC')+$include+@('tests/c545d_cache_shared_vs_duplicate_ab.c',"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'glib-2.0.lib','psapi.lib')) *> (Join-Path $root 'build_private.txt')
-          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)) {throw 'MSVC synthetic build failed; no A/B claim'}
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)) {
+            $err=@(Get-Content (Join-Path $root 'build_private.txt') | ForEach-Object {
+              if($_ -match '(?:fatal )?error (C[0-9]{4}|LNK[0-9]{4})'){ $Matches[1] }
+            } | Sort-Object -Unique)
+            if($err.Count -eq 0){Write-Host 'C545D_CACHE_SYNTH_BUILD_ERROR_CODES=UNKNOWN'}
+            else {Write-Host "C545D_CACHE_SYNTH_BUILD_ERROR_CODES=$($err -join ',')"}
+            throw 'MSVC synthetic build failed; no A/B claim'
+          }
           $originalPath=$env:PATH
           $seq=@('old','shared','shared','old','shared','old','old','shared')
           $rows=New-Object System.Collections.Generic.List[string]
