@@ -1,0 +1,27 @@
+name: C545D scanfree 16-cycle probe and strict analyzer source guards (Ubuntu only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-combo16-scanfree-parser-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exact probe patch and synthetic corrupt resource fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/patch_gio_probe_scanfree_ci.py --selftest
+          python3 tests/analyze_c545d_combo16_scanfree.py --selftest
+          cp tests/gio_appinfo_key_handle_probe.c /tmp/c545d-scanfree-copy.c
+          python3 tests/patch_gio_probe_scanfree_ci.py /tmp/c545d-scanfree-copy.c
+          grep -F 'scanfree_cleanup' /tmp/c545d-scanfree-copy.c > /dev/null
+          grep -F 'C545D_CI_SCANFREE_FINAL' /tmp/c545d-scanfree-copy.c > /dev/null
+          cmp -s tests/gio_appinfo_key_handle_probe.c /tmp/c545d-scanfree-copy.c && exit 1
+          echo 'C545D_SCANFREE_FAST_SOURCE_CI_PASS,old_probe_unchanged=1,Windows_runs=0'
