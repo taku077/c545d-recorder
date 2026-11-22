@@ -42,12 +42,9 @@ c545d_ci_appinfo_trace (const gchar *phase, gint ordinal)
 def patch(source: str) -> str:
     source = replace_once(
         source,
-        "static void\nkeys_updated (GWin32RegistryKey  *key,\n"
-        "              gpointer            user_data)\n{",
-        TRACE_HELPER +
-        "static void\nkeys_updated (GWin32RegistryKey  *key,\n"
-        "              gpointer            user_data)\n{",
-        "trace helper declaration")
+        "static void\nupdate_registry_data (void)\n{",
+        TRACE_HELPER + "static void\nupdate_registry_data (void)\n{",
+        "trace helper before registry reconstruction")
     source = replace_once(
         source,
         "keys_updated (GWin32RegistryKey  *key,\n"
@@ -111,6 +108,7 @@ def patch(source: str) -> str:
 
 def selftest() -> None:
     raw = (
+        "static void\nupdate_registry_data (void)\n{\n}\n"
         "static void\nkeys_updated (GWin32RegistryKey  *key,\n"
         "              gpointer            user_data)\n{\n"
         "  watch_keys ();\n}\n"
@@ -121,6 +119,8 @@ def selftest() -> None:
         "  /* Notify from the completed AppInfo worker,"
     )
     result = patch(raw)
+    assert result.index("static gint c545d_ci_trace_active_worker;") < result.index("update_registry_data (void)")
+    assert result.index("static void\nc545d_ci_appinfo_trace") < result.index('c545d_ci_appinfo_trace ("parser_begin"')
     combo_call = (
         "  if (!g_win32_package_parser_enum_packages (\n"
         '       g_getenv ("C545D_DIAG_UWP_NOOP_CALLBACK") != NULL ?\n'
@@ -135,6 +135,7 @@ def selftest() -> None:
                    "parser_begin", "parser_end", "worker_unlocked"):
         assert marker in result
     for needle in (
+        "static void\nupdate_registry_data (void)\n{",
         "  if (saved_counter > 0)\n    update_registry_data ();",
         "  read_uwp_handler_info ();\n\n  uwp_end = GetTickCount ();",
         "  /* Notify from the completed AppInfo worker,",
@@ -145,7 +146,7 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError("drifted source accepted")
-    print("C545D_APPINFO_TRACE_SOURCE_SELFTEST_PASS,negative_cases=3,"
+    print("C545D_APPINFO_TRACE_SOURCE_SELFTEST_PASS,negative_cases=4,"
           "windows_runs=0,original_source_unchanged=1")
 
 
