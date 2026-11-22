@@ -16,17 +16,19 @@
         45015173260,
         45030562503
       ],
-      "observed": "Original #45015173260 private +221184B, optional REGION +155648B, heap BUSY -7794B; three independent GIO16 runs corroborated signs, not owners.",
-      "why_previous_did_not_resolve": "HeapWalk BUSY and REGION are different from PSAPI PrivateUsage; former only reports current blocks/selected regions. Prior ETW saved truncated top25 module frame occurrences, not matched allocation+free bytes or a complete call-site owner. Unproven worker quiescence biases endpoints.",
+      "observed": "Original #45015173260 private +221184B, optional REGION +155648B, heap BUSY -7794B; three independent GIO16 runs corroborated signs, not owners. Synthetic Windows2022 calibration #45040046000: controlled test HeapAlloc64/HeapFree48, 16 expected outstanding; ETW started before workload, sequential capture, logger zero-loss checked, xperf totals+size360 stack action PASS. This is NOT a recorded actual exact-16 xperf table count nor any real GIO owner.",
+      "why_previous_did_not_resolve": "HeapWalk BUSY and REGION are different from PSAPI PrivateUsage; former only reports current blocks/selected regions. Prior ETW saved truncated top25 module frame occurrences, not matched allocation+free bytes or a complete call-site owner. Unproven worker quiescence biases endpoints. The corrected #45040046000 probe closes pre-workload event-start, circular overwrite, and missing local-symbol setup ONLY on a synthetic fixture. The filtered report has not yet been independently parsed into exact 16 outstanding / 5760 requested bytes and matching source stack, nor adapted to real GIO workload and global worker quiet boundary.",
       "missing_observable": "Allocation IDs with matching frees and outstanding bytes grouped by sanitized module/source site on the same controlled lifetime boundary; commit movement by reserved/committed category, trace completeness and worker/APC idle provenance.",
       "existing_reuse": [
         "tests/analyze_c545d_etw16_commit_busy_scope.py",
         "tests/analyze_c545d_etw16_frozen_archive.py",
         "tests/Invoke-C545DGioEtwPaired16Arm.ps1",
-        "tests/Invoke-C545DGioUmdhStackGate.ps1"
+        "tests/Invoke-C545DGioUmdhStackGate.ps1",
+        "tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1",
+        "tests/analyze_c545d_alloc_free_lifetime_ci.py"
       ],
-      "next_automatic_action": "Audit existing ETW/UMDH tool output and source before writing a bounded Windows CI-only matching-alloc/free instrument. Add a fail-closed synthetic fixture proving matched frees and lost events classification. Emit numeric/allowlisted module aggregate only; do not upload ETL, raw symbols, addresses, paths.",
-      "decisive_rule": "If outstanding matched allocations across a proven quiescent boundary increase with a stable owner and controlled workload, classify LEAK_CONFIRMED; if outstanding remains stable but commit retains/reuses capacity over repeated same-phase loads, test BOUNDED_RETENTION; incomplete alloc/free coverage is a failed test, not zero leak.",
+      "next_automatic_action": "FIRST: add a strict local-only parser for the now-working xperf -a heap -stacks -size 360 361 report from synthetic #45040046000; verify original 64 alloc / 48 frees / 16 outstanding, 5760 requested bytes and allowlisted synthetic allocating stack, with trace loss=0 and quiescent phase; fail closed if report cannot be mapped unambiguously. SECOND only after this discriminator passes: gate disposable GIO/WinRT process behind the same pre-workload handshake and no-loss sequential ETW; capture same-arm owner outstanding differences at a proven worker epoch. No host/camera, no long 256 rerun, no raw ETL export.",
+      "decisive_rule": "A valid capture with no loss, same workload, proven worker quiet boundary AND exact alloc/free-matched outstanding bytes by stable source stack across repeatable epochs supports LEAK_CONFIRMED if expected lifetime has ended. Pure commit growth with no outstanding allocation slope is a candidate BOUNDED_RETENTION, which separately needs repeat-load plateau proof. The 16 deliberately held synthetic blocks are NOT a leak. Missing xperf numeric table parsing or GIO quiet proof keeps EVIDENCE_GAP open.",
       "next_test_dependency": "none",
       "request_user_now": false,
       "blocks_classification": true
