@@ -10,6 +10,8 @@ on:
       - 'tests/analyze_c545d_gio_etw_image_aggregate_ci.py'
       - 'tests/analyze_c545d_xperf_general_totals_ci.py'
       - 'tests/patch_gio_probe_etw_phase_fence_ci.py'
+      - 'tests/patch_c545d_gio_etw_stop_qpc_ci.py'
+      - 'tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py'
       - '.github/workflows/c545d-gio-etw-owner-stack-paired16-ci.yml'
   workflow_dispatch:
 permissions:
@@ -36,6 +38,10 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Source stack owner parser selftest failed'}
           py tests/analyze_c545d_gio_etw_image_aggregate_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Heap image aggregation incompleteness detector selftest failed'}
+          py tests/patch_c545d_gio_etw_stop_qpc_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'QPC source guard invalid'}
+          py tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'QPC lifetime classifier invalid'}
           $tokens=$null
           $errors=$null
           [void][Management.Automation.Language.Parser]::ParseFile(
@@ -93,6 +99,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
           py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
           if($LASTEXITCODE -ne 0){throw 'AppInfo worker/parser source phase trace patch failed'}
+          py tests/patch_c545d_gio_etw_stop_qpc_ci.py --appinfo "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'QPC worker source overlay invalid'}
           py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
           if($LASTEXITCODE -ne 0){throw 'Native watcher signal source patch failed'}
           py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
@@ -168,6 +176,8 @@ jobs:
           }
           py tests/patch_gio_probe_etw_phase_fence_ci.py $source --late-window
           if($LASTEXITCODE -ne 0){throw 'Pre-workload and precleanup ETW signal fence failed'}
+          py tests/patch_c545d_gio_etw_stop_qpc_ci.py --probe $source
+          if($LASTEXITCODE -ne 0){throw 'QPC stop fence source overlay invalid'}
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           $exe=Join-Path $root 'c545d_disposable_scanfree.exe'
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/Zi','/TC')+$include+@($source,"/Fe:$exe",'/link','/DEBUG',"/PDB:$root/c545d_disposable_scanfree.pdb","/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
