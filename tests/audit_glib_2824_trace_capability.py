@@ -39,7 +39,7 @@ def audit(header: str, meson: str, gmem: str) -> list[str]:
         raise ValueError("HAVE_DTRACE no longer conditional on feature")
     required_memory = (
         "TRACE (GLIB_MEM_ALLOC((void*) mem, (unsigned int) n_bytes, 0, 0));",
-        "TRACE (GLIB_MEM_FREE((void*) mem));",
+        "TRACE (GLIB_MEM_FREE ((void*) mem));",
     )
     if any(gmem.count(marker) != 1 for marker in required_memory):
         raise ValueError("original memory TRACE invocation changed")
@@ -77,7 +77,7 @@ def selftest() -> None:
     )
     gmem = (
         "TRACE (GLIB_MEM_ALLOC((void*) mem, (unsigned int) n_bytes, 0, 0));\n"
-        "TRACE (GLIB_MEM_FREE((void*) mem));\n"
+        "TRACE (GLIB_MEM_FREE ((void*) mem));\n"
     )
     assert len(audit(header, meson, gmem)) == 3
     mutants = (
