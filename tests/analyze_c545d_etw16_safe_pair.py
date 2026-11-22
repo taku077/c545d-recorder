@@ -105,7 +105,7 @@ def selftest():
     corrupt=(
         a, a+"\n"+a, a+"\n"+b+"\n"+b,
         orig.replace("arm=registry","arm=PRIVATE"),
-        orig.replace("source_owner_proven=0","source_owner_proven=1"),
+        orig.replace("top25_is_incomplete=1","top25_is_incomplete=0"),
         orig.replace("stack_owner_proven=0","stack_owner_proven=1"),
         orig.replace("frames=18","frames=99"),
         orig.replace("system_frames=7","system_frames=-1"),
