@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/analyze_gio_cached_residual_plateau_guard.py'
+      - 'tests/analyze_c545d_saved256_highwater.py'
       - 'tests/analyze_gio_cached_residual_epochs.py'
       - 'tests/analyze_gio_cached_gobject_cleanup.py'
       - '.github/workflows/c545d-archived-residual-late-epochs-ci.yml'
@@ -38,6 +39,25 @@ jobs:
           name: c545d-display-cache-256-diagnostic
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: saved/44545844200
+      - name: Retrieve exact original FOUR-arm 256 numeric-only artifact
+        uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved/original
+      - name: Verify original high-water and older separate cache runs with no Windows work
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_saved256_highwater.py --selftest
+          test -f saved/original/ab64_safe_trace.txt
+          python3 tests/analyze_c545d_saved256_highwater.py --source saved/original --older saved | tee /tmp/c545d_highwater.txt
+          test "$(grep -c '^C545D_256_HIGHWATER_EPOCH,' /tmp/c545d_highwater.txt)" -eq 24
+          test "$(grep -c '^C545D_256_HIGHWATER_OLDER_CACHE,' /tmp/c545d_highwater.txt)" -eq 3
+          grep -Fx 'C545D_256_HIGHWATER_PASS,source_original=44918598339,older_archived_runs=3,original_processes=4,per_cycle_checkpoints=257,original_windows_rerun=0,all_outputs_numeric_only=1,permanent_plateau_proven=0,production_changes=0' /tmp/c545d_highwater.txt
+          echo 'C545D_256_HIGHWATER_SAVED_ONLY_PASS,source=44918598339,old_runs=3,windows_runs=0'
       - name: Check source evidence and distinct last64 heap vs committed memory outcomes
         shell: bash
         run: |
