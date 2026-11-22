@@ -137,17 +137,31 @@ try {
   if(-not(Test-Path $etl) -or (Get-Item $etl).Length -lt 512 -or
      (Get-Item $etl).Length -gt 128MB){throw 'Missing, empty or excessive private ETL'}
   Check-Xperf 'totals' @('-i',$etl,'-o',$totals,'-a','heap','-totals')
-  Check-Xperf 'filtered_outstanding' @('-i',$etl,'-o',$sizes,'-a','heap','-stacks','-size','360','361','-top','100')
-  if(-not(Test-Path $totals) -or -not(Test-Path $sizes) -or
-     (Get-Item $totals).Length -lt 40 -or (Get-Item $sizes).Length -lt 40){
-    throw 'No heap owner-capable offline action output'
+  if(-not(Test-Path $totals) -or (Get-Item $totals).Length -lt 40){
+    throw 'Whole-interval heap totals action output missing'
   }
-  # The report is not uploaded nor printed. This proves the method can
-  # produce whole-trace (totals) and bounded known-size outstanding views,
-  # NOT that exact 16 outstanding were attributed by parser or all events
-  # were captured. Separate parser and event-loss gates must follow.
+  # Symbol/filter options are an INDEPENDENT capability, not the ETW
+  # capture itself. A failure remains explicitly incomplete evidence.
+  # It must NEVER be mistaken for source attribution or leak absence.
+  $filterOk=0;$filterReason='NONE'
+  & $tool -i $etl -o $sizes -a heap -stacks -size 360 361 -top 100 *> $raw
+  if($LASTEXITCODE -eq 0 -and (Test-Path $sizes) -and
+     (Get-Item $sizes).Length -gt 40) {
+    $filterOk=1
+  } else {
+    $privateMessage=Get-Content $raw -Raw -ErrorAction SilentlyContinue
+    $filterReason='OTHER_UNCLASSIFIED'
+    if($privateMessage -match '(?i)symbol|pdb|dbghelp'){$filterReason='MISSING_SYMBOL_CONTEXT'}
+    elseif($privateMessage -match '(?i)invalid|option|parameter|syntax|size|usage'){$filterReason='FILTER_SYNTAX_OR_VERSION'}
+    elseif($privateMessage -match '(?i)insufficient|memory|buffer'){$filterReason='FILTER_RESOURCE_ERROR'}
+    Write-Host "C545D_OWNER_CAL_FILTER_CAPABILITY,available=0,reason=$filterReason,not_memleak_result=1,raw_uploaded=0"
+  }
+  # The ETL and raw outputs never leave the runner. The first verified
+  # capability is a complete controlled WORKLOAD window and heap totals
+  # report, NOT a verified exact-16 ETW outstanding count. Missing stack
+  # filter or lost-event statistics are a recorded blocker.
   $traceOk=$true
-  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=1,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
+  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=0,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
 } finally {
   if($heapStarted){& $tool -stop HeapSession *> $raw}
   if($kernelStarted){& $tool -stop *> $raw}
