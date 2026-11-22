@@ -151,10 +151,19 @@ def main() -> None:
             if args.sdk is None:
                 p.error("--sdk required")
             print(audit(args.sdk))
-    except (ValueError,OSError):
+    except (ValueError,OSError) as exc:
+        # Never print an exception path, binary content, user name or stack.
+        # Only a code hardcoded above in this exact source may be surfaced.
+        allow={
+            "pefile_missing",
+            "unverified_sdk_layout",
+            "incomplete_or_unbounded_sdk_images",
+            "too_many_unreadable_PE_images",
+            "expected_sdk_binary_groups_missing",
+        }
+        reason=str(exc) if isinstance(exc,ValueError) and str(exc) in allow else "UNEXPECTED_OR_FILE_ERROR"
         print("C545D_SDK_APPINFO_IMPORT_FAIL,"
-              "reason=INVALID_SDK_OR_PE_IMPORTS,"
-              "no_allocator_owner_inferred=1")
+              f"reason={reason},no_allocator_owner_inferred=1")
         raise SystemExit(3) from None
 
 
