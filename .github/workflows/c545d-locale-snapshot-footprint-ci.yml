@@ -1,0 +1,51 @@
+name: C545D Win32 preferred UI locale snapshot footprint isolated A/B
+# Two independent Windows processes, no GIO DLL and no real recorder.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_locale_snapshot_footprint_ci.cpp'
+      - 'tests/analyze_c545d_locale_footprint.py'
+      - '.github/workflows/c545d-locale-snapshot-footprint-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  standalone-win32-locale-ab:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build exact Win32 locale list read/hash loop without GLib or WinRT
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /W4 /WX /EHsc /std:c++17 /MD /O2 tests/c545d_locale_snapshot_footprint_ci.cpp /Fe:c545d_locale_footprint.exe /link psapi.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC locale footprint compilation failed'}
+          py tests/analyze_c545d_locale_footprint.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Numeric parser selftest failed'}
+      - name: Run 16,384 locale reads vs arithmetic control, archive metrics only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path ci_raw,artifacts/numeric | Out-Null
+          foreach($arm in @('control','locale')){
+            & .\c545d_locale_footprint.exe "--$arm" > "ci_raw/$arm.txt"
+            if($LASTEXITCODE -ne 0){throw "$arm locale snapshot API test failed"}
+          }
+          $rows=@(& py tests/analyze_c545d_locale_footprint.py --folder ci_raw)
+          if($LASTEXITCODE -ne 0){throw 'Independent locale A/B numeric parser failed'}
+          if(@($rows | Where-Object {$_ -ceq 'C545D_LOCALE_FOOTPRINT_PASS,source=dedicated_snapshot_hash_language_list,windows_api=1,per_arm_iterations=16384,locale_arm_API_calls=65536,matched_processes=2,original_combo_256_unrerun=1,no_GIO_DLL_loaded=1,real_host_untested=1,leak_attribution_unproven=1'}).Count -ne 1){throw 'Exact locale footprint gate absent'}
+          $rows | Set-Content artifacts/numeric/locale_footprint.txt -Encoding ascii
+          $rows | ForEach-Object {Write-Host $_}
+          Write-Host 'C545D_WIN32_LOCALE_AB_CI_PASS,Windows_API=1,Windows_host_modified=0,GIO_DLL_loaded=0,real_camera=0'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-locale-windows-ab-numeric-only
+          path: artifacts/numeric/locale_footprint.txt
+          if-no-files-found: error
+          retention-days: 90
