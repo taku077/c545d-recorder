@@ -80,7 +80,7 @@ try {
   $kernelOn=$true
   $captureArgs=@('-start','HeapSession','-heap','-pids',"$($proc.Id)",
     '-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128',
-    '-FileMode','Sequential','-MaxFile','256','-stackwalk','HeapAlloc+HeapRealloc')
+    '-FileMode','Sequential','-MaxFile','512','-stackwalk','HeapAlloc+HeapRealloc')
   if(($captureArgs -join ' ') -notmatch '(?i)-FileMode Sequential' -or
      ($captureArgs -join ' ') -match '(?i)\bCircular\b|PidNewProcess'){
      throw 'Unsafe ETW capture mode'
@@ -92,12 +92,28 @@ try {
   Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,controlled_cycles=16,pre_cleanup=1"
   & $xperf -loggers *> $loggers
   if($LASTEXITCODE -ne 0){throw 'ETW loss status unavailable'}
-  $stats=Get-Content $loggers -Raw -ErrorAction Stop
-  if($stats -notmatch '(?im)Logger Name\s*:\s*HeapSession[\s\S]*?Events Lost\s*:\s*(\d+)[\s\S]*?Log Buffers Lost\s*:\s*(\d+)'){
-    throw 'ETW logger lost-event counters not independently parsed'
+  # Parse only the HeapSession logger section. Other loggers may have
+  # different loss counters. Never print raw logger names or machine paths.
+  $stats=[string](Get-Content $loggers -Raw -ErrorAction Stop)
+  $heapEntry=[regex]::Match($stats,'(?im)^\s*Logger Name\s*:\s*HeapSession\s*$')
+  if(-not $heapEntry.Success){
+    $anyLogger=[int]([regex]::IsMatch($stats,'(?im)^\s*Logger Name\s*:'))
+    Write-Host "C545D_GIO_ETW_LOGGER_GAP,arm=$Arm,heap_session_present=0,any_logger=$anyLogger,raw_uploaded=0"
+    throw 'HeapSession disappeared before stop; fail closed'
   }
-  if([int]$Matches[1] -ne 0 -or [int]$Matches[2] -ne 0){
-    throw 'ETW event loss or buffer loss detected: classification forbidden'
+  $begin=$heapEntry.Index+$heapEntry.Length
+  $next=[regex]::Match($stats.Substring($begin),'(?im)^\s*Logger Name\s*:')
+  $endPosition=if($next.Success){$begin+$next.Index}else{$stats.Length}
+  $heapStatus=$stats.Substring($begin,$endPosition-$begin)
+  $eventLoss=[regex]::Match($heapStatus,'(?im)^\s*Events Lost\s*:\s*(\d+)\s*$')
+  $bufferLoss=[regex]::Match($heapStatus,'(?im)^\s*Log Buffers Lost\s*:\s*(\d+)\s*$')
+  if(-not $eventLoss.Success -or -not $bufferLoss.Success){
+    Write-Host "C545D_GIO_ETW_LOGGER_GAP,arm=$Arm,heap_session_present=1,events_line_present=$([int]$eventLoss.Success),log_buffers_line_present=$([int]$bufferLoss.Success),raw_uploaded=0"
+    throw 'HeapSession loss counters are incomplete'
+  }
+  if([int]$eventLoss.Groups[1].Value -ne 0 -or [int]$bufferLoss.Groups[1].Value -ne 0){
+    Write-Host "C545D_GIO_ETW_LOSS_DETECTED,arm=$Arm,events=$($eventLoss.Groups[1].Value),buffers=$($bufferLoss.Groups[1].Value),classification_blocked=1"
+    throw 'Recorded ETW events or buffers were lost'
   }
   Invoke-SafeXperf 'stop_and_merge' @('-stop','-stop','HeapSession','-d',$etl)
   $heapOn=$false;$kernelOn=$false
@@ -110,7 +126,7 @@ try {
     throw 'Missing disposable 16-cycle completion'
   }
   if(-not(Test-Path $etl -PathType Leaf) -or (Get-Item $etl).Length -lt 512 -or
-     (Get-Item $etl).Length -gt 256MB){
+     (Get-Item $etl).Length -gt 512MB){
     throw 'ETW local file empty or exceeds bounded capacity'
   }
   $env:_NT_SYMBOL_PATH="$env:RUNNER_TEMP;srv*$(Join-Path $local 'symbols_private')*https://msdl.microsoft.com/download/symbols"
