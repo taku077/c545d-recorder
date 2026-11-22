@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a6f18fe00317e5ab31aaafd17c98617812d0e95d`
-- **PR updated at (UTC):** `2026-11-22T12:27:47Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a6f18fe00317e5ab31aaafd17c98617812d0e95d/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `c897a82f0b37941d2e560fb3f3f927975c69303f`
+- **PR updated at (UTC):** `2026-11-22T12:30:46Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c897a82f0b37941d2e560fb3f3f927975c69303f/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45022398342](https://github.com/taku077/c545d-recorder/actions/runs/45022398342) |
-| C545D MSVC shared UTF16 DisplayName candidate ABI+GAppInfo lifecycle (CI ONLY) | in_progress | [#45022396569](https://github.com/taku077/c545d-recorder/actions/runs/45022396569) |
+| C545D active development handoff auto-refresh | in_progress | [#45022660083](https://github.com/taku077/c545d-recorder/actions/runs/45022660083) |
 
 ## Current development findings from the active PR
 
