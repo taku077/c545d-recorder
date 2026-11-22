@@ -1,0 +1,41 @@
+name: C545D saved per-heap Combo16 default-versus-other commit replay (offline)
+# Only the already successful #45000301159 NUMERIC artifact; NO new Windows run.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_heap_owner_archived.py'
+      - '.github/workflows/c545d-heap-owner-archive-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  exact-original-heap-owner-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify strict numeric record invariants and corruption fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_heap_owner_archived.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45000301159
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: original
+      - name: Replay unchanged numeric-only Windows evidence and distinguish allocation ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_heap_owner_archived.py \
+            --source original/combo16-scanfree-summary.txt | tee /tmp/heapowner.txt
+          test "$(grep -c '^C545D_HEAP_OWNER_ARCHIVE_VERIFIED,' /tmp/heapowner.txt)" -eq 1
+          test "$(grep -c '^C545D_HEAP_OWNER_ARCHIVE_INFERENCE,' /tmp/heapowner.txt)" -eq 1
+          echo 'C545D_HEAP_OWNER_ARCHIVE_CI_PASS,original_windows_run=45000301159,new_windows_runs=0,real_device_untested=1'
