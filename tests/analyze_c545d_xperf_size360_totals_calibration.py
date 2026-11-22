@@ -150,7 +150,7 @@ def selftest() -> None:
     ]
     for index, report in enumerate(errors):
         try:
-            verify_calibration(report, owner_only=index == len(errors)-1)
+            verify_calibration(report, owner_only=index in (10, 11))
         except ValueError:
             continue
         raise AssertionError("corrupted_or_not_owner_filtered_report_accepted")
