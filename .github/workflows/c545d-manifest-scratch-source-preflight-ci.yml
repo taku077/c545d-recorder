@@ -1,0 +1,43 @@
+name: C545D fast exact GLib manifest-scratch patch-chain preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_uwp_manifest_scratch_ci.py'
+      - '.github/workflows/c545d-manifest-scratch-source-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ubuntu-exact-source-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check independent malformed-source fixture rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/patch_glib_uwp_manifest_scratch_ci.py --selftest
+      - name: Apply same full patched GLib source chain without compiling GIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$tmp/glib"
+          src="$tmp/glib"
+          python3 tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
+          python3 tests/patch_glib_msvc_gio_sdk_export.py "$src/gio/meson.build"
+          python3 tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_uwp_manifest_scratch_ci.py "$src/gio/gwin32packageparser.c"
+          git -C "$src" diff --check
+          echo 'C545D_MANIFEST_SCRATCH_SOURCE_CHAIN_PASS,glib=2.82.4,full_existing_patch_chain=1,no_native_build=1,no_user_host=1'
