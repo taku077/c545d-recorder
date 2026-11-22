@@ -1,0 +1,32 @@
+name: C545D GLib registry APC ownership and bounded-watch source gate
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_registry_apc_lifetime.py'
+      - '.github/workflows/c545d-registry-apc-lifetime-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-glib-2824-source-invariant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect pinned official GLib 2.82.4 registry/APC source with no Windows or recorder activity
+        shell: bash
+        run: |
+          set -euo pipefail
+          glib="$(mktemp -d)"
+          trap 'rm -rf "$glib"' EXIT
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$glib/glib"
+          root="$glib/glib/gio"
+          python3 tests/audit_c545d_registry_apc_lifetime.py \
+            --registry "$root/gwin32registrykey.c" \
+            --appinfo "$root/gwin32appinfo.c" --selftest
+          python3 tests/patch_glib_registry_owned_path.py "$root/gwin32registrykey.c"
+          python3 tests/audit_c545d_registry_apc_lifetime.py \
+            --registry "$root/gwin32registrykey.c" \
+            --appinfo "$root/gwin32appinfo.c"
+          echo 'C545D_REGISTRY_APC_LIFETIME_CI_PASS,official_source_2824=1,existing_utf16_patch_compatible=1,source_model_only=1,Windows_runs=0,real_host_untouched=1,classification_gate=OPEN'
