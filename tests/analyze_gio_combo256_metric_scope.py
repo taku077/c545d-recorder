@@ -42,6 +42,8 @@ def effect(arms, kind, start, stop):
         data = arms[arm]
         if kind == "private":
             return data["mem"][point]
+        if kind == "heap_busy":
+            return data["heap"][point]
         if kind == "bucket":
             return data["bins"][SIZE][point]
         raise ValueError("invalid metric")
@@ -66,7 +68,26 @@ def analyze(group, source):
     p258 = effect(arms, "private", START, FINAL)
     b256 = effect(arms, "bucket", START, CYCLE)
     b258 = effect(arms, "bucket", START, FINAL)
-    if (p256, p258, b256, b258) != (425984, 368640, 4, 4):
+    h256 = effect(arms, "heap_busy", START, CYCLE)
+    h258 = effect(arms, "heap_busy", START, FINAL)
+    # Existing four 64-cycle saved snapshots contain TOTAL busy cbData,
+    # even though the archive kept only eight selected exact size bins.
+    epochs = [START, ("cycle", 64), ("cycle", 128),
+              ("cycle", 192), CYCLE]
+    heap_epochs = [effect(arms, "heap_busy", a, b)
+                   for a, b in zip(epochs[:-1], epochs[1:])]
+    private_epochs = [effect(arms, "private", a, b)
+                      for a, b in zip(epochs[:-1], epochs[1:])]
+    if (p256, p258, b256, b258, h256, h258) != (
+        425984, 368640, 4, 4, 35566, 26262
+    ):
+        raise ValueError("Combo256 original controlled totals changed")
+    if heap_epochs != [-25350, 48382, -16066, 28600]:
+        raise ValueError("original all-busy heap epoch controls changed")
+    if private_epochs != [151552, 233472, -12288, 53248]:
+        raise ValueError("original private epoch controls changed")
+    if sum(heap_epochs) != h256 or sum(private_epochs) != p256:
+        raise ValueError("saved epoch totals failed telescoping")
         raise ValueError("Combo256 original controlled deltas changed")
     data, frac = nominal(p258, b258)
     if p258 % 4096 or data != 1440 or frac != Fraction(1, 256):
@@ -82,11 +103,24 @@ def analyze(group, source):
         f"combo_controlled_360B_0_256={b256},"
         f"combo_controlled_360B_0_258={b258},"
         f"nominal_360B_data_delta={data},"
+        f"combo_controlled_busy_0_256={h256},"
+        f"combo_controlled_busy_0_258={h258},"
+        f"combo_controlled_busy_256_258={h258-h256},"
         "same_window_nominal_data_ratio=1/256,"
         "private_final_equivalent_4KiB_pages=90",
+        *[
+            "C545D_COMBO256_METRIC_EPOCH,"
+            f"window={epochs[i][1]}_{epochs[i+1][1]},"
+            f"private_delta={private_epochs[i]},"
+            f"heap_busy_delta={heap_epochs[i]},"
+            "same_run_matched_arms=1,"
+            "heap_commit_unmeasured=1"
+            for i in range(4)
+        ],
         "C545D_COMBO256_METRIC_INFERENCE,nominal_ratio_is_not_attribution=1,"
         "full_HeapWalk_busy_size_classes_unattributed=1,"
         "allocator_metadata_and_nonheap_commit_unattributed=1,"
+        "heap_data_is_not_equivalent_to_heap_committed_pages=1,"
         "final_global_quiescence_proven=0,cohort_identity_preserved_proven=0,"
         "permanent_leak_rate_proven=0,"
         "exact_360B_owner_proven=0",
@@ -103,6 +137,11 @@ def selftest():
         "nochange": {"mem": {START: 100, FINAL: 160}},
     }
     assert effect(a, "private", START, FINAL) == 50
+    b = {
+        "registry": {"heap": {START: 80, FINAL: 150}},
+        "nochange": {"heap": {START: 30, FINAL: 55}},
+    }
+    assert effect(b, "heap_busy", START, FINAL) == 45
     rejected = 0
     for p, n in ((0, 4), (-1, 4), (1440, 4), (100, -1)):
         try:
