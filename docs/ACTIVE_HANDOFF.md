@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3e3d0c5a5cf846521d39a7adf9b6857445ae054b`
-- **PR updated at (UTC):** `2026-11-22T15:39:26Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3e3d0c5a5cf846521d39a7adf9b6857445ae054b/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `72a96ad21dc7e24bdce6e22ec731141e356180b1`
+- **PR updated at (UTC):** `2026-11-22T15:41:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/72a96ad21dc7e24bdce6e22ec731141e356180b1/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45039517890](https://github.com/taku077/c545d-recorder/actions/runs/45039517890) |
-| C545D allocation/free lifetime matching correctness fixtures | success | [#45039515868](https://github.com/taku077/c545d-recorder/actions/runs/45039515868) |
+| C545D active development handoff auto-refresh | in_progress | [#45039718090](https://github.com/taku077/c545d-recorder/actions/runs/45039718090) |
+| C545D synthetic complete-interval heap owner ETW calibration | in_progress | [#45039715300](https://github.com/taku077/c545d-recorder/actions/runs/45039715300) |
 
 ## Current development findings from the active PR
 
