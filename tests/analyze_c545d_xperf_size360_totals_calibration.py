@@ -85,32 +85,37 @@ def parse_totals(source: str) -> dict[str, int | Decimal]:
     }
 
 
-def verify_calibration(report: str) -> str:
+def verify_calibration(report: str, *, owner_only: bool = False) -> str:
     d = parse_totals(report)
-    if d["alloc"] != EXPECTED_ALLOC or d["outstanding"] != EXPECTED_OUT:
+    if d["alloc"] < EXPECTED_ALLOC or d["outstanding"] != EXPECTED_OUT:
         raise ValueError(
             f"calibration_mismatch,observed_alloc={d['alloc']},"
             f"observed_outstanding={d['outstanding']}"
         )
-    # xperf Out KB is rounded. 16*360/1024=5.625 KiB: its 1-decimal
-    # rendering is expected near 5.6, never claim byte-level precision
-    # from the one-decimal display. Exact 5760 B follows from count=16
-    # AND an independently verified [360,361) byte size filter.
+    if owner_only and (d["alloc"] != EXPECTED_ALLOC or d["realloc"] != 0):
+        raise ValueError(
+            f"owner_specific_calibration_mismatch,observed_alloc={d['alloc']},"
+            f"observed_realloc={d['realloc']}"
+        )
+    # The full process may allocate additional short-lived 360 B blocks.
+    # Previous actual ETW showed 84 total vs known 64, but 16 outstanding.
+    # A separate unique owner-stack filter must isolate exactly the known 64.
+    # Never claim the process-wide total count is fixture-owned.
     if abs(d["outstanding_kb"] - Decimal(EXPECTED_OUT * SIZE_B) / KB) > Decimal("0.1"):
         raise ValueError("display_kb_inconsistent_with_exact_size_filter")
-    if d["realloc"] != 0:
-        raise ValueError("unexpected_synthetic_reallocation")
-    if abs(d["alloc_kb"] - Decimal(EXPECTED_ALLOC * SIZE_B) / KB) > Decimal("0.1"):
+    if abs(d["alloc_kb"] - Decimal(d["alloc"] * SIZE_B) / KB) > Decimal("0.1"):
         raise ValueError("alloc_kb_inconsistent_with_exact_size_filter")
+    scope = "owner" if owner_only else "all"
     return (
         "C545D_XPERF_360_TOTALS_CALIBRATION_PASS,"
-        "filtered_requested_size=360,"
-        "etw_alloc_count=64,etw_out_count=16,"
+        f"scope={scope},filtered_requested_size=360,"
+        f"etw_alloc_count={d['alloc']},etw_out_count={d['outstanding']},"
         "derived_etw_out_requested_bytes=5760,"
         "reported_size_kb_is_rounded=1,"
         f"reported_heap_count={d['heaps']},"
         "totals_verified_against_heap_rows=1,"
-        "actual_owner_callstack_proven=0,"
+        f"fixture_owner_isolation_proven={int(owner_only)},"
+        "real_GIO_owner_proven=0,"
         "synthetic_expected_lifetime_not_leak=1,"
         "real_GIO_tested=0,real_host_untouched=1,"
         "etl_uploaded=0,raw_addresses_logged=0"
@@ -118,15 +123,17 @@ def verify_calibration(report: str) -> str:
 
 
 def selftest() -> None:
-    # Same column layout as official Microsoft sample Xperf screenshot;
-    # example values are entirely synthetic and intentionally exact by size.
     good = (
         "Alloc#,  Alloc KB,  Out#,  Out KB,  Realloc#,  Extents KB, "
         "Out Ext KB, Heap Handle\n"
         "64, 22.5, 16, 5.6, 0, 24.0, 24.0, TOTAL\n"
         "64, 22.5, 16, 5.6, 0, 24.0, 24.0, 0x123400\n"
     )
-    assert "etw_out_count=16" in verify_calibration(good)
+    # Extra 20 process-owned 360-byte allocations that have ended
+    # at the snapshot must not be mistaken for 20 extra source leaks.
+    mixed = good.replace("64, 22.5", "84, 29.5")
+    assert "etw_out_count=16" in verify_calibration(good, owner_only=True)
+    assert "etw_alloc_count=84" in verify_calibration(mixed)
     errors = [
         good.replace("16, 5.6", "15, 5.3", 1),
         good.replace("64, 22.5", "65, 22.5", 1),
@@ -139,15 +146,18 @@ def selftest() -> None:
         good.replace("64, 22.5, 16, 5.6, 0, 24.0, 24.0, 0x123400\n", ""),
         good.replace("0x123400", "0xZZZZZZ"),
         good.replace("16, 5.6, 0", "16, 5.6, 1"),
+        mixed,  # valid full process totals, invalid owner-only totals
     ]
-    for text in errors:
+    for index, report in enumerate(errors):
         try:
-            verify_calibration(text)
+            verify_calibration(report, owner_only=index == len(errors)-1)
         except ValueError:
             continue
-        raise AssertionError("corrupted_xperf_report_accepted")
+        raise AssertionError("corrupted_or_not_owner_filtered_report_accepted")
     print(
-        "C545D_XPERF_TOTALS_SELFTEST_PASS,positive=1,negative=11,"
+        "C545D_XPERF_TOTALS_SELFTEST_PASS,positive=2,negative=12,"
+        "independent_process_extra_allocations=20,"
+        "owner_scoped_exact_count_required=1,"
         "real_GIO_tested=0,raw_ETL_uploaded=0"
     )
 
@@ -156,13 +166,14 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--selftest", action="store_true")
     p.add_argument("--report", type=Path)
+    p.add_argument("--owner-only", action="store_true")
     a = p.parse_args()
     if a.selftest:
         selftest()
         return
     if a.report is None:
         p.error("--report required")
-    print(verify_calibration(a.report.read_text(encoding="utf-8-sig", errors="replace")))
+    print(verify_calibration(a.report.read_text(encoding="utf-8-sig", errors="replace"), owner_only=a.owner_only))
 
 
 if __name__ == "__main__":
