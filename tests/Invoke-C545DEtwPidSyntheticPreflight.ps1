@@ -81,17 +81,17 @@ try {
   }
   $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
   Wait-Flag 'ready.signal'
-  $args=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','64','-MinBuffers','8','-MaxBuffers','16','-stackwalk','HeapAlloc+HeapRealloc')
-  Assert-PidOnly $args
-  Call-Xperf @('-on','BASE','-BufferSize','64','-MinBuffers','8','-MaxBuffers','16')
+  $etwArgs=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','64','-MinBuffers','8','-MaxBuffers','16','-stackwalk','HeapAlloc+HeapRealloc')
+  Assert-PidOnly -ArgsList $etwArgs
+  Call-Xperf -ArgsList @('-on','BASE','-BufferSize','64','-MinBuffers','8','-MaxBuffers','16')
   $kernelStarted=$true
-  Call-Xperf $args
+  Call-Xperf -ArgsList $etwArgs
   $heapStarted=$true
   New-Item -ItemType File -Path (Join-Path $root 'allocate.signal') -Force | Out-Null
   Wait-Flag 'allocated.signal'
   Start-Sleep -Milliseconds 300
   # Use documented -stop -stop HeapSession -d sequence to merge ETL.
-  Call-Xperf @('-stop','-stop','HeapSession','-d',$etl)
+  Call-Xperf -ArgsList @('-stop','-stop','HeapSession','-d',$etl)
   $heapStarted=$false
   $kernelStarted=$false
   if(-not(Test-Path $etl -PathType Leaf)){throw 'No local ETL written'}
