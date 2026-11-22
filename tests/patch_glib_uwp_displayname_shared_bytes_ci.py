@@ -116,7 +116,7 @@ def selftest():
         '\nstatic gboolean c545d_bridge_epoch_still_valid (void) { return TRUE; }\n'
         'void fake (void) {\n'
         '  GBytes *dummy = NULL;\n'
-        '  gunichar2 *c545d_cached_display_name = NULL;\n'
+        '      gunichar2 *c545d_cached_display_name = NULL;\n'
         '  const wchar_t *wcs_display_name;\n'
         '  wcs_display_name = c545d_cached_display_name != NULL\n'
         '        ? (const wchar_t *) c545d_cached_display_name\n'
