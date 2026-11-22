@@ -6,6 +6,7 @@ on:
       - 'docs/C545D_MEMORY_CLASSIFICATION_EXIT_GATE.md'
       - 'docs/MEMORY_CLASSIFICATION_CASES.json'
       - 'tests/validate_c545d_memory_classification_cases.py'
+      - 'tests/audit_c545d_existing_etw_gap.py'
       - '.github/workflows/c545d-memory-classification-contract-ci.yml'
   workflow_dispatch:
 permissions:
@@ -23,6 +24,16 @@ jobs:
           src=docs/MEMORY_CLASSIFICATION_CASES.json
           python3 tests/validate_c545d_memory_classification_cases.py --source "$src" --selftest
           python3 tests/validate_c545d_memory_classification_cases.py --source "$src"
+      - name: Identify actual old ETW trace completeness failure, using only source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_existing_etw_gap.py --selftest
+          python3 tests/audit_c545d_existing_etw_gap.py \
+            --controller tests/Invoke-C545DGioEtwPaired16Arm.ps1 \
+            --frozen tests/analyze_c545d_etw16_frozen_archive.py \
+            | tee /tmp/c545d_etw_scope.txt
+          grep -F 'exact_gap=ALLOCATION_FREE_LIFETIME_WITH_COMPLETE_COVERAGE' /tmp/c545d_etw_scope.txt
       - name: Prove classification completion remains BLOCKED until new evidence
         shell: bash
         run: |
