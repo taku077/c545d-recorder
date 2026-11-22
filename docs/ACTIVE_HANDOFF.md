@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `e83ebb4fd53af89b2c8f9af0dc73330b20ef9161`
-- **PR updated at (UTC):** `2026-11-22T07:53:21Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/e83ebb4fd53af89b2c8f9af0dc73330b20ef9161/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3309681e5fce8bda12b5ec477e50cbfb7396a9e3`
+- **PR updated at (UTC):** `2026-11-22T07:53:59Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3309681e5fce8bda12b5ec477e50cbfb7396a9e3/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45000256155](https://github.com/taku077/c545d-recorder/actions/runs/45000256155) |
-| C545D AppInfo async phase trace source and numeric selftest (fast) | in_progress | [#45000254971](https://github.com/taku077/c545d-recorder/actions/runs/45000254971) |
+| C545D active development handoff auto-refresh | in_progress | [#45000302715](https://github.com/taku077/c545d-recorder/actions/runs/45000302715) |
+| C545D short patched Combo MSVC GObject and no-query final census CI | in_progress | [#45000301159](https://github.com/taku077/c545d-recorder/actions/runs/45000301159) |
 
 ## Current development findings from the active PR
 
