@@ -5,6 +5,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/analyze_gio_combo256_metric_scope.py'
+      - 'tests/analyze_c545d_saved256_heap_enumeration.py'
       - '.github/workflows/c545d-combo256-metric-scope-fast-ci.yml'
   workflow_dispatch:
 permissions:
@@ -21,6 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/analyze_gio_combo256_metric_scope.py --selftest
+          python3 tests/analyze_c545d_saved256_heap_enumeration.py --selftest
       - uses: actions/download-artifact@v4
         with:
           repository: taku077/c545d-recorder
@@ -36,4 +38,8 @@ jobs:
           test -f archived/ab64_safe_trace.txt
           python3 tests/analyze_gio_combo256_metric_scope.py \
             --root archived --probe-source tests/gio_appinfo_key_handle_probe.c
+          python3 tests/analyze_c545d_saved256_heap_enumeration.py --root archived | tee /tmp/c545d_heap_enumeration.txt
+          test "$(grep -c '^C545D_SAVED256_HEAP_ENUM_ENDPOINT,' /tmp/c545d_heap_enumeration.txt)" -eq 4
+          test "$(grep -c '^C545D_SAVED256_HEAP_ENUM_WINDOW,' /tmp/c545d_heap_enumeration.txt)" -eq 12
+          grep -Fx 'C545D_SAVED256_HEAP_ENUM_PASS,source_run=44918598339,source_arms=4,checkpoints_per_arm=7,controlled_intervals=12,original_windows_rerun=0,real_host_untouched=1,leak_owner_identified=0' /tmp/c545d_heap_enumeration.txt
           echo 'C545D_COMBO256_SCOPE_OFFLINE_CI_PASS,windows_runs=0,original_256_run=44918598339,user_host_modified=0'
