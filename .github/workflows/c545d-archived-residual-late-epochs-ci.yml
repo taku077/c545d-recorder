@@ -63,10 +63,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/numeric
+          # Exact same unchanged source blob was checked at original jobs
+          # 44533452892 (45134eff), 44537371920 (9467e2e5) and
+          # 44545844200 (ac5acafc). GIO_VM first field is VQ MEM_PRIVATE,
+          # not GetProcessMemoryInfo PrivateUsage.
+          test "$(git hash-object tests/gio_appinfo_key_handle_probe.c)" = 36411d34ea324115c13335b6d1248787811e6271
           python tests/analyze_gio_cached_residual_epochs.py --selftest
           python tests/analyze_gio_cached_residual_plateau_guard.py --selftest
           python tests/analyze_gio_cached_residual_plateau_guard.py --root saved | tee artifacts/numeric/c545d_late_epoch_gate.txt
           grep -qx 'C545D_LATE_EPOCH_GUARD_PASS,old_windows_runs=3,new_windows_runs=0,control_subtracted=1,private_late_positive=2of3,exact_360_bin_late_positive=3of3,no_proven_zero_leak=1,no_proven_infinite_plateau=1,allocation_stacks_attributed=0,host_validated=0' artifacts/numeric/c545d_late_epoch_gate.txt
+          grep -Fx 'C545D_OLD_VM_METRIC_SCOPE,source_blob=36411d34ea324115c13335b6d1248787811e6271,source_runs=44533452892;44537371920;44545844200,archived_field=GIO_VM_first_numeric,measurement=VirtualQuery_MEM_COMMIT_MEM_PRIVATE_region_bytes,PSAPI_PrivateUsage=0,comparable_with_GIO_PROBE_PrivateUsage=0,legacy_internal_alias_private_usage=1' artifacts/numeric/c545d_late_epoch_gate.txt
           test "$(grep -c '^C545D_LATE_EPOCH_NUMERIC,' artifacts/numeric/c545d_late_epoch_gate.txt)" -eq 3
           echo 'C545D_CACHED_LATE_EPOCH_REANALYSIS_PASS,reused_original_windows_artifacts=3,new_windows_runs=0,real_camera=0'
       - name: Audit the seven live GObject types at archived 256 and optional cleanup points
