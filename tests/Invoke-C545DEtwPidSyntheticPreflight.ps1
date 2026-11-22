@@ -10,7 +10,7 @@ function Assert-PidOnly([string[]]$ArgsList) {
   if($a -match '(?i)PidNewProcess|HeapTracingConfig|TracingFlags|gflags|[+-]ust|Image File Execution Options') {
     throw 'Unsafe registry/UST operation requested'
   }
-  if($a -notmatch '(?i)-Pid\s+[0-9]+' -or $a -notmatch 'HeapAlloc\+HeapRealloc') {
+  if($a -notmatch '(?i)-Pids?\s+[0-9]+' -or $a -notmatch 'HeapAlloc\+HeapRealloc') {
     throw 'Trace missing explicit process PID or heap stackwalk'
   }
 }
@@ -95,7 +95,7 @@ try {
   }
   $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
   Wait-Flag 'ready.signal'
-  $etwArgs=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-stackwalk','HeapAlloc+HeapRealloc')
+  $etwArgs=@('-start','HeapSession','-heap','-pids',"$($proc.Id)",'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128','-stackwalk','HeapAlloc+HeapRealloc')
   Assert-PidOnly -ArgsList $etwArgs
   Call-Xperf -Phase 'kernel' -ArgsList @('-on','BASE')
   $kernelStarted=$true
