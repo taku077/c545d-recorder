@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9dd43f8372330c7627c07cf2e427f81adc773fff`
-- **PR updated at (UTC):** `2026-11-22T05:44:08Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9dd43f8372330c7627c07cf2e427f81adc773fff/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `291fc72fc23b5261925de78ca28b97775d52fc64`
+- **PR updated at (UTC):** `2026-11-22T05:46:01Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/291fc72fc23b5261925de78ca28b97775d52fc64/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44990675806](https://github.com/taku077/c545d-recorder/actions/runs/44990675806) |
-| C545D short patched Combo MSVC GObject and no-query final census CI | in_progress | [#44990673986](https://github.com/taku077/c545d-recorder/actions/runs/44990673986) |
+| C545D active development handoff auto-refresh | in_progress | [#44990811879](https://github.com/taku077/c545d-recorder/actions/runs/44990811879) |
 
 ## Current development findings from the active PR
 
