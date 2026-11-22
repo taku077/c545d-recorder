@@ -7,6 +7,8 @@ on:
       - 'tests/patch_glib_appinfo_phase_trace_ci.py'
       - 'tests/patch_gio_probe_phase_census_ci.py'
       - 'tests/patch_gio_probe_heapregion_ci.py'
+      - 'tests/patch_gio_probe_per_heap_owner_ci.py'
+      - 'tests/analyze_c545d_combo16_per_heap_owner.py'
       - 'tests/analyze_c545d_combo16_heapregion.py'
       - 'tests/analyze_c545d_appinfo_phase_trace.py'
       - '.github/workflows/c545d-appinfo-phase-trace-fast-ci.yml'
@@ -27,6 +29,8 @@ jobs:
           python3 tests/patch_gio_probe_scanfree_ci.py --selftest
           python3 tests/patch_gio_probe_phase_census_ci.py --selftest
           python3 tests/patch_gio_probe_heapregion_ci.py --selftest
+          python3 tests/patch_gio_probe_per_heap_owner_ci.py --selftest
+          python3 tests/analyze_c545d_combo16_per_heap_owner.py --selftest
           python3 tests/analyze_c545d_combo16_heapregion.py --selftest
           python3 tests/analyze_c545d_appinfo_phase_trace.py --selftest
       - name: Pin original GLib source and apply only disposable diagnostic timing patches
@@ -55,6 +59,7 @@ jobs:
           python3 tests/patch_gio_probe_scanfree_ci.py "$temp/disposable.c"
           python3 tests/patch_gio_probe_phase_census_ci.py "$temp/disposable.c"
           python3 tests/patch_gio_probe_heapregion_ci.py "$temp/disposable.c"
+          python3 tests/patch_gio_probe_per_heap_owner_ci.py "$temp/disposable.c"
           python3 - "$temp/disposable.c" <<'PY'
           from pathlib import Path
           import sys
@@ -64,6 +69,8 @@ jobs:
           assert 'if (!c545d_ci_scanfree_final)' in s
           assert s.count("C545D_CI_HEAP_REGION,%s,%d") == 1
           assert "entry.Region.dwCommittedSize" in s
+          assert s.count("C545D_CI_HEAP_OWNER,%s,%d") == 1
+          assert "c545d_ci_owner_initial" in s
           print("C545D_PROBE_PHASE_DISPOSABLE_SOURCE_PASS,"
                 "phase_markers=4,appinfo_final_public_query_skipped=1")
           PY
