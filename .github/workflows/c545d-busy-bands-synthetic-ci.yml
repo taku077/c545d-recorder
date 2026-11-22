@@ -1,0 +1,77 @@
+name: C545D eight BUSY-band collector safety + Windows synthetic CI
+# This workflow NEVER starts GIO, the recorder, ETW or a registry workload.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_ci_busy_bands.h'
+      - 'tests/patch_gio_probe_busy_bands_ci.py'
+      - 'tests/c545d_busy_bands_synthetic.c'
+      - '.github/workflows/c545d-busy-bands-synthetic-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-and-runtime-preflight:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Fail-closed source-overlay selftest, no GIO runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/patch_gio_probe_busy_bands_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Source overlay drift failed'}
+          $root=Join-Path $env:RUNNER_TEMP 'c545d_band_source'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $copy=Join-Path $root 'probe_disposable.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $copy
+          foreach($name in @('patch_gio_probe_scanfree_ci.py',
+                             'patch_gio_probe_phase_census_ci.py',
+                             'patch_gio_probe_heapregion_ci.py',
+                             'patch_gio_probe_per_heap_owner_ci.py',
+                             'patch_gio_probe_busy_bands_ci.py')){
+            py (Join-Path tests $name) $copy
+            if($LASTEXITCODE -ne 0){throw 'Refuse incomplete source overlay'}
+          }
+          $before=([IO.File]::ReadAllText('tests/gio_appinfo_key_handle_probe.c'))
+          $after=([IO.File]::ReadAllText($copy))
+          if(([regex]::Matches($before,'while \(HeapWalk\(')).Count -ne
+             ([regex]::Matches($after,'while \(HeapWalk\(')).Count -or
+             ([regex]::Matches($before,'HeapLock\(')).Count -ne
+             ([regex]::Matches($after,'HeapLock\(')).Count){
+            throw 'Unexpected extra walk or lock'
+          }
+          Remove-Item -Recurse -Force $root
+          Write-Host 'C545D_BUSY_BANDS_SOURCE_GRAFT_PASS,extra_heapwalk=0,raw_pointer_output=0,host_untouched=1'
+      - name: Compile and test the same exact eight-band collector on Windows synthetic heap
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'c545d_busy_bands'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $exe=Join-Path $root 'bands.exe'
+          & cl.exe /nologo /W4 /WX /O2 /TC /Itests tests/c545d_busy_bands_synthetic.c "/Fe:$exe" *> (Join-Path $root 'compiler_local.txt')
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'MSVC synthetic build failed'}
+          try {
+            $rows=@(& $exe)
+            if($LASTEXITCODE -ne 0){throw 'Actual Windows HeapWalk synthetic check failed'}
+            $samples=@($rows | Where-Object {$_ -match '^C545D_CI_BUSY_BAND,'})
+            if($samples.Count -ne 32){throw 'Missing 32 exact numeric bucket rows'}
+            $regex='^C545D_CI_BUSY_BAND,stage=([0-3]),band=([0-7]),count=([0-9]+),bytes=([0-9]+),complete_heapwalk=1,size_band_only=1,allocation_owner_proven=0,private_usage_attributed=0,raw_pointers_emitted=0$'
+            for($i=0;$i -lt 32;$i++){
+              if(-not($samples[$i] -cmatch $regex)){throw 'Unsafe bucket report'}
+              if(([int]$Matches[1]) -ne [math]::Floor($i/8) -or
+                 ([int]$Matches[2]) -ne ($i%8)){throw 'Bucket order drift'}
+            }
+            $expected='C545D_BUSY_BANDS_SYNTHETIC_PASS,known_allocs=64,known_frees=64,stages=4,bands=8,reported_census_consistent=1,duplicate_rejected=1,no_extra_heapwalk=1,windows_only_synthetic=1,gio_runs=0,raw_addresses_emitted=0'
+            if($rows.Count -ne 33 -or @($rows|Where-Object{$_ -ceq $expected}).Count -ne 1){throw 'Terminal safety marker missing'}
+            Write-Host $expected
+            Write-Host 'C545D_BUSY_BANDS_SYNTHETIC_CI_PASS,windows_synthetic=1,gio_runs=0,private_data_uploaded=0'
+          } finally {
+            Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+          }
