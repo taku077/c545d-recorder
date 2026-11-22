@@ -1,0 +1,41 @@
+name: C545D GLib 2.82.4 GWin32AppInfo supported-types duplication source guard
+# Exact official source, no Windows processes, registry or recorder.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_appinfo_dup_strv_ci.py'
+      - 'tests/patch_glib_appinfo_dup_vector_smoke_ci.py'
+      - '.github/workflows/c545d-glib-appinfo-dup-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixed-source-exact-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fail-closed original 2.82.4 Windows GAppInfo copy patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/patch_glib_appinfo_dup_strv_ci.py tests/patch_glib_appinfo_dup_vector_smoke_ci.py
+          python3 tests/patch_glib_appinfo_dup_strv_ci.py --selftest
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$RUNNER_TEMP/glib"
+          test "$(git -C "$RUNNER_TEMP/glib" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          app="$RUNNER_TEMP/glib/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_appinfo_dup_strv_ci.py "$app"
+          python3 tests/patch_glib_appinfo_dup_vector_smoke_ci.py "$app"
+          git -C "$RUNNER_TEMP/glib" diff --check
+          python3 - "$app" <<'PY'
+          import pathlib,sys
+          s=pathlib.Path(sys.argv[1]).read_text()
+          section=s.split("g_win32_app_info_dup (GAppInfo *appinfo)",1)[1].split("static gboolean\ng_win32_app_info_equal",1)[0]
+          assert section.count("new_info->supported_types = g_strdupv (info->supported_types);") == 1
+          assert "for (i = 0; info->supported_types[i]; i++)" not in section
+          assert s.count("g_clear_pointer (&info->supported_types, g_strfreev);") == 1
+          assert s.count("C545D_APPINFO_DUP_ACTUAL_GIO_SMOKE_PASS") == 1
+          assert s.count('g_getenv ("C545D_CI_DUP_STRV_SMOKE")') == 1
+          print("C545D_APPINFO_DUP_SOURCE_CI_PASS,upstream=2_82_4,source_exact=1,overflow_loop_removed=1,export_symbols_unchanged_by_source=1,real_host_unmodified=1,windows_runs=0")
+          PY
