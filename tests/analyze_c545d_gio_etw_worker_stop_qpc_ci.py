@@ -76,11 +76,16 @@ def parse(raw: str, arm: str) -> dict[str, int | str]:
         timeline = [state[p] for p in WORKER_PHASES]
         if timeline != sorted(timeline):
             raise ValueError("worker_qpc_phase_order_invalid")
-    def overlaps(state: dict[str, int]) -> bool:
-        return state["worker_begin"] <= after and state["worker_after_notify"] >= before
-    overlapping = [x for x in workers.values() if overlaps(x)]
+    # Microsoft QPC guidance: cross-thread timestamp differences of one
+    # counter tick cannot establish strict before/after ordering. Treat the
+    # +/-1 tick vicinity as ambiguous, not as proof of continuous activity.
+    def possibly_overlaps(state: dict[str, int]) -> bool:
+        return (state["worker_begin"] <= after + 1 and
+                state["worker_after_notify"] >= before - 1)
+    overlapping = [x for x in workers.values() if possibly_overlaps(x)]
     spanning = [x for x in overlapping
-                if x["worker_begin"] <= before and x["worker_after_notify"] >= after]
+                if x["worker_begin"] < before - 1 and
+                   x["worker_after_notify"] > after + 1]
     # A worker that started or finished inside the stop bracket makes the
     # worker's *precise state at xperf stop* indeterminate.
     status = ("rebuild_continuously_active" if spanning else
@@ -94,8 +99,9 @@ def parse(raw: str, arm: str) -> dict[str, int | str]:
         "worker_overlapping_stop_bracket": len(overlapping),
         "worker_spanning_entire_stop_bracket": len(spanning),
         "worker_return_after_stop_ack": sum(
-            s["worker_after_notify"] > after for s in workers.values()),
+            s["worker_after_notify"] > after + 1 for s in workers.values()),
         "exact_rebuild_status": status,
+        "cross_thread_one_tick_ambiguity_guard": 1,
         "globally_quiet_proven": 0,
         "allocation_owner_proven": 0,
         "leak_proven": 0,
@@ -120,6 +126,8 @@ def selftest() -> None:
     assert parse(raw, "registry")["worker_return_after_stop_ack"] == 2
     no = raw.replace("reg_changes=1", "reg_changes=0")
     assert parse(no, "nochange")["stop_bracket_observed"] == 1
+    near_tick = raw.replace("qpc=300", "qpc=100").replace("qpc=400", "qpc=449")
+    assert parse(near_tick, "registry")["exact_rebuild_status"] == "rebuild_status_ambiguous"
     # All non-spanning possibilities are retained without calling them idle.
     nonspanning = raw.replace(
         "phase=worker_after_notify,ordinal=1,qpc=450",
@@ -167,7 +175,7 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError(f"invalid worker/stop interval accepted: {i}")
-    print(f"C545D_GIO_ETW_WORKER_QPC_SELFTEST_PASS,positive=4,negative={len(cases)},"
+    print(f"C545D_GIO_ETW_WORKER_QPC_SELFTEST_PASS,positive=5,negative={len(cases)},"
           "global_idle_proven=0,worker_lifetime_only=1,host_untouched=1")
 
 
