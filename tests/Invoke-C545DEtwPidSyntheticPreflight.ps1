@@ -111,8 +111,27 @@ try {
   if(-not(Test-Path $etl -PathType Leaf)){throw 'No local ETL written'}
   $size=(Get-Item $etl).Length
   if($size -lt 512 -or $size -gt 100MB){throw 'ETL size outside bounded test range'}
+  $heapReport=Join-Path $root 'heap_action_local_only.txt'
+  $stackReport=Join-Path $root 'stack_action_local_only.txt'
+  # Microsoft: xperf -i trace.etl -o output.txt -a heap [-stacks -top 25].
+  # Never expose either report or use them for source attribution on their own.
+  & $tool -i $etl -o $heapReport -a heap *> $local
+  $heapActionCode=$LASTEXITCODE
+  $heapActionOk=[int]($heapActionCode -eq 0 -and
+                     (Test-Path $heapReport -PathType Leaf) -and
+                     (Get-Item $heapReport -ErrorAction SilentlyContinue).Length -gt 0)
+  $stackActionOk=0
+  if($heapActionOk -eq 1){
+    & $tool -i $etl -o $stackReport -a heap -stacks -top 25 *> $local
+    $stackActionOk=[int]($LASTEXITCODE -eq 0 -and
+                        (Test-Path $stackReport -PathType Leaf) -and
+                        (Get-Item $stackReport -ErrorAction SilentlyContinue).Length -gt 0)
+  }
+  if($heapActionOk -ne 1){
+    throw 'Synthetic xperf ETL was generated but offline heap action did not complete'
+  }
   $ok=$true
-  Write-Host "C545D_ETW_PID_CAPABILITY,xperf_found=1,trace_attempted=1,local_etl_bytes=$size,synthetic_heap_allocations=64,raw_uploaded=0,stack_owner_proven=0,ifeo_changed=0"
+  Write-Host "C545D_ETW_PID_CAPABILITY,xperf_found=1,trace_attempted=1,local_etl_bytes=$size,synthetic_heap_allocations=64,heap_action_parsed=$heapActionOk,stack_action_parsed=$stackActionOk,raw_uploaded=0,stack_owner_proven=0,ifeo_changed=0"
 } finally {
   if($heapStarted){& $tool -stop HeapSession *> $local}
   if($kernelStarted){& $tool -stop *> $local}
