@@ -1,0 +1,32 @@
+name: C545D pinned GLib 2.82.4 system allocator source-route audit
+# Source-only: no UMDH, Windows, camera, actual recording process or DLL mutation.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_glib_2824_allocator_routes.py'
+      - '.github/workflows/c545d-glib2824-allocator-routes-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  upstream-pinned-system-allocator-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail-closed allocator-route fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_glib_2824_allocator_routes.py --selftest
+      - name: Pin actual GLib 2.82.4 source (no binary build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git /tmp/c545d-glib2824-source
+          test "$(git -C /tmp/c545d-glib2824-source describe --tags --exact-match)" = 2.82.4
+          python3 tests/audit_glib_2824_allocator_routes.py \
+            --glib-root /tmp/c545d-glib2824-source | tee /tmp/c545d_alloc_routes.txt
+          grep -Fx 'C545D_GLIB2824_ALLOCATOR_ROUTE_PASS,source_tag=2.82.4,real_device_untested=1,new_windows_runs=0,recorder_dll_unchanged=1' /tmp/c545d_alloc_routes.txt
+          echo 'C545D_GLIB2824_ALLOCATOR_ROUTES_CI_PASS,windows_runs=0,real_host_untouched=1'
