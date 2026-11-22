@@ -7,6 +7,8 @@ on:
     paths:
       - 'tests/patch_gio_probe_scanfree_ci.py'
       - 'tests/patch_gio_probe_phase_census_ci.py'
+      - 'tests/patch_gio_probe_heapregion_ci.py'
+      - 'tests/analyze_c545d_combo16_heapregion.py'
       - 'tests/patch_glib_appinfo_phase_trace_ci.py'
       - 'tests/analyze_c545d_appinfo_phase_trace.py'
       - 'tests/analyze_c545d_combo16_scanfree.py'
@@ -152,6 +154,10 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Phase probe source selftest failed'}
           py tests/patch_gio_probe_phase_census_ci.py $source
           if($LASTEXITCODE -ne 0){throw 'Phase probe source patch failed'}
+          py tests/patch_gio_probe_heapregion_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Heap region overlay source selftest failed'}
+          py tests/patch_gio_probe_heapregion_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'Heap region overlay source patch failed'}
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           $exe=Join-Path $root 'c545d_disposable_scanfree.exe'
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@($source,"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
@@ -185,8 +191,13 @@ jobs:
           $phases=@(& py tests/analyze_c545d_appinfo_phase_trace.py --folder $root)
           if($LASTEXITCODE -ne 0){throw 'Strict matched phase chronology unavailable'}
           if(@($phases | Where-Object {$_ -match '^C545D_APPINFO_PHASE_TRACE_PASS,arms=2,cycles=16,'}).Count -ne 1){throw 'Missing AppInfo phase trace proof'}
+          py tests/analyze_c545d_combo16_heapregion.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Heap region analyzer selftest failed'}
+          $regionlines=@(& py tests/analyze_c545d_combo16_heapregion.py --folder $root)
+          if($LASTEXITCODE -ne 0){throw 'Matched optional heap region analysis failed'}
+          if(@($regionlines | Where-Object {$_ -match '^C545D_HEAP_REGION_16_PASS,arms=2,cycles=16,'}).Count -ne 1){throw 'Missing heap-region validation sentinel'}
           New-Item -ItemType Directory -Force -Path "$root/numeric" | Out-Null
-          $numeric=@($lines)+@($phases)
+          $numeric=@($lines)+@($phases)+@($regionlines)
           $numeric | Set-Content "$root/numeric/combo16-scanfree-summary.txt" -Encoding ascii
           $numeric | ForEach-Object {Write-Host $_}
           Write-Host 'C545D_COMBO16_SCANFREE_WINDOWS_CI_PASS,matched_arms=2,cycles=16,legacy_256_rerun=0,real_camera=0,host_modified=0'
