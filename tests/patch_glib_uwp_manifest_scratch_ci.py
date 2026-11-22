@@ -50,7 +50,8 @@ def patch(src: str) -> str:
     if sub.count("parse_manifest_file (sax);") != 1:
         raise ValueError("manifest_parser_invocation_scope_changed")
     # Early diagnostic-skip branches also call MoveNext: the LAST call is
-    # the normal loop continuation after the synchronous XML parse.\n    if (sub.index("parse_manifest_file (sax);") > sub.rindex("IIterator_MoveNext (packages_iterator")):
+    # the normal loop continuation after the synchronous XML parse.
+    if (sub.index("parse_manifest_file (sax);") > sub.rindex("IIterator_MoveNext (packages_iterator")):
         raise ValueError("manifest_parser_no_longer_synchronous")
     for old,new in ((DECL,DECL_NEW),(ALLOC,ALLOC_NEW),
                     (PKG_RELEASE,PKG_RELEASE_NEW),
