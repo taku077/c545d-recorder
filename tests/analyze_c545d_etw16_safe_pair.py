@@ -21,6 +21,8 @@ FLAGS = {
     "stack_owner_proven": "0",
     "full_heap_coverage_proven": "0",
     "raw_text_uploaded": "0",
+    "trace_circular": "1",
+    "earlier_heap_events_may_be_lost": "1",
 }
 FIELDS = {"arm", "frame_lines", "frames", *FLAGS}
 FIELDS |= {f"{x}_frames" for x in GROUPS}
@@ -111,6 +113,7 @@ def selftest():
         a, a+"\n"+a, a+"\n"+b+"\n"+b,
         orig.replace("arm=registry","arm=PRIVATE"),
         orig.replace("top25_is_incomplete=1","top25_is_incomplete=0"),
+        orig.replace("earlier_heap_events_may_be_lost=1","earlier_heap_events_may_be_lost=0"),
         orig.replace("stack_owner_proven=0","stack_owner_proven=1"),
         orig.replace("frames=18","frames=99"),
         orig.replace("system_frames=7","system_frames=-1"),
@@ -128,7 +131,7 @@ def selftest():
     result="\n".join(parse(orig))
     assert "PRIVATE" not in result and "C:\\Users" not in result
     print("C545D_GIO_ETW16_PAIR_SELFTEST_PASS,"
-          "positive_cases=1,negative_cases=10,"
+          "positive_cases=1,negative_cases=11,"
           "raw_stack_uploaded=0,private_paths_emitted=0,"
           "recorder_untouched=1")
 
