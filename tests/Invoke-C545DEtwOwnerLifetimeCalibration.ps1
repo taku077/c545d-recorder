@@ -154,6 +154,35 @@ try {
     throw 'Xperf filtered outstanding count not independently confirmed'
   }
   Write-Host $numerics[0]
+  # A unique non-inlined, local-PDB synthetic allocator is required to
+  # separate 64 fixture allocations from the 20 additional process
+  # allocations observed by prior Xperf in the same 360 B size bucket.
+  # Failure is explicitly an attribution gap; NEVER publish the raw stack.
+  $ownerTotals=Join-Path $root 'owner_size360_totals_local_only.txt'
+  $ownerVerified=0;$ownerReason='NONE'
+  $priorOwnerSymbolPath=$env:_NT_SYMBOL_PATH
+  try {
+    $env:_NT_SYMBOL_PATH="$root;srv*$(Join-Path $root 'ms_symbols_local_only')*https://msdl.microsoft.com/download/symbols"
+    & $tool -i $etl -o $ownerTotals -symbols -a heap -totals -size 360 361 -requireframes c545d_synthetic_owner_alloc_360 *> $raw
+    $ownerExit=$LASTEXITCODE
+  } finally {
+    if($null -eq $priorOwnerSymbolPath){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+    else{$env:_NT_SYMBOL_PATH=$priorOwnerSymbolPath}
+  }
+  if($ownerExit -eq 0 -and (Test-Path $ownerTotals) -and
+     (Get-Item $ownerTotals).Length -gt 40){
+    # Keep parser stderr private as well: only allowlisted success line
+    # or numeric-only discrepancy codes may enter public job log.
+    $ownerNumeric=@(& py tests/analyze_c545d_xperf_size360_totals_calibration.py --report $ownerTotals --owner-only 2> $raw)
+    if($LASTEXITCODE -eq 0 -and
+       @($ownerNumeric | Where-Object {$_ -match '^C545D_XPERF_360_TOTALS_CALIBRATION_PASS,scope=owner,[A-Za-z0-9_,=]+$'}).Count -eq 1) {
+      $ownerVerified=1
+      Write-Host $ownerNumeric[0]
+    } else {$ownerReason='OWNER_STACK_REPORT_NOT_EXACT'}
+  } else {$ownerReason='OWNER_STACK_FILTER_UNAVAILABLE'}
+  if($ownerVerified -ne 1){
+    Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,source_owner_proven=0,raw_uploaded=0"
+  }
   # Symbol/filter options are an INDEPENDENT capability, not the ETW
   # capture itself. A failure remains explicitly incomplete evidence.
   # It must NEVER be mistaken for source attribution or leak absence.
@@ -183,7 +212,7 @@ try {
   # report, NOT a verified exact-16 ETW outstanding count. Missing stack
   # filter or lost-event statistics are a recorded blocker.
   $traceOk=$true
-  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=1,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
+  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=1,synthetic_owner_verified=$ownerVerified,real_GIO_allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
 } finally {
   if($heapStarted){& $tool -stop HeapSession *> $raw}
   if($kernelStarted){& $tool -stop *> $raw}
