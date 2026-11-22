@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | queued | [#44991053914](https://github.com/taku077/c545d-recorder/actions/runs/44991053914) |
+| C545D revalidate original Combo scan-free GObject/heap rebound (no Windows) | in_progress | [#44991052272](https://github.com/taku077/c545d-recorder/actions/runs/44991052272) |
 
 ## Current development findings from the active PR
 
