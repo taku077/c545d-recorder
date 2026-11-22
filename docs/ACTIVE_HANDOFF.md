@@ -3,17 +3,26 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `38b0f6ac0fb3225f96ae344a063d06151ce8e883`
-- **PR updated at (UTC):** `2026-11-22T17:01:39Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/38b0f6ac0fb3225f96ae344a063d06151ce8e883/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7577dd3b7f1e957634106f4b148712f7ce1fa0bf`
+- **PR updated at (UTC):** `2026-11-22T17:02:07Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7577dd3b7f1e957634106f4b148712f7ce1fa0bf/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45047088241](https://github.com/taku077/c545d-recorder/actions/runs/45047088241) |
+| C545D active development handoff auto-refresh | in_progress | [#45047133800](https://github.com/taku077/c545d-recorder/actions/runs/45047133800) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-23 JST — GIO **actual runtime** bounded registry APC watch lifetime established; next pre-workload GIO ETW fence source preflight PASS (no recorder changes)
+
+- **Current point:** open draft PR #62, branch `investigate/c545d-status-only-monitor-20261120`. Previous valid head `a396408c98fb40dd21c65fda49b4b30aa3fa1d71` confirmed synthetic ETW **64 source allocations /16 outstanding (5760 requested bytes)**, zero-loss, calibrated source stack, but no real GIO owner. This update is after that. No real Windows10 Tapo change, no production approval.
+- **Don't repeat old work:** `tests/audit_c545d_glib_registry_watch_reference_bound.py` and prior `c545d-gio-watch-refbound-source-ci.yml` already showed **source-only** 8-key watch CAS/deduplicated pending ref and APC free/rearm semantics. New `tests/audit_c545d_registry_apc_lifetime.py` [#45046008171 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046008171) extends source check with 10 negative cases and synthetic 2048 notifications; it is corroboration, **not** fresh proof of actual GIO residual.
+- **Genuinely new measured Windows owner/cohort result:** `tests/patch_glib_registry_watch_lifetime_ci.py` (CI-only numeric registration/completion/status-block pending logging) + `tests/analyze_c545d_gio_watch_lifetime_ci.py` (strict per-event counters/10 corrupted fixtures). Upstream/owned-path overlay fast preflight [#45046347672 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046347672). `.github/workflows/c545d-gio-watch-lifetime-runtime-ci.yml` rebuilt pinned real GLib2.82.4 GIO using MSVC, confirmed **2047 SDK exports**, ran disposable registry vs nochange paired 16 cycles. [#45046446784 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046446784), job `137282003187`, artifact `14764155858` (numeric only): **nochange** registers=6, APC completions=0, final pending=6, max pending=6; **registry** registers=23, APC completions=17, final pending=6, max pending=6. Thus this specific per-key registry watch status-block lifetime is **source-backed and runtime-bounded**; it is an intentional process-lifetime cohort, not evidence all PrivateUsage is leak-free. Raw stdout/registries/ETL and DLLs never uploaded.
+- **Targeted next measuring capability ready (not yet Windows integrated):** `tests/patch_gio_probe_etw_phase_fence_ci.py` adds CI-only `baseline_ready → trace_armed` and `precleanup_ready → trace_stopped` handshakes, after pre-existing four disposable source overlays. [Fast #45046783800 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046783800) with 5 negative cases. Solves trace start before controlled work and stop before cleanup but **does not** prove global APC/worker idle. Use previously calibrated sequential zero-ETW-loss full source-stack Xperf strategy (not filtered `-size` stack/top25 module-frame occurrence from original archived ETW). Next AI-owned code: integrate this probe fence with one bounded GIO Windows 16-cycle **both-arm** source-specific Xperf owned-outstanding report and same-PID AppInfo worker phase; preserve raw ETL privacy. Do not claim leak until expected lifetime/worker/APC closure distinguished. No original 256 rerun or user four-hour test.
+- **Current classification ledger:** `docs/MEMORY_CLASSIFICATION_CASES.json` provenance extended to #45046446784 for GIO16 owner + async quiet; source-owned registry-watch submechanism now bounded but **4 broader cases remain EVIDENCE_GAP/OPEN**, release HOLD. Validator `tests/validate_c545d_memory_classification_cases.py` updated accordingly; [#45046968646 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046968646). Details `docs/C545D_GIO_APC_WATCH_RUNTIME_BOUND_20261123.md`. Evidence gap still: WinRT/GIO/COM/heap outstanding owner(s), actual 256 late residual cause, global async lifetime boundary, real recorder postpatch verification. Do not declare all problem resolved or source-only boundedness equal zero leak.
+- **Safety:** `install_approved=0`, `live_test_authorized=0`, `real_device_untested=1`; NO user action. Preserve stream1-left stream6-right, 2560×720@15, x264 medium QP24, AAC mono48kHz 192kbps target, hourly MP4 split, avdec_h264, synchronized A/V, safe EOS and stop. No periodic forced restart, DLL replacement on active recorder, registry modifications to real host or unredacted traces.
 
 ### UPDATE 2026-11-23 JST — Xperf real ETW synthetic per-source 64 alloc / 16 outstanding **CONFIRMED**; zero-loss + source gate Windows PASS, GIO still unclassified
 
