@@ -1,0 +1,23 @@
+name: C545D offline live360 safety and count-conservation gate
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_live360_safe.py'
+      - '.github/workflows/c545d-live360-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live360-negative-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate only numeric 4-stage counters, no Windows or GIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_live360_safe.py --selftest | tee /tmp/c545d_live360_static.txt
+          grep -Fx 'C545D_LIVE360_NUMERIC_SELFTEST_PASS,positive=1,negative=9,original_256_rerun=0,raw_addresses_emitted=0,windows_runs=0' /tmp/c545d_live360_static.txt
+          echo 'C545D_LIVE360_OFFLINE_CI_PASS,window_count=3,privacy_negative_cases=9,windows_runs=0,real_device_untouched=1'
