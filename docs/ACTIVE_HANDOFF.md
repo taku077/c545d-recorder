@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5a1a4bdca350f9df8ecb295e282ba0a3c8d180cb`
-- **PR updated at (UTC):** `2026-11-22T16:35:17Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5a1a4bdca350f9df8ecb295e282ba0a3c8d180cb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2756bebd2b75b311440ff4198005553c59285ff2`
+- **PR updated at (UTC):** `2026-11-22T16:36:40Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2756bebd2b75b311440ff4198005553c59285ff2/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45044679995](https://github.com/taku077/c545d-recorder/actions/runs/45044679995) |
-| C545D synthetic complete-interval heap owner ETW calibration | in_progress | [#45044677361](https://github.com/taku077/c545d-recorder/actions/runs/45044677361) |
+| C545D active development handoff auto-refresh | in_progress | [#45044810337](https://github.com/taku077/c545d-recorder/actions/runs/45044810337) |
+| C545D synthetic complete-interval heap owner ETW calibration | in_progress | [#45044807672](https://github.com/taku077/c545d-recorder/actions/runs/45044807672) |
 
 ## Current development findings from the active PR
 
