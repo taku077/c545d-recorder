@@ -31,6 +31,11 @@ def parse(content: str) -> list[str]:
     # Raw trace, arbitrary paths and alloc stack text are never accepted here.
     if len(content) > 250000 or len(source_lines) > 2500:
         raise ValueError("unbounded_numeric_input")
+    # Entire archived bundle must be sanitized, not merely the two
+    # recognized ETW rows. Reject address/path/symbol-style payloads.
+    if any(re.search(r"(?:[\\/]|0[xX][0-9a-fA-F]{4,}|!Rtl|!g_)", line)
+           for line in source_lines):
+        raise ValueError("raw_path_or_stack_in_numeric_artifact")
     arms = {}
     for line in source_lines:
         if not line.startswith(PREFIX):
@@ -110,6 +115,7 @@ def selftest():
         orig.replace("frames=18","frames=99"),
         orig.replace("system_frames=7","system_frames=-1"),
         orig.replace("gio_frames=5","gio_frames=5,private_path=C:\\Users\\SECRET"),
+        orig+"\n"+"C:\\Users\\SECRET\\raw.etl",
     )
     for bad in corrupt:
         if bad == orig:
@@ -122,7 +128,7 @@ def selftest():
     result="\n".join(parse(orig))
     assert "PRIVATE" not in result and "C:\\Users" not in result
     print("C545D_GIO_ETW16_PAIR_SELFTEST_PASS,"
-          "positive_cases=1,negative_cases=9,"
+          "positive_cases=1,negative_cases=10,"
           "raw_stack_uploaded=0,private_paths_emitted=0,"
           "recorder_untouched=1")
 
