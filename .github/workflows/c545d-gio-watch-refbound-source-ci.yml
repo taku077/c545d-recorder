@@ -1,0 +1,34 @@
+name: C545D GLib 2.82.4 registry watcher ref bound source audit (CI ONLY)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_glib_registry_watch_reference_bound.py'
+      - '.github/workflows/c545d-gio-watch-refbound-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  upstream-ownership-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout exact public GLib 2.82.4 source without building or running GIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$RUNNER_TEMP/glib-2.82.4" >/dev/null 2>&1
+          test "$(git -C "$RUNNER_TEMP/glib-2.82.4" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          echo 'C545D_GIO_WATCH_SOURCE_PIN_PASS,glib=2_82_4,upstream_commit_pinned=1,windows_runs=0'
+      - name: Check deduplicated watch references and all early/error/APC exits
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_glib_registry_watch_reference_bound.py \
+            --appinfo "$RUNNER_TEMP/glib-2.82.4/gio/gwin32appinfo.c" \
+            --registry "$RUNNER_TEMP/glib-2.82.4/gio/gwin32registrykey.c" \
+            --selftest | tee /tmp/c545d_watch_refbound.txt
+          grep -Fx 'C545D_GIO_WATCH_SOURCE_AUDIT_PASS,glib_tag=2_82_4,global_key_slots=8,watch_deduplicated_by_CAS=1,apc_callback_releases_ref=1,failure_releases_ref_and_status=1,one_pending_watch_ref_per_key_while_WATCHED=1,worker_allocations_bounded_proven=0,apc_delivery_guaranteed=0,global_quiescence_proven=0,memory_leak_zero_proven=0,windows_runs=0,real_host_untouched=1' /tmp/c545d_watch_refbound.txt
+          grep -Fx 'C545D_GIO_WATCH_SOURCE_SELFTEST_PASS,positive=1,negative=5,windows_runs=0,no_actual_watch_test=1,raw_uploaded=0' /tmp/c545d_watch_refbound.txt
+          echo 'C545D_GIO_WATCH_SOURCE_CI_PASS,upstream_static_audit=1,appinfo_memory_owner_not_proven=1,user_host_untouched=1'
