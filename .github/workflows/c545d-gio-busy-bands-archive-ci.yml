@@ -1,0 +1,42 @@
+name: C545D GIO16 eight-band source archive numeric-only replay
+# Strictly replays one already completed Windows run; never runs a camera,
+# registrar, WinRT event generator, GLib process or new long measurement.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_busy_bands_archived.py'
+      - '.github/workflows/c545d-gio-busy-bands-archive-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source-frozen-ubuntu-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check 10 corruptions cannot pass original numeric evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_busy_bands_archived.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45020938670
+          name: c545d-gio-eight-bands-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: original
+      - name: Replay ONLY 64 original per-arm bands and 24 A/B windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_gio_busy_bands_archived.py \
+            --source original/combo16-scanfree-summary.txt \
+            | tee /tmp/c545d_gio_band_archive_replay.txt
+          grep -Fx 'C545D_GIO_BUSY_BANDS_ARCHIVE_PASS,source_run=45020938670,artifact_id=14754166140,arms=2,band_rows=64,diff_rows=24,busy_0_16=-16136,large_ge2048_0_16=-16688,small_lt2048_0_16=552,private_0_16=151552,region_commit_0_16=69632,nonheap_owner_unproven=1,allocator_retention_unproven=1,no_new_windows_runs=1,old_256_not_repeated=1,real_recorder_untested=1' /tmp/c545d_gio_band_archive_replay.txt
+          echo 'C545D_GIO_BUSY_BANDS_ARCHIVED_CI_PASS,original_windows_run=45020938670,new_windows_runs=0,raw_heap_dump_downloaded=0,host_untouched=1'
