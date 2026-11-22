@@ -1,0 +1,39 @@
+name: C545D original Combo256 HeapWalk cbData versus PrivateUsage scope audit
+# Saved four-arm Windows2022 #44918598339 only; no Windows runner or camera.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_gio_combo256_metric_scope.py'
+      - '.github/workflows/c545d-combo256-metric-scope-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-four-arm-archive-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail-closed source and ratio unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_gio_combo256_metric_scope.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: archived
+      - name: Quantify distinct resource scopes only, reject invalid source or mixed archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find archived -type f | wc -l)" -eq 1
+          test -f archived/ab64_safe_trace.txt
+          python3 tests/analyze_gio_combo256_metric_scope.py \
+            --root archived --probe-source tests/gio_appinfo_key_handle_probe.c
+          echo 'C545D_COMBO256_SCOPE_OFFLINE_CI_PASS,windows_runs=0,original_256_run=44918598339,user_host_modified=0'
