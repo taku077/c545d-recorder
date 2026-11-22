@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45010552730](https://github.com/taku077/c545d-recorder/actions/runs/45010552730) |
+| C545D isolated existing-PID ETW heap tracing synthetic capability CI | in_progress | [#45010551338](https://github.com/taku077/c545d-recorder/actions/runs/45010551338) |
 
 ## Current development findings from the active PR
 
