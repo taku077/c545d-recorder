@@ -1,0 +1,40 @@
+name: C545D synthetic complete-interval heap owner ETW calibration
+# Disposable Windows 2022 64 HeapAlloc / 48 HeapFree / 16 outstanding.
+# Prelaunch, sequential, no camera/GLib/registry/host; no ETL is uploaded.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_etw_owner_lifetime_calibration.c'
+      - 'tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1'
+      - '.github/workflows/c545d-etw-owner-lifetime-calibration-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-synthetic-owner-preflight:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Validate controller syntax and negative safety fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if(@($errors).Count){throw 'Owner calibration controller syntax rejected'}
+          & ./tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1 -SelfTest
+          if(-not $?){throw 'Owner calibration source safety fixture rejected'}
+      - name: Run short exact known alloc/free Xperf capability in isolated runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1
+          if(-not $? -or $LASTEXITCODE -ne 0){throw 'Owner calibration failed'}
+          Write-Host 'C545D_OWNER_CAL_WORKFLOW_PASS,windows2022=1,real_GIO=0,real_host=0,etw_uploaded=0'
