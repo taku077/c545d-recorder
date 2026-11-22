@@ -62,8 +62,8 @@ def check_series(rows: list[tuple[int, int, int]], arm: str) -> dict[str, int]:
     if any(misses != 32 or entries != 32 for _, misses, entries in rows):
         raise ValueError("observed cache cardinality increased or misses changed")
     increments = [rows[i][0] - rows[i-1][0] for i in range(1, len(rows))]
-    if any(delta < 0 or delta % 32 != 0 for delta in increments):
-        raise ValueError("unexplained nonmonotonic/reuse-counter step")
+    if any(delta != 32 for delta in increments):
+        raise ValueError("missing/duplicate cache scan counter step (expected +32)")
     if sum(increments) != final[0]:
         raise ValueError("cumulative reuse does not telescope")
     return {
