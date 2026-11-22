@@ -140,6 +140,20 @@ try {
   if(-not(Test-Path $totals) -or (Get-Item $totals).Length -lt 40){
     throw 'Whole-interval heap totals action output missing'
   }
+  # Read-only local filtered report. The parser prints ONLY validated numeric
+  # aggregates, never a heap address, process name, symbol, or raw report row.
+  $filteredTotals=Join-Path $root 'filtered_size360_totals_local_only.txt'
+  Check-Xperf 'filtered_totals' @('-i',$etl,'-o',$filteredTotals,
+                                 '-a','heap','-totals','-size','360','361')
+  if(-not(Test-Path $filteredTotals) -or (Get-Item $filteredTotals).Length -lt 40){
+    throw 'No filtered Xperf totals output'
+  }
+  $numerics=@(& py tests/analyze_c545d_xperf_size360_totals_calibration.py --report $filteredTotals)
+  if($LASTEXITCODE -ne 0 -or
+     @($numerics | Where-Object {$_ -match '^C545D_XPERF_360_TOTALS_CALIBRATION_PASS,[A-Za-z0-9_,=]+$'}).Count -ne 1){
+    throw 'Xperf filtered outstanding count not independently confirmed'
+  }
+  Write-Host $numerics[0]
   # Symbol/filter options are an INDEPENDENT capability, not the ETW
   # capture itself. A failure remains explicitly incomplete evidence.
   # It must NEVER be mistaken for source attribution or leak absence.
@@ -169,7 +183,7 @@ try {
   # report, NOT a verified exact-16 ETW outstanding count. Missing stack
   # filter or lost-event statistics are a recorded blocker.
   $traceOk=$true
-  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=0,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
+  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=1,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
 } finally {
   if($heapStarted){& $tool -stop HeapSession *> $raw}
   if($kernelStarted){& $tool -stop *> $raw}
