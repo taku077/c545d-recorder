@@ -231,15 +231,24 @@ try {
     }
     Write-Host "C545D_OWNER_CAL_FULL_STACK_CAPABILITY,action=$unfilteredAction,synthetic_allocator_present=$fullKnown,any_symbol_frame_pattern=$fullFrame,global_section_present=$fullGlobal,raw_uploaded=0"
     if($fullKnown -eq 1){
-      # Parse the unfiltered per-stack lifetime metrics using the unique
-      # synthetic source frame. The -size/-requireframes combination is
-      # demonstrably not producing stack rows on this WPT version.
       $ownerStackRows=@(& py tests/analyze_c545d_xperf_owner_stack_calibration.py --report $unfilteredStacks 2> $raw)
-      if($LASTEXITCODE -eq 0 -and
-         @($ownerStackRows | Where-Object {$_ -match '^C545D_XPERF_OWNER_STACK_CALIBRATION_PASS,[A-Za-z0-9_,=]+
-    Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
-  }
-  # Symbol/filter options are an INDEPENDENT capability, not the ETW
+      $ownerPass=@($ownerStackRows | Where-Object { $_ -like 'C545D_XPERF_OWNER_STACK_CALIBRATION_PASS,*' })
+      if($LASTEXITCODE -eq 0 -and $ownerPass.Count -eq 1){
+        $ownerVerified=1
+        Write-Host $ownerPass[0]
+      } else {
+        $ownerPrivateError=Get-Content $raw -Raw -ErrorAction SilentlyContinue
+        if($ownerPrivateError -match 'owner_stack_calibration_mismatch,observed_alloc=(\d+),observed_outstanding=(\d+),owner_stack_groups=(\d+)'){
+          Write-Host "C545D_OWNER_CAL_UNFILTERED_STACK_NUMERIC_GAP,alloc=$($Matches[1]),out=$($Matches[2]),groups=$($Matches[3]),raw_uploaded=0"
+        } else {
+          Write-Host 'C545D_OWNER_CAL_UNFILTERED_STACK_SCHEMA_GAP,raw_uploaded=0'
+        }
+      }
+    }
+    if($ownerVerified -ne 1){
+      Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_filtered_stacks=$ownerStackVisible,raw_uploaded=0"
+    }
+    # Symbol/filter options are an INDEPENDENT capability, not the ETW
   # capture itself. A failure remains explicitly incomplete evidence.
   # It must NEVER be mistaken for source attribution or leak absence.
   $filterOk=0;$filterReason='NONE'
