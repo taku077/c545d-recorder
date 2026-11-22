@@ -164,16 +164,35 @@ def model_test() -> str:
 
 def selftest(registry: str, appinfo: str) -> None:
     assert audit(registry, appinfo).startswith("C545D_REGISTRY_APC_OWNERSHIP_SOURCE_PASS,")
+    # Constrain mutations to the ACTUAL function under audit. A global
+    # .replace(...,1) can touch an unrelated earlier occurrence and leave
+    # the audited function unchanged, incorrectly failing the negative test.
+    def in_function(source: str, start: str, end: str, old: str, new: str) -> str:
+        span = scoped(source, start, end)
+        if span.count(old) != 1:
+            raise AssertionError("negative_fixture_source_anchor_changed")
+        return source.replace(span, span.replace(old, new, 1), 1)
+
+    watchstart = "gboolean\ng_win32_registry_key_watch ("
+    watchend = "/**\n * g_win32_registry_key_erase_change_indicator:"
+    apcstart = "static VOID NTAPI\nkey_changed ("
+    apcend = "/**\n * g_win32_registry_key_watch:"
     errors = [
-        (registry.replace("if (!started_to_watch)\n    return TRUE;",
-                          "if (!started_to_watch)\n    return FALSE;", 1), appinfo),
-        (registry.replace("g_object_ref (key);", "g_object_ref (key);\n  g_object_ref (key);", 1), appinfo),
-        (registry.replace("status_block = g_malloc (sizeof (IO_STATUS_BLOCK));",
-                          "status_block = NULL;", 1), appinfo),
-        (registry.replace("g_free (status_block);", "/* missed free */", 1), appinfo),
-        (registry.replace("g_object_unref (key);", "/* missed unref */", 1), appinfo),
-        (registry.replace("G_WIN32_KEY_UNWATCHED);", "G_WIN32_KEY_WATCHED);", 1), appinfo),
-        (registry, appinfo.replace("g_win32_registry_key_watch (user_clients_key,", "removed_watch (user_clients_key,", 1)),
+        (in_function(registry, watchstart, watchend,
+                     "if (!started_to_watch)\n    return TRUE;",
+                     "if (!started_to_watch)\n    return FALSE;"), appinfo),
+        (in_function(registry, watchstart, watchend,
+                     "g_object_ref (key);", "g_object_ref (key);\n  g_object_ref (key);"), appinfo),
+        (in_function(registry, watchstart, watchend,
+                     "status_block = g_malloc (sizeof (IO_STATUS_BLOCK));",
+                     "status_block = NULL;"), appinfo),
+        (in_function(registry, apcstart, apcend,
+                     "g_free (status_block);", "/* missed free */"), appinfo),
+        (in_function(registry, apcstart, apcend,
+                     "g_object_unref (key);", "/* missed unref */"), appinfo),
+        (in_function(registry, apcstart, apcend,
+                     "G_WIN32_KEY_UNWATCHED);", "G_WIN32_KEY_WATCHED);"), appinfo),
+        (registry, appinfo.replace("g_win32_registry_key_watch (user_clients_key;", "removed_watch (user_clients_key;", 1)),
         (registry, appinfo.replace("g_atomic_int_inc (&gio_win32_appinfo_update_counter);", "/* lost epoch */", 1)),
         (registry, appinfo.replace("while (g_atomic_int_get (&gio_win32_appinfo_update_counter) > 0)", "while (FALSE)", 1)),
         (registry, appinfo.replace("GET_MODULE_HANDLE_EX_FLAG_PIN", "GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT", 1)),
