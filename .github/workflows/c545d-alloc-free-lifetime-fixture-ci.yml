@@ -1,0 +1,22 @@
+name: C545D allocation/free lifetime matching correctness fixtures
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_alloc_free_lifetime_ci.py'
+      - '.github/workflows/c545d-alloc-free-lifetime-fixture-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-offline-state-machine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful matching of synthetic alloc/free and reject false leak claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_alloc_free_lifetime_ci.py --selftest
+          echo 'C545D_ALLOC_FREE_LIFETIME_CI_PASS,synthetic_only=1,never_claims_leak_from_16_live_blocks=1,raw_data_uploaded=0,Windows_runs=0,host_untouched=1'
