@@ -20,7 +20,7 @@ c545d_ci_shared_bytes_source_smoke (void)
   const wchar_t key[] = L"C545D_CI_SYNTHETIC_KEY";
   const wchar_t text[] = { 0x65e5, 0x672c, 0x8a9e, 0x30ab, 0x30e1, 0x30e9, 0 };
   const gsize expected_bytes = sizeof (text);
-  const gpointer first_data;
+  gconstpointer first_data = NULL;
   GBytes *first = NULL, *second = NULL;
   gsize length = 0;
   gboolean good = FALSE;
