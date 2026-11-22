@@ -97,8 +97,11 @@ def inspect(original_root: Path, live360_source: Path) -> list[str]:
     current = live.ROWS
     for arm in ("nochange", "registry"):
         stages = tuple(row[0] for row in current[arm])
-        if stages != (47, 47, 47, 47) if arm == "nochange" else \
-                      stages != (46, 46, 47, 46):
+        expected_stages = {
+            "nochange": (47, 47, 47, 47),
+            "registry": (46, 46, 47, 46),
+        }
+        if stages != expected_stages[arm]:
             raise ValueError("short_exact360_checkpoint_changed")
         out.append(
             "C545D_LATE360_16_ARM_SCOPE,"
