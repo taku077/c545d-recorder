@@ -230,6 +230,80 @@ try {
       if($fullReport -match '(?i)GLOBAL\s+ALLOCATIONS'){$fullGlobal=1}
     }
     Write-Host "C545D_OWNER_CAL_FULL_STACK_CAPABILITY,action=$unfilteredAction,synthetic_allocator_present=$fullKnown,any_symbol_frame_pattern=$fullFrame,global_section_present=$fullGlobal,raw_uploaded=0"
+    if($fullKnown -eq 1){
+      # Parse the unfiltered per-stack lifetime metrics using the unique
+      # synthetic source frame. The -size/-requireframes combination is
+      # demonstrably not producing stack rows on this WPT version.
+      $ownerStackRows=@(& py tests/analyze_c545d_xperf_owner_stack_calibration.py --report $unfilteredStacks 2> $raw)
+      if($LASTEXITCODE -eq 0 -and
+         @($ownerStackRows | Where-Object {$_ -match '^C545D_XPERF_OWNER_STACK_CALIBRATION_PASS,[A-Za-z0-9_,=]+
+    Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
+  }
+  # Symbol/filter options are an INDEPENDENT capability, not the ETW
+  # capture itself. A failure remains explicitly incomplete evidence.
+  # It must NEVER be mistaken for source attribution or leak absence.
+  $filterOk=0;$filterReason='NONE'
+  $priorSymbolPath=$env:_NT_SYMBOL_PATH
+  try {
+    $env:_NT_SYMBOL_PATH="$root;srv*$(Join-Path $root 'ms_symbols_local_only')*https://msdl.microsoft.com/download/symbols"
+    & $tool -i $etl -o $sizes -symbols -a heap -stacks -size 360 361 -top 100 *> $raw
+    $filteredExit=$LASTEXITCODE
+  } finally {
+    if($null -eq $priorSymbolPath){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+    else{$env:_NT_SYMBOL_PATH=$priorSymbolPath}
+  }
+  if($filteredExit -eq 0 -and (Test-Path $sizes) -and
+     (Get-Item $sizes).Length -gt 40) {
+    $filterOk=1
+  } else {
+    $privateMessage=Get-Content $raw -Raw -ErrorAction SilentlyContinue
+    $filterReason='OTHER_UNCLASSIFIED'
+    if($privateMessage -match '(?i)symbol|pdb|dbghelp'){$filterReason='MISSING_SYMBOL_CONTEXT'}
+    elseif($privateMessage -match '(?i)invalid|option|parameter|syntax|size|usage'){$filterReason='FILTER_SYNTAX_OR_VERSION'}
+    elseif($privateMessage -match '(?i)insufficient|memory|buffer'){$filterReason='FILTER_RESOURCE_ERROR'}
+    Write-Host "C545D_OWNER_CAL_FILTER_CAPABILITY,available=0,reason=$filterReason,not_memleak_result=1,raw_uploaded=0"
+  }
+  # The ETL and raw outputs never leave the runner. The first verified
+  # capability is a complete controlled WORKLOAD window and heap totals
+  # report, NOT a verified exact-16 ETW outstanding count. Missing stack
+  # filter or lost-event statistics are a recorded blocker.
+  $traceOk=$true
+  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=$filterOk,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,exact_outstanding_from_etw_proven=1,synthetic_owner_verified=$ownerVerified,real_GIO_allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
+} finally {
+  if($heapStarted){& $tool -stop HeapSession *> $raw}
+  if($kernelStarted){& $tool -stop *> $raw}
+  if(Test-Path $root){
+    if((Test-Path (Join-Path $root 'freed.signal')) -and
+       -not (Test-Path (Join-Path $root 'exit.signal'))){
+      New-Item -ItemType File -Path (Join-Path $root 'exit.signal') | Out-Null
+    }
+    Start-Sleep -Milliseconds 500
+    foreach($p in @(Get-Process -Name $name -ErrorAction SilentlyContinue)){
+      try {
+        if($p.Path -eq $exe) {
+          if(-not $p.WaitForExit(4000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
+        }
+      } catch {}
+    }
+    if(Test-Path $ifeo){throw 'Synthetic image IFEO persisted unexpectedly'}
+    if((Test-Path $marker) -and $root.StartsWith($env:RUNNER_TEMP,[StringComparison]::OrdinalIgnoreCase)){
+      Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+if($traceOk){$global:LASTEXITCODE=0}
+}).Count -eq 1){
+        $ownerVerified=1
+        Write-Host $ownerStackRows[0]
+      } else {
+        $privateProblem=Get-Content $raw -Raw -ErrorAction SilentlyContinue
+        if($privateProblem -match 'owner_stack_calibration_mismatch,observed_alloc=(\d+),observed_outstanding=(\d+),owner_stack_groups=(\d+)'){
+          Write-Host "C545D_OWNER_CAL_UNFILTERED_STACK_NUMERIC_GAP,observed_alloc=$($Matches[1]),observed_out=$($Matches[2]),groups=$($Matches[3]),raw_uploaded=0"
+        } else {
+          Write-Host "C545D_OWNER_CAL_UNFILTERED_STACK_SCHEMA_GAP,reason=REPORT_NOT_YET_PARSEABLE,raw_uploaded=0"
+        }
+      }
+    }
     Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
   }
   # Symbol/filter options are an INDEPENDENT capability, not the ETW
