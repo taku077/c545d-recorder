@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   safe-paired-numeric-fixtures:
     runs-on: ubuntu-latest
@@ -19,4 +20,22 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/analyze_c545d_etw16_safe_pair.py --selftest
-          echo 'C545D_ETW16_PAIR_OFFLINE_CI_PASS,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
+          echo 'C545D_ETW16_PAIR_OFFLINE_SELFTEST_PASS,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45015173260
+          name: c545d-gio-etw16-safe-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: original
+      - name: Verify exact paired Windows 16 saved numeric artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_etw16_safe_pair.py \
+            --source original/combo16-scanfree-summary.txt | tee /tmp/c545d_safe_pair.txt
+          grep -Fx 'C545D_GIO_ETW16_PAIRED_REPLAY_PASS,distinct_processes=2,cycles_each=16,actual_private_commit_ownership_proven=0,stack_frame_count_not_allocation_bytes=1,real_host_untouched=1,original_256_rerun=0' /tmp/c545d_safe_pair.txt
+          test "$(grep -c '^C545D_GIO_ETW16_PAIRED_REPLAY_ARM,' /tmp/c545d_safe_pair.txt)" -eq 2
+          echo 'C545D_ETW16_PAIR_ARCHIVE_CI_PASS,source_run=45015173260,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
