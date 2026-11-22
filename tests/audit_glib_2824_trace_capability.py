@@ -30,7 +30,9 @@ def audit(header: str, meson: str, gmem: str) -> list[str]:
         "glib_conf.set('HAVE_DTRACE', 1)",
         "'dtrace' : enable_dtrace,",
     )
-    if any(meson.count(marker) != 1 for marker in required_meson):
+    if (meson.count("if enable_dtrace") < 1 or
+            any(meson.count(marker) != 1 for marker in required_meson
+                if marker != "if enable_dtrace")):
         raise ValueError("GLib DTrace Meson conditional changed")
     if not (meson.index(required_meson[0]) < meson.index(required_meson[1])
             < meson.index(required_meson[2])):
