@@ -76,6 +76,28 @@ def inspect(original_root: Path, live360_source: Path) -> list[str]:
             f"controlled_private_delta={private_effect},"
             "bucket_not_allocation_site=1,leak_rate_unproven=1"
         )
+        # Same-run size class census, but ONLY the eight already recorded
+        # exact HeapWalk BUSY sizes. It is not a whole-heap leak census.
+        if mode == "combo":
+            for size in saved.SIZES:
+                reg_bin = data["registry"]["bins"][size]
+                ctl_bin = data["nochange"]["bins"][size]
+                reg_change = reg_bin[RIGHT] - reg_bin[LEFT]
+                ctl_change = ctl_bin[RIGHT] - ctl_bin[LEFT]
+                delta = reg_change - ctl_change
+                out.append(
+                    "C545D_LATE256_COMBO_BIN_SCOPE,"
+                    f"source_run={OLD_RUN},window=192_256,"
+                    f"size={size},"
+                    f"registry_raw_delta={reg_change},"
+                    f"nochange_raw_delta={ctl_change},"
+                    f"controlled_count_delta={delta},"
+                    "selected_bins_only=1,"
+                    "not_a_complete_heap_census=1,"
+                    "not_private_usage_allocation_site=1"
+                )
+                if size == 360 and delta != 5:
+                    raise ValueError("360_class_cross_check_failed")
         settled_effect = controlled(
             bins["registry"][RIGHT], bins["registry"][LAST],
             bins["nochange"][RIGHT], bins["nochange"][LAST]
