@@ -2,6 +2,11 @@
 """Reanalyse three SAVED 256-cycle Windows GIO cache A/B artifacts.
 
 No Windows re-execution, registry access, camera data, package names or paths.
+IMPORTANT: This older script uses a legacy key 'private_usage' for the first
+numeric GIO_VM field. At all 3 run-specific probe source commits, GIO_VM is
+the VirtualQuery MEM_COMMIT && MEM_PRIVATE sum, NOT the Windows PSAPI
+PROCESS_MEMORY_COUNTERS_EX.PrivateUsage. The legacy key is retained for
+backward compatibility and MUST NOT be mixed with GIO_PROBE PrivateUsage.
 The 2048-byte HeapWalk overflow bin is NOT an exact size; exclude it from
 size-owner conclusions. Differences are paired registry minus nochange.
 """
@@ -36,6 +41,8 @@ def parse_log(contents: str) -> dict[str, dict[int, int]]:
         if a[0] == "GIO_VM":
             if len(a) != 8 or int(a[-1]) != 0:
                 raise ValueError("VM census missing fields or reports errors")
+            # Legacy internal key: first GIO_VM field is VirtualQuery
+            # MEM_COMMIT+MEM_PRIVATE region sum, NOT PSAPI PrivateUsage.
             metric, value = "private_usage", int(a[3])
         elif a[0] == "GIO_HEAP":
             if len(a) != 7 or int(a[-1]) != 0:
@@ -107,6 +114,10 @@ def analyze(root: pathlib.Path) -> tuple[list[dict[str, str | int]], list[str]]:
             summaries.append(f"C545D_SAVED_HEAP_BIN,run={run},size={size},per64=" + ";".join(map(str, vals)))
     if len(cache_privates) != 3 or not all(v[3] < v[2] for v in cache_privates):
         raise ValueError("late-64 PrivateUsage deceleration was not consistent")
+    summaries.append("C545D_SAVED_CACHE_OLD_VM_METRIC_SCOPE,"
+                     "metric=VirtualQuery_MEM_COMMIT_MEM_PRIVATE,"
+                     "PSAPI_PrivateUsage=0,source_blob=36411d34ea324115c13335b6d1248787811e6271,"
+                     "old_run_count=3,legacy_alias_private_usage=1")
     summaries.append("C545D_SAVED_RESIDUAL_3RUN_PASS,"
                      "late64_private_bytes=" + ";".join(str(v[3]) for v in cache_privates) +
                      ",late64_deceleration=3of3,"
