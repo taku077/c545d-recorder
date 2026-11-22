@@ -1,0 +1,39 @@
+name: C545D offline GIO ETW same-run owner and worker lifetime reconciliation
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_etw_saved_scope_ci.py'
+      - '.github/workflows/c545d-gio-etw-saved-scope-reconcile-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-real-windows-numeric-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on inconsistent lifetime and incomplete owner evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_etw_saved_scope_ci.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45059995357
+          name: c545d-gio-etw-source-cohort-numeric-only
+          github-token: ${{ github.token }}
+          path: original
+      - name: Confirm exact original registry-outstanding and worker-active lifetime scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_etw_saved_scope_ci.py --numeric-folder original |
+            tee /tmp/c545d_gio_etw_scope_only.txt
+          grep -F 'worker_active_after_cleanup=1' /tmp/c545d_gio_etw_scope_only.txt
+          grep -F 'cross_window_causal_comparison_prohibited=1' /tmp/c545d_gio_etw_scope_only.txt
+          grep -F 'leak_proven=0' /tmp/c545d_gio_etw_scope_only.txt
+          echo 'C545D_GIO_ETW_SAVED_SCOPE_CI_PASS,original_window_held=1,source_run=45059995357,artifact=14768938259,new_windows_runs=0,host_untouched=1'
