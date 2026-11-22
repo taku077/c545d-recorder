@@ -141,28 +141,10 @@ try {
   }
   $safeStackClassified=0
   if($stackActionOk -eq 1) {
-    # Parser has NO passthrough of paths/symbols/addresses. Only aggregate
-    # known module-family counts; never publish raw stack report.
     $safeRows=@(& py tests/analyze_c545d_etw_stack_safe.py --source $stackReport)
     $safeExit=$LASTEXITCODE
-    $safeLine=@($safeRows | Where-Object { $_ -match '^C545D_ETW_STACK_SAFE_SUMMARY,[A-Za-z0-9_,=]+
-} finally {
-  if($heapStarted){& $tool -stop HeapSession *> $local}
-  if($kernelStarted){& $tool -stop *> $local}
-  if($proc){
-    New-Item -ItemType File -Path (Join-Path $root 'exit.signal') -Force | Out-Null
-    if(-not $proc.WaitForExit(1500)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
-  }
-  if(Test-Path $ifeo){throw 'Unexpected synthetic IFEO persisted'}
-  Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
-}
-if($ok){
-  Write-Host 'C545D_ETW_PID_PREFLIGHT_PASS,capability_confirmed=1,real_GIO_tested=0,host_untouched=1'
-  # An OPTIONAL stack-action return code is not an error in the already
-  # verified ETL capture and heap-summary parse. Do not inherit it.
-  $global:LASTEXITCODE=0
-}
- })
+    # No untrusted stack, path, function or module string enters the output.
+    $safeLine=@($safeRows | Where-Object { $_ -match '^C545D_ETW_STACK_SAFE_SUMMARY,[A-Za-z0-9_,=]+$' })
     $safePass=@($safeRows | Where-Object { $_ -eq 'C545D_ETW_STACK_SANITIZER_PASS,module_only=1,source_owner_proven=0,real_recorder_untouched=1' })
     if($safeExit -eq 0 -and $safeLine.Count -eq 1 -and $safePass.Count -eq 1) {
       Write-Host $safeLine[0]
