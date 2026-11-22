@@ -1,0 +1,29 @@
+name: C545D GBytes UTF16 borrowed value survives concurrent eviction (OFFLINE)
+# Validates GLib GBytes reference lifecycle, not any WinRT or GIO heap claim.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_gbytes_utf16_eviction_synthetic.c'
+      - '.github/workflows/c545d-gbytes-utf16-eviction-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  immutable-reader-ref-after-invalidation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run real GLib reference-counting concurrency contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg-config --exists glib-2.0
+          gcc -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/c545d_gbytes_utf16_eviction_synthetic.c \
+            $(pkg-config --cflags --libs glib-2.0) \
+            -o "$RUNNER_TEMP/gbytes_utf16_eviction"
+          "$RUNNER_TEMP/gbytes_utf16_eviction" | tee "$RUNNER_TEMP/gbytes_numeric.txt"
+          grep -Fx 'C545D_GBYTES_UTF16_EVICTION_PASS,concurrent_threads=2,evictions=1,borrowed_old_text_valid=1,followup_cache_hits=1024,utf16_hit_copies=0,raw_package_names_emitted=0,new_windows_runs=0,gio_not_executed=1,real_recorder_unmodified=1' "$RUNNER_TEMP/gbytes_numeric.txt"
+          echo 'C545D_GBYTES_UTF16_EVICTION_CI_PASS,source_only_semantics=1,com=0,windows=0'
