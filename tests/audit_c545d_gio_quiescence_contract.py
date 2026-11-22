@@ -5,6 +5,8 @@ This script NEVER waits on or mutates the user's recorder. It verifies exact
 GLib 2.82.4 sources and the already-saved numeric results from Windows
 Actions #44992842208. A GLib update_counter==0 is NOT a guarantee that
 queued Windows APC/WinRT callbacks are drained, nor is a fixed sleep.
+It also audits the once-initialized exclusive worker and pinned DLL lifetime
+without confusing these intentional process-wide roots with memory growth.
 """
 from __future__ import annotations
 
@@ -64,6 +66,10 @@ def audit_source(app: str, registry: str) -> list[str]:
     require(init, (
         "g_thread_pool_new (gio_win32_appinfo_thread_func,",
         "                                                        1,",
+        "                                                        TRUE,",
+        "g_once_init_enter (&initialized)",
+        "GetModuleHandleEx (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,",
+        "g_once_init_leave (&initialized, TRUE);",
         "  if (!do_wait)\n    return;",
         "g_atomic_int_get (&gio_win32_appinfo_update_counter) > 0",
         "g_cond_wait (&gio_win32_appinfo_cond, &gio_win32_appinfo_mutex);",
@@ -93,9 +99,17 @@ def audit_source(app: str, registry: str) -> list[str]:
     require(registry, (
         "The APC\n * will run when the current thread enters alertable state",
     ), "APC documentation")
-    # The source-level wait acknowledges only a fully processed AppInfo
-    # update_counter. It does NOT acknowledge a Windows APC not delivered yet.
+    # GIO intentionally owns one exclusive worker pool and pins the DLL for
+    # the life of the process. This is a ONE-TIME lifetime root; it cannot by
+    # itself explain a per-rebuild PrivateUsage slope. Never replace this with
+    # forced teardown on the active recorder. None of this proves leak=0.
+    if "g_thread_pool_free (" in app:
+        raise ValueError("unexpected worker-pool teardown: review lifetime contract")
     return [
+        "C545D_GIO_LIFETIME_ROOTS_SOURCE_AUDIT,glib=2.82.4,"
+        "init_once=1,exclusive_worker_pool=1,module_pinned=1,"
+        "worker_pool_teardown_in_source=0,one_time_root_not_per_cycle_leak=1,"
+        "allocation_owner_proven=0,real_host_tested=0",
         "C545D_IDLE_SOURCE_AUDIT_PASS,glib=2.82.4,"
         "watcher_APC_delivery=1,worker_update_counter=1,"
         "conditional_wait=1,public_wait_for_APC_drain=0,"
@@ -177,6 +191,19 @@ def selftest() -> None:
     assert all(not c.defensible_global_idle() for c in cases)
     assert cases[0].app_worker_drained()
     assert cases[1].app_worker_drained()
+    # The pinned-module/worker lifetime assertions must fail closed on each
+    # deleted anchor, rather than silently accepting a changed upstream API.
+    lifetime = ("g_once_init_enter (&initialized)",
+                "GetModuleHandleEx (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,",
+                "g_once_init_leave (&initialized, TRUE);")
+    for missing in lifetime:
+        corrupted = " ".join(x for x in lifetime if x != missing)
+        try:
+            require(corrupted, lifetime, "lifetime negative fixture")
+        except ValueError:
+            continue
+        raise AssertionError("lifetime corruption fixture accepted")
+    print("C545D_GIO_LIFETIME_SELFTEST_PASS,missing_anchor_rejected=3,windows_runs=0")
     print("C545D_IDLE_MODEL_SELFTEST_PASS,unproven_quiet_scenarios=7,"
           "counter_zero_pending_APC_case_rejected=1,windows_runs=0")
 
