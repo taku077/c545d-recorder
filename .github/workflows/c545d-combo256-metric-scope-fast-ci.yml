@@ -41,5 +41,7 @@ jobs:
           python3 tests/analyze_c545d_saved256_heap_enumeration.py --root archived | tee /tmp/c545d_heap_enumeration.txt
           test "$(grep -c '^C545D_SAVED256_HEAP_ENUM_ENDPOINT,' /tmp/c545d_heap_enumeration.txt)" -eq 4
           test "$(grep -c '^C545D_SAVED256_HEAP_ENUM_WINDOW,' /tmp/c545d_heap_enumeration.txt)" -eq 12
+          test "$(grep -c '^C545D_SAVED256_HEAP_ENUM_FINAL,' /tmp/c545d_heap_enumeration.txt)" -eq 2
+          grep -Fx 'C545D_SAVED256_HEAP_ENUM_FINAL,mode=combo,controlled_blocks_0_256=36,controlled_blocks_0_258=-9,enumerated_heaps_all_points=4,heap_handles_identical_proven=0,busy_blocks_not_all_native_allocations=1,private_commit_ownership_proven=0' /tmp/c545d_heap_enumeration.txt
           grep -Fx 'C545D_SAVED256_HEAP_ENUM_PASS,source_run=44918598339,source_arms=4,checkpoints_per_arm=7,controlled_intervals=12,original_windows_rerun=0,real_host_untouched=1,leak_owner_identified=0' /tmp/c545d_heap_enumeration.txt
           echo 'C545D_COMBO256_SCOPE_OFFLINE_CI_PASS,windows_runs=0,original_256_run=44918598339,user_host_modified=0'
