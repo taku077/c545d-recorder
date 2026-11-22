@@ -3,17 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7f6fe32127f81b1828705de2d9f1012bda8bb641`
-- **PR updated at (UTC):** `2026-11-22T06:07:48Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7f6fe32127f81b1828705de2d9f1012bda8bb641/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a3c72913b46a4933e6e2d2f4c93537f1adcd6d8d`
+- **PR updated at (UTC):** `2026-11-22T06:14:39Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a3c72913b46a4933e6e2d2f4c93537f1adcd6d8d/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44992346969](https://github.com/taku077/c545d-recorder/actions/runs/44992346969) |
-| C545D AppInfo async phase trace source and numeric selftest (fast) | success | [#44992344709](https://github.com/taku077/c545d-recorder/actions/runs/44992344709) |
-| C545D short patched Combo MSVC GObject and no-query final census CI | in_progress | [#44992344706](https://github.com/taku077/c545d-recorder/actions/runs/44992344706) |
+| C545D active development handoff auto-refresh | in_progress | [#44992843102](https://github.com/taku077/c545d-recorder/actions/runs/44992843102) |
+| C545D short patched Combo MSVC GObject and no-query final census CI | in_progress | [#44992842208](https://github.com/taku077/c545d-recorder/actions/runs/44992842208) |
+| C545D AppInfo async phase trace source and numeric selftest (fast) | in_progress | [#44992842182](https://github.com/taku077/c545d-recorder/actions/runs/44992842182) |
 
 ## Current development findings from the active PR
 
