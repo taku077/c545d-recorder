@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45043329031](https://github.com/taku077/c545d-recorder/actions/runs/45043329031) |
+| C545D synthetic complete-interval heap owner ETW calibration | in_progress | [#45043326477](https://github.com/taku077/c545d-recorder/actions/runs/45043326477) |
 
 ## Current development findings from the active PR
 
