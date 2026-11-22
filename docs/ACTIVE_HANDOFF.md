@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45018161420](https://github.com/taku077/c545d-recorder/actions/runs/45018161420) |
+| C545D GLib 2.82.4 registry watcher ref bound source audit (CI ONLY) | success | [#45018159790](https://github.com/taku077/c545d-recorder/actions/runs/45018159790) |
 
 ## Current development findings from the active PR
 
