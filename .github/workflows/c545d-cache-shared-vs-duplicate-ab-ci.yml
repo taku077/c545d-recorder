@@ -1,0 +1,103 @@
+name: C545D matched synthetic UTF16 cache old-vs-shared 4x4 resource comparison
+# This ONLY tests the precise old duplicate / candidate GBytes REF idioms with
+# fixed synthetic values. No actual GIO/WinRT, registry, camera or host run.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_cache_shared_vs_duplicate_ab.c'
+      - 'tests/analyze_c545d_cache_shared_vs_duplicate_ab.py'
+      - '.github/workflows/c545d-cache-shared-vs-duplicate-ab-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  safety-matched-windows-synthetic:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify numerical strict schema and negatives without executing test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_c545d_cache_shared_vs_duplicate_ab.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Unsafe numerical analyzer rejected'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core
+      - name: Install only immutable GStreamer 1.28.8 development SDK in isolated runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK installer truncated'}
+          $proc=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($proc.ExitCode -ne 0){throw 'SDK install failed'}
+          $manifest=Get-Content artifacts/core/manifest.txt -Raw
+          $reference=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$reference")){throw 'Pinned SDK hash mismatch'}
+          if(-not(Test-Path "$sdk/lib/glib-2.0.lib") -or -not(Test-Path "$sdk/include/glib-2.0/glib.h")){
+            throw 'Pinned SDK development header or import lib missing'
+          }
+          "C545D_SYNTH_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'C545D_CACHE_SYNTH_SDK_PASS,verified_gio_reference=1,winrunner_only=1,host_modified=0'
+      - name: Compile controlled GLib allocation idioms and capture 8 numeric-only processes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=$env:C545D_SYNTH_SDK_ROOT
+          $root=Join-Path $env:RUNNER_TEMP 'c545d_synth_ab'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $exe=Join-Path $root 'cache_ab.exe'
+          $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          & cl.exe @(@('/nologo','/W4','/WX','/O2','/MD','/TC')+$include+@('tests/c545d_cache_shared_vs_duplicate_ab.c',"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'glib-2.0.lib','psapi.lib')) *> (Join-Path $root 'build_private.txt')
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)) {throw 'MSVC synthetic build failed; no A/B claim'}
+          $originalPath=$env:PATH
+          $seq=@('old','shared','shared','old','shared','old','old','shared')
+          $rows=New-Object System.Collections.Generic.List[string]
+          try {
+            $env:PATH="$sdk/bin;$originalPath"
+            foreach($mode in $seq) {
+              $row=@(& $exe $mode)
+              if($LASTEXITCODE -ne 0 -or $row.Count -ne 1){throw 'Missing bounded isolated sample'}
+              if($row[0] -cnotmatch '^C545D_CACHE_SYNTH_AB,mode=(old|shared),[A-Za-z0-9_,=\-]+$' -or
+                 $Matches[1] -cne $mode){throw 'Unsafe or mismatched synthetic output'}
+              $rows.Add($row[0])
+            }
+            $safe=Join-Path $root 'cache_ab_numeric_only.txt'
+            [IO.File]::WriteAllLines($safe, $rows)
+            $summary=@(& py tests/analyze_c545d_cache_shared_vs_duplicate_ab.py --file $safe)
+            if($LASTEXITCODE -ne 0 -or
+               @($summary | Where-Object {$_ -match '^C545D_CACHE_SYNTH_AB_ARM,'}).Count -ne 2 -or
+               @($summary | Where-Object {$_ -match '^C545D_CACHE_SYNTH_AB_COMPARE,'}).Count -ne 1 -or
+               @($summary | Where-Object {$_ -match '^C545D_CACHE_SYNTH_AB_PASS,'}).Count -ne 1){
+              throw 'Numeric A/B results inconsistent; do not claim benefit'
+            }
+            foreach($line in $summary) {
+              if($line -cnotmatch '^[A-Za-z0-9_,=\-]+$'){throw 'Summary privacy schema failure'}
+              Write-Host $line
+            }
+            New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+            Copy-Item $safe artifacts/c545d_cache_synth_ab_numeric_only.txt
+          } finally {
+            $env:PATH=$originalPath
+            Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: c545d-cache-utf16-synthetic-ab-numeric-only
+          path: artifacts/c545d_cache_synth_ab_numeric_only.txt
+          if-no-files-found: error
+          retention-days: 10
