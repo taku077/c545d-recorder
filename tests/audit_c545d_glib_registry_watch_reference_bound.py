@@ -108,13 +108,13 @@ def selftest(appinfo: str, registry: str) -> None:
     )
     altered = [
         (appinfo, registry.replace("if (!started_to_watch)", "if (started_to_watch)", 1)),
-        (appinfo, registry.replace("g_object_ref (key);",
-                                   "g_object_ref (key);\n  g_object_ref (key);", 1)),
+        (appinfo, registry.replace("/* Keep it alive until APC is called */\n  g_object_ref (key);",
+                                   "/* Keep it alive until APC is called */\n  g_object_ref (key);\n  g_object_ref (key);", 1)),
         (appinfo, registry.replace("g_free (status_block);", "/*missing*/", 1)),
         (appinfo.replace("g_win32_registry_key_watch (classes_root_key,",
                          "g_win32_registry_key_watch (new_unbounded_key,", 1), registry),
-        (appinfo.replace("g_once_init_leave (&initialized, TRUE)",
-                         "g_once_init_leave (&initialized, FALSE)", 1), registry),
+        (appinfo.replace("g_once_init_leave (&initialized, TRUE);\n    }\n\n  if (!do_wait)",
+                         "g_once_init_leave (&initialized, FALSE);\n    }\n\n  if (!do_wait)", 1), registry),
     ]
     for changed_app, changed_registry in altered:
         try:
