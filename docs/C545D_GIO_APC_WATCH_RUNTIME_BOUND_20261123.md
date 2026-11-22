@@ -1,0 +1,28 @@
+# C545D — GIO registry APC pending-watch **runtime** boundedness, 2026-11-23 JST
+
+## Ground truth and scope
+
+Official GLib 2.82.4 `gio/gwin32registrykey.c` has guarded `G_WIN32_KEY_UNWATCHED→WATCHED` registration; it takes one extra key reference and allocates an `IO_STATUS_BLOCK` for an outstanding notification. APC completion frees the status block, resets the watch indicator, invokes `keys_updated()` to rearm, then drops the prior key reference. Initialization calls `watch_keys()` for eight configured registry-key roots, but actual runner may have fewer active registered watchers. Source proof **already existed** in `tests/audit_c545d_glib_registry_watch_reference_bound.py` and old `.github/workflows/c545d-gio-watch-refbound-source-ci.yml`; do not count source inspection alone as a new classification advance. New `tests/audit_c545d_registry_apc_lifetime.py` extended this with extra negative cases and 2048 synthetic event state machine, but did **not** establish actual runtime memory ownership.
+
+Microsoft [Asynchronous Procedure Calls](https://learn.microsoft.com/en-us/windows/win32/sync/asynchronous-procedure-calls) and [NtNotifyChangeMultipleKeys](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntnotifychangemultiplekeys) explain the deferred callback: `gio_win32_appinfo_init(TRUE)` only waits for GLib's AppInfo rebuild counter, not for all outstanding registry/APC deliveries. A pending watch for a process-wide subscription is **not by itself a leak**; it remains intentionally retained while listening.
+
+## NEW: actual bounded-pending count on Windows 2022
+
+[Actions #45046446784 **SUCCESS**](https://github.com/taku077/c545d-recorder/actions/runs/45046446784), full GStreamer SDK 1.28.8/MSVC native GLib/GIO 2.82.4 built in isolated runner, official SDK 2047 GIO export parity. [Sanitized numeric-only artifact 14764155858](https://github.com/taku077/c545d-recorder/actions/runs/45046446784), **no DLL/ETL/stack/registry names in artifact**, no actual recording PC modified. Uses `tests/patch_glib_registry_watch_lifetime_ci.py`, a disposable and environment-gated source patch that records only completed registrations / APC deliveries / currently outstanding status-block notifications. Reader `tests/analyze_c545d_gio_watch_lifetime_ci.py` checks each event against `active=registrations-completions`, `0≤active≤8`, chronological counters and presence of callback completion in the registry arm. Original source/owned-path overlay preflight [#45046347672 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45046347672), with 10 invalid runtime traces + 5 source-overlay negative cases.
+
+| Disposable arm | Cycles | Successful registrations | APC completions | Final pending | Peak pending |
+|---|---:|---:|---:|---:|---:|
+| nochange | 16 | 6 | 0 | **6** | 6 |
+| registry | 16 | 23 | 17 | **6** | 6 |
+
+Actual output: `C545D_GIO_WATCH_RUNTIME_PAIR_PASS,arms=2,cycles=16,bounded_watch_source_counter=1,worker_global_idle_unproven=1,real_host_untouched=1`. The separate registry arm proves **17 APC deliveries and successful rearming** occurred without a growing outstanding watch count in this test. Source+runtime evidence now supports a **bounded intentional registry-watch status-block cohort**. No arbitrary Win32 handle closing, DLL swap, force restart, permanent registry change or direct user-PC testing occurred.
+
+**Important limitation:** This **does not** establish the ownership or amount of the residual whole-process PrivateUsage, HeapWalk BUSY, heap commit, GIO cache, WinRT/COM objects or GLib worker allocations. Log instrumentation can perturb timing. Six pending notifications at one endpoint is expected and is not a proof that all queues are globally idle. Therefore the full `GIO16_OWNER_AND_COMMIT` and `GIO_ASYNC_QUIESCENCE` classification cases remain **OPEN**, along with original Combo256 and actual Win10 host.
+
+## Preflight for the next genuinely differentiating ETW measurement
+
+[Actions #45046783800 **SUCCESS**](https://github.com/taku077/c545d-recorder/actions/runs/45046783800) tests `tests/patch_gio_probe_etw_phase_fence_ci.py` against the same **four existing disposable-probe overlays**; 5 invalid fixture cases fail as intended. The new file-signal handshake is solely for the Windows CI experiment: `baseline_ready.signal → trace_armed.signal` gates the first 16 controlled GIO cycles, then `precleanup_ready.signal → trace_stopped.signal` keeps the process alive while ETW stops **before** final registry deletion/cleanup. `SleepEx(...,TRUE)` delivers some queued APCs during the wait but does **not** guarantee there can be no future callbacks. This only solves the former ETW source trace's **post-workload-start** and end-of-cleanup ambiguity, not full global idle.
+
+**NEXT AI-ONLY**: attach verified `-FileMode Sequential` and explicit logger lost-event-zero detection from successful synthetic ETW calibration [#45044807672](https://github.com/taku077/c545d-recorder/actions/runs/45044807672) to this pre-workload GIO probe fence. Capture **both** 16-cycle arms and source-specific outstanding blocks from **unfiltered** Xperf stacks (filtered `-size` stacks previously hid all source frames), with explicitly checked report coverage and worker phase observations in each same PID. Distinguish source-owned outstanding allocations from allocator commit and explain unclaimed sources; no release decision until lifetime expectation verified. **Do not rerun original 256 cycles or ask user for another 4h recording.**
+
+Classification state **OPEN (4 evidence gaps)**; production release **HOLD**; `install_approved=0`, `live_test_authorized=0`, `real_host_verified=0`. Keep all recording specifications unchanged.
