@@ -74,8 +74,8 @@ try {
   if((Test-Path $out) -or (Test-Path $err)){throw 'Refuse overwriting stale CI outputs'}
   $env:C545D_CI_ETW_PHASE_ROOT=$local
   $proc=Start-Process -FilePath $Probe -WorkingDirectory $Root -ArgumentList $args -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-  Wait-Signal 'baseline_ready.signal' 60
-  Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,baseline_ready=1,controlled_cycles_started=0"
+  Wait-Signal 'late_window_ready.signal' 60
+  Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,late_window_ready=1,late_window_cycles_started=0"
   Invoke-SafeXperf 'kernel' @('-on','BASE')
   $kernelOn=$true
   $captureArgs=@('-start','HeapSession','-heap','-pids',"$($proc.Id)",
@@ -89,7 +89,7 @@ try {
   $heapOn=$true
   Signal 'trace_armed.signal'
   Wait-Signal 'precleanup_ready.signal' 55
-  Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,controlled_cycles=16,pre_cleanup=1"
+  Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,total_cycles=16,etw_window_last_cycles=4,pre_cleanup=1"
   & $xperf -loggers *> $loggers
   if($LASTEXITCODE -ne 0){throw 'ETW loss status unavailable'}
   # Parse only the HeapSession logger section. Other loggers may have
@@ -144,7 +144,7 @@ try {
   $numericOnly=$counts[0]
   Set-Content -Path (Join-Path $Root ('etw-'+$Arm+'-source-cohorts-only.txt')) -Encoding ascii -Value $numericOnly
   Write-Host $numericOnly
-  Write-Host "C545D_GIO_ETW_OWNER_WINDOW_PASS,arm=$Arm,cycles=16,sequential=1,lost_events_zero=1,preworkload=1,precleanup=1,global_quiet_proven=0,leak_proven=0,raw_uploaded=0,host_untouched=1"
+  Write-Host "C545D_GIO_ETW_OWNER_WINDOW_PASS,arm=$Arm,total_cycles=16,etw_traced_cycles=4,sequential=1,lost_events_zero=1,prelatewindow=1,precleanup=1,global_quiet_proven=0,leak_proven=0,raw_uploaded=0,host_untouched=1"
   $success=$true
 } finally {
   if($heapOn){& $xperf -stop HeapSession *> $rawLocal}

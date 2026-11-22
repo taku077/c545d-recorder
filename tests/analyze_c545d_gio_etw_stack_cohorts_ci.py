@@ -128,7 +128,7 @@ def analyze(source: str, *, arm: str) -> str:
         f"parsed_alloc={all_a}",
         f"parsed_out={all_o}",
         f"allocation_count_coverage_complete={complete}",
-        "window_preworkload_fenced=1",
+        "window_late4_fenced=1,capture_includes_first12_cycles=0",
         "global_async_quiescence_proven=0",
         "stack_contains_module_not_proven_allocation_owner=1",
         "private_usage_attribution_proven=0",

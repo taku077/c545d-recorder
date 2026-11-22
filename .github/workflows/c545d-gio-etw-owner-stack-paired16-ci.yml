@@ -1,4 +1,4 @@
-name: C545D real Windows GIO preworkload zero-loss ETW owner stacks paired16
+name: C545D Windows GIO late 4 cycles of 16 source-stack ETW owner census
 # Fresh short 2x16 trials. NOT the original Windows 4x256 experiment.
 # Never install or upload the resulting DLL or publish raw profile data.
 on:
@@ -160,7 +160,7 @@ jobs:
             & py (Join-Path tests $patch) $source
             if($LASTEXITCODE -ne 0){throw 'Disposable GIO probe overlay failed'}
           }
-          py tests/patch_gio_probe_etw_phase_fence_ci.py $source
+          py tests/patch_gio_probe_etw_phase_fence_ci.py $source --late-window
           if($LASTEXITCODE -ne 0){throw 'Pre-workload and precleanup ETW signal fence failed'}
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           $exe=Join-Path $root 'c545d_disposable_scanfree.exe'
@@ -206,7 +206,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$root/numeric" | Out-Null
           (@($etw)+@($watch)+@($phases)) | Set-Content "$root/numeric/gio-etw-source-cohorts-only.txt" -Encoding ascii
           (@($etw)+@($watch)+@($phases)) | ForEach-Object {Write-Host $_}
-          Write-Host 'C545D_GIO_ETW_OWNER_PAIR_CI_PASS,arms=2,cycles=16,preworkload=1,precleanup=1,seq=1,no_lost_events=1,source_cohorts_aggregated=1,full_global_idle_unproven=1,real_leak_unproven=1,raw_uploaded=0,host_untouched=1'
+          Write-Host 'C545D_GIO_ETW_OWNER_PAIR_CI_PASS,arms=2,total_cycles=16,etw_traced_cycles=4,prelatewindow=1,precleanup=1,seq=1,no_lost_events=1,source_cohorts_aggregated=1,full_global_idle_unproven=1,real_leak_unproven=1,raw_uploaded=0,host_untouched=1'
       - uses: actions/upload-artifact@v4
         if: success()
         with:
