@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `df71b46271a1fff2aaa9c8495c9fc5e5ab4fb717`
-- **PR updated at (UTC):** `2026-11-22T12:30:59Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/df71b46271a1fff2aaa9c8495c9fc5e5ab4fb717/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7d666732430bb8452209cb9c55e36c47f1384463`
+- **PR updated at (UTC):** `2026-11-22T12:32:01Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7d666732430bb8452209cb9c55e36c47f1384463/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45022680575](https://github.com/taku077/c545d-recorder/actions/runs/45022680575) |
-| C545D GBytes UTF16 borrowed value survives concurrent eviction (OFFLINE) | failure | [#45022679000](https://github.com/taku077/c545d-recorder/actions/runs/45022679000) |
+| C545D active development handoff auto-refresh | in_progress | [#45022769627](https://github.com/taku077/c545d-recorder/actions/runs/45022769627) |
+| C545D GBytes UTF16 borrowed value survives concurrent eviction (OFFLINE) | in_progress | [#45022766944](https://github.com/taku077/c545d-recorder/actions/runs/45022766944) |
 
 ## Current development findings from the active PR
 
