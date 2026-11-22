@@ -147,7 +147,7 @@ try {
   if($heapStarted){& $tool -stop HeapSession *> $raw}
   if($kernelStarted){& $tool -stop *> $raw}
   if(Test-Path $root){
-    if(Test-Path (Join-Path $root 'freed.signal') -and
+    if((Test-Path (Join-Path $root 'freed.signal')) -and
        -not (Test-Path (Join-Path $root 'exit.signal'))){
       New-Item -ItemType File -Path (Join-Path $root 'exit.signal') | Out-Null
     }
