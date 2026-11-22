@@ -221,58 +221,47 @@ jobs:
           $numeric | Set-Content "$root/numeric/combo16-scanfree-summary.txt" -Encoding ascii
           $numeric | ForEach-Object {Write-Host $_}
           Write-Host 'C545D_COMBO16_SCANFREE_WINDOWS_CI_PASS,matched_arms=2,cycles=16,legacy_256_rerun=0,real_camera=0,host_modified=0'
-          function GetControlled([string[]]$rows,[string]$kind) {
-            $selected=@($rows | Where-Object {$_ -clike "C545D_COMBO16_SCANFREE_RESOURCE,kind=$kind,window=0_16,*"})
-            if($selected.Count -ne 1 -or $selected[0] -cnotmatch ',controlled=(-?[0-9]+),new_alloc_site_proven=0,real_host_untested=1
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: c545d-manifest-scratch-ab16-numeric-only-CI
-          path: artifacts/numeric/manifest-scratch-ab16.txt
-          if-no-files-found: error
-          retention-days: 90
-){throw 'Invalid private/busy numeric metric'}
-            return [long]$Matches[1]
+          function Metric([string[]]$rows,[string]$begin,[string]$key) {
+            $pick=@($rows | Where-Object {$_ -clike "$begin*"})
+            if($pick.Count -ne 1){throw 'Metric row missing or duplicated'}
+            $m=[regex]::Match($pick[0],"(?:^|,)$key=(-?[0-9]+)(?:,|$)")
+            if(-not $m.Success){throw 'Metric value missing'}
+            return [long]$m.Groups[1].Value
           }
-          function GetRegion([string[]]$rows) {
-            $selected=@($rows | Where-Object {$_ -clike 'C545D_HEAP_REGION_CONTROLLED,window=0_16,*'})
-            if($selected.Count -ne 1 -or $selected[0] -cnotmatch ',region_commit_delta=(-?[0-9]+),private_delta='){throw 'Invalid region numeric metric'}
-            return [long]$Matches[1]
-          }
-          $oldPrivate=GetControlled $lines 'private'
-          $oldBusy=GetControlled $lines 'busy'
-          $oldCommit=GetRegion $regionlines
+          $basePrivate=Metric $lines 'C545D_COMBO16_SCANFREE_RESOURCE,kind=private,window=0_16,' 'controlled'
+          $baseBusy=Metric $lines 'C545D_COMBO16_SCANFREE_RESOURCE,kind=busy,window=0_16,' 'controlled'
+          $baseRegion=Metric $regionlines 'C545D_HEAP_REGION_CONTROLLED,window=0_16,' 'region_commit_delta'
           $env:PATH="$root/overlay-scratch;$sdk/bin;$originalPath"
           $env:C545D_EXPECTED_GIO_DLL=(Join-Path $root 'overlay-scratch/gio-2.0-0.dll')
           foreach($arm in @('nochange','registry')){
             $args=@('--ci-scanfree-final','--report-types','--heap-summary','--vm-summary')
             if($arm -eq 'nochange'){$args+='--no-registry-change'}
             & $exe @args > (Join-Path $root "combo-$arm-16.txt") 2> (Join-Path $root "$arm-error.txt")
-            if($LASTEXITCODE -ne 0){throw "Isolated scratch $arm probe failed"}
+            if($LASTEXITCODE -ne 0){throw "Scratch $arm matched-control probe failed"}
           }
           $env:PATH=$originalPath
-          $scratch=@(& py tests/analyze_c545d_combo16_scanfree.py --folder $root)
-          if($LASTEXITCODE -ne 0 -or @($scratch | Where-Object {$_ -match '^C545D_COMBO16_SCANFREE_PASS,'}).Count -ne 1){throw 'Scratch resource parser failed'}
-          $ph=@(& py tests/analyze_c545d_appinfo_phase_trace.py --folder $root)
-          if($LASTEXITCODE -ne 0 -or @($ph | Where-Object {$_ -match '^C545D_APPINFO_PHASE_TRACE_PASS,'}).Count -ne 1){throw 'Scratch worker phase parser failed'}
-          $rr=@(& py tests/analyze_c545d_combo16_heapregion.py --folder $root)
-          if($LASTEXITCODE -ne 0 -or @($rr | Where-Object {$_ -match '^C545D_HEAP_REGION_16_PASS,'}).Count -ne 1){throw 'Scratch heap region parser failed'}
-          $oo=@(& py tests/analyze_c545d_combo16_per_heap_owner.py --folder $root)
-          if($LASTEXITCODE -ne 0 -or @($oo | Where-Object {$_ -match '^C545D_HEAP_OWNER_PASS,'}).Count -ne 1){throw 'Scratch per-heap parser failed'}
-          $newPrivate=GetControlled $scratch 'private'
-          $newBusy=GetControlled $scratch 'busy'
-          $newCommit=GetRegion $rr
-          $deltaPrivate=$newPrivate-$oldPrivate
-          $deltaBusy=$newBusy-$oldBusy
-          $deltaCommit=$newCommit-$oldCommit
-          $summary="C545D_MANIFEST_SCRATCH_AB16,baseline_private=$oldPrivate,scratch_private=$newPrivate,delta_private=$deltaPrivate,baseline_busy=$oldBusy,scratch_busy=$newBusy,delta_busy=$deltaBusy,baseline_region=$oldCommit,scratch_region=$newCommit,delta_region=$deltaCommit,same_runner=1,matched_pairs=2,cycles_per_arm=16,allocation_owner_proven=0,original_256_not_rerun=1,host_untouched=1"
-          Write-Host $summary
-          $summary | Set-Content "$root/numeric/manifest-scratch-ab16.txt" -Encoding ascii
-          Write-Host 'C545D_MANIFEST_SCRATCH_AB16_CI_PASS,SDK_exports=2047,matched_controls=4,not_release_qualified=1,real_host_untouched=1'
+          $sr=@(& py tests/analyze_c545d_combo16_scanfree.py --folder $root)
+          if($LASTEXITCODE -ne 0 -or @($sr | Where-Object {$_ -match '^C545D_COMBO16_SCANFREE_PASS,'}).Count -ne 1){throw 'Scratch resource parser failed'}
+          $sp=@(& py tests/analyze_c545d_appinfo_phase_trace.py --folder $root)
+          if($LASTEXITCODE -ne 0 -or @($sp | Where-Object {$_ -match '^C545D_APPINFO_PHASE_TRACE_PASS,'}).Count -ne 1){throw 'Scratch worker phase parser failed'}
+          $sc=@(& py tests/analyze_c545d_combo16_heapregion.py --folder $root)
+          if($LASTEXITCODE -ne 0 -or @($sc | Where-Object {$_ -match '^C545D_HEAP_REGION_16_PASS,'}).Count -ne 1){throw 'Scratch region parser failed'}
+          $so=@(& py tests/analyze_c545d_combo16_per_heap_owner.py --folder $root)
+          if($LASTEXITCODE -ne 0 -or @($so | Where-Object {$_ -match '^C545D_HEAP_OWNER_PASS,'}).Count -ne 1){throw 'Scratch per-heap parser failed'}
+          $afterPrivate=Metric $sr 'C545D_COMBO16_SCANFREE_RESOURCE,kind=private,window=0_16,' 'controlled'
+          $afterBusy=Metric $sr 'C545D_COMBO16_SCANFREE_RESOURCE,kind=busy,window=0_16,' 'controlled'
+          $afterRegion=Metric $sc 'C545D_HEAP_REGION_CONTROLLED,window=0_16,' 'region_commit_delta'
+          $dPrivate=$afterPrivate-$basePrivate
+          $dBusy=$afterBusy-$baseBusy
+          $dRegion=$afterRegion-$baseRegion
+          $line="C545D_MANIFEST_SCRATCH_AB16,baseline_private=$basePrivate,scratch_private=$afterPrivate,delta_private=$dPrivate,baseline_busy=$baseBusy,scratch_busy=$afterBusy,delta_busy=$dBusy,baseline_region=$baseRegion,scratch_region=$afterRegion,delta_region=$dRegion,same_runner=1,pairs=2,cycles_per_arm=16,causality_unproven=1,old256_untouched=1,real_host_untouched=1"
+          Write-Host $line
+          $line | Set-Content "$root/numeric/manifest-scratch-ab16.txt" -Encoding ascii
+          Write-Host 'C545D_MANIFEST_SCRATCH_AB16_CI_PASS,SDK_exports=2047,matched_controls=4,not_release_qualified=1,host_untouched=1'
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: c545d-combo16-scanfree-numeric-only-CI
-          path: artifacts/numeric/combo16-scanfree-summary.txt
+          name: c545d-manifest-scratch-ab16-numeric-only-CI
+          path: artifacts/numeric/manifest-scratch-ab16.txt
           if-no-files-found: error
           retention-days: 90
