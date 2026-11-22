@@ -14,6 +14,11 @@
 static void *blocks[C545D_COUNT];
 static wchar_t root[MAX_PATH];
 
+/* Distinct, un-inlined source-owned stack frame. No other code invokes it. */
+__declspec(noinline) static void *c545d_synthetic_owner_alloc_360(HANDLE heap) {
+  return HeapAlloc(heap, 0, 360);
+}
+
 static int location(wchar_t *output, size_t capacity, const wchar_t *file) {
   int count = _snwprintf_s(output, capacity, _TRUNCATE, L"%ls\\%ls", root, file);
   return count > 0 && (size_t)count < capacity;
@@ -46,7 +51,7 @@ int wmain(void) {
   if (!heap || !length || length >= MAX_PATH) return 10;
   if (!emit(L"ready.signal") || !await(L"allocate.signal")) return 11;
   for (i=0; i < C545D_COUNT; ++i) {
-    blocks[i] = HeapAlloc(heap, 0, 360);
+    blocks[i] = c545d_synthetic_owner_alloc_360(heap);
     if (!blocks[i]) return 12;
     *((volatile unsigned char *) blocks[i]) = (unsigned char)i;
   }
