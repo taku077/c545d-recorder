@@ -122,9 +122,9 @@ def selftest() -> None:
     )
     result = patch(raw)
     combo_call = (
-        "  if (!g_win32_package_parser_enum_packages (\\n"
-        '       g_getenv ("C545D_DIAG_UWP_NOOP_CALLBACK") != NULL ?\\n'
-        "       c545d_diag_noop_uwp_callback : uwp_package_cb,\\n"
+        "  if (!g_win32_package_parser_enum_packages (\n"
+        '       g_getenv ("C545D_DIAG_UWP_NOOP_CALLBACK") != NULL ?\n'
+        "       c545d_diag_noop_uwp_callback : uwp_package_cb,\n"
         "       NULL, &error))"
     )
     raw_call = "  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))"
