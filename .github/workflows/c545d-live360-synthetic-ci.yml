@@ -1,0 +1,79 @@
+name: C545D live360 bounded collector source/synthetic CI (NO GIO)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_heap360_live_scope.h'
+      - 'tests/patch_gio_probe_live360_ci.py'
+      - 'tests/c545d_live360_collector_synthetic.c'
+      - '.github/workflows/c545d-live360-synthetic-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify source-overlay fail-closed safety without running GIO
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/patch_gio_probe_live360_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Live360 source graft selftest failed'}
+          $root=Join-Path $env:RUNNER_TEMP 'c545d_live360_graft_only'
+          New-Item -Path $root -ItemType Directory -Force | Out-Null
+          $copy=Join-Path $root 'disposable.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $copy
+          py tests/patch_gio_probe_scanfree_ci.py $copy
+          if($LASTEXITCODE -ne 0){throw 'Scanfree source graft failed'}
+          py tests/patch_gio_probe_phase_census_ci.py $copy
+          if($LASTEXITCODE -ne 0){throw 'Phase source graft failed'}
+          py tests/patch_gio_probe_heapregion_ci.py $copy
+          if($LASTEXITCODE -ne 0){throw 'Region source graft failed'}
+          py tests/patch_gio_probe_per_heap_owner_ci.py $copy
+          if($LASTEXITCODE -ne 0){throw 'Heap ownership source graft failed'}
+          py tests/patch_gio_probe_live360_ci.py $copy
+          if($LASTEXITCODE -ne 0){throw 'Live360 source graft failed'}
+          $text=[IO.File]::ReadAllText($copy)
+          if(@([regex]::Matches($text, 'while \(HeapWalk\(')).Count -ne 1 -or
+             @([regex]::Matches($text, 'HeapLock\(')).Count -ne 1 -or
+             @([regex]::Matches($text, 'c545d_live360_collect\(c545d_live360_phase')).Count -ne 1){
+             throw 'Not exactly one existing locked HeapWalk with one collector'
+          }
+          Remove-Item $root -Recurse -Force
+          Write-Host 'C545D_LIVE360_SOURCE_GRAFT_PASS,extra_heapwalk=0,real_gio_runs=0,raw_pointers_logged=0'
+      - name: Compile and exercise same collector against 64 known synthetic 360B blocks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'c545d_live360_synthetic'
+          New-Item -Path $root -ItemType Directory -Force | Out-Null
+          $exe=Join-Path $root 'live360_synthetic.exe'
+          & cl.exe /nologo /W4 /WX /O2 /TC /Itests tests/c545d_live360_collector_synthetic.c "/Fe:$exe" *> (Join-Path $root 'compiler_private.txt')
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'Synthetic collector MSVC compile failed'}
+          try {
+            $rows=@(& $exe)
+            if($LASTEXITCODE -ne 0){throw 'Synthetic collector runtime failed'}
+            $snap=@($rows | Where-Object {$_ -match '^C545D_CI_LIVE360_SNAPSHOT,'})
+            if($snap.Count -ne 4){throw 'Synthetic snapshots incomplete'}
+            $formula='^C545D_CI_LIVE360_SNAPSHOT,stage=([0-3]),old=([0-9]+),now=([0-9]+),same_address=([0-9]+),appeared_address=([0-9]+),disappeared_address=([0-9]+),address_reuse_unexcluded=1,continuous_lifetime_proven=0,allocation_owner_proven=0,global_quiescence_proven=0,raw_address_emitted=0$'
+            for($i=0;$i -lt 4;$i++){
+              if($snap[$i] -cnotmatch $formula -or [int]$Matches[1] -ne $i){throw 'Synthetic report schema invalid'}
+              $old=[int]$Matches[2];$now=[int]$Matches[3];$same=[int]$Matches[4]
+              $new=[int]$Matches[5];$gone=[int]$Matches[6]
+              if($i -gt 0 -and ($same+$new -ne $now -or $same+$gone -ne $old)){
+                throw 'Synthetic snapshot conservation failed'
+              }
+            }
+            $expected='C545D_LIVE360_SYNTHETIC_PASS,known_allocated=64,known_mid_live=16,known_final_live=0,simulated_ABA_reuse_counterexample=1,capacity_overflow_rejected=1,raw_address_emitted=0,continuous_lifetime_proven=0,gio_runs=0,recorder_untouched=1'
+            if(@($rows | Where-Object {$_ -ceq $expected}).Count -ne 1 -or $rows.Count -ne 5){throw 'Synthetic terminal safety marker failed'}
+            Write-Host $expected
+            Write-Host 'C545D_LIVE360_SYNTHETIC_CI_PASS,windows_synthetic=1,gio_runs=0,original_256_rerun=0,private_data_uploaded=0'
+          } finally {
+            Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue
+          }
