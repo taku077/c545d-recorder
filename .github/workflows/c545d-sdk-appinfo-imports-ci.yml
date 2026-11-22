@@ -49,6 +49,26 @@ jobs:
           }
           $rows=@(& py tests/audit_c545d_sdk_appinfo_imports.py --sdk $sdk)
           if($LASTEXITCODE -ne 0 -or $rows.Count -ne 6){
+            # Fail-closed, numeric-only or fixed reason token. No SDK paths,
+            # module names, binary symbols or runner-local stack output.
+            $safe=@($rows | Where-Object {
+              $_ -cmatch '^C545D_SDK_APPINFO_IMPORT_FAIL,reason=[A-Z_]+,no_allocator_owner_inferred=1
+          if($rows[0] -cnotmatch '^C545D_SDK_APPINFO_IMPORT_SCOPE,pe_images=[0-9]+,bad_images=[0-9]+,direct_import_g_app_info_dup=[0-9]+,direct_import_g_app_info_get_all=[0-9]+,scope=IAT_and_delay_IAT_only,dynamic_calls_unobserved=1,private_alloc_owner_unknown=1,recorder_host_unmodified=1$'){
+            throw 'Unexpected or unsafe SDK import scope result'
+          }
+          $expected=@('gst_launch','gst_plugin','gst_binlib','gio_dll','sdk_other')
+          for($i=1; $i -lt 6; $i++){
+            $group=$expected[$i-1]
+            if($rows[$i] -cnotmatch "^C545D_SDK_APPINFO_IMPORT_GROUP,group=$group,images=[0-9]+,imports_dup=[0-9]+,imports_get_all=[0-9]+,all_dynamic_calls_unknown=1$"){
+              throw 'SDK import group unexpected or missing'
+            }
+          }
+          foreach($row in $rows){Write-Host $row}
+          Write-Host 'C545D_SDK_APPINFO_IMPORT_CI_PASS,source=verified_GStreamer_1_28_8,only_PE_imports=1,dynamic_api_dispatch_not_covered=1,private_inputs=0,Windows10_recorder_untested=1'
+
+            })
+            if($safe.Count -eq 1){Write-Host $safe[0]}
+            else {Write-Host 'C545D_SDK_APPINFO_IMPORT_FAIL,reason=SCHEMA_OR_RUNTIME_ERROR,no_allocator_owner_inferred=1'}
             throw 'Static GStreamer import census incomplete'
           }
           if($rows[0] -cnotmatch '^C545D_SDK_APPINFO_IMPORT_SCOPE,pe_images=[0-9]+,bad_images=[0-9]+,direct_import_g_app_info_dup=[0-9]+,direct_import_g_app_info_get_all=[0-9]+,scope=IAT_and_delay_IAT_only,dynamic_calls_unobserved=1,private_alloc_owner_unknown=1,recorder_host_unmodified=1$'){
