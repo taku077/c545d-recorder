@@ -1,0 +1,30 @@
+name: C545D source-grounded GAppInfo dup non-attribution audit (offline)
+# No Windows runner, heap tracing, registry writes, camera, recorder launch.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_appinfo_dup_callsite_scope.py'
+      - '.github/workflows/c545d-appinfo-dup-callsite-scope-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  direct-call-and-method-dispatch-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm no false attribution to original GIO leak from unsafe dup function alone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/audit_c545d_appinfo_dup_callsite_scope.py
+          python3 tests/audit_c545d_appinfo_dup_callsite_scope.py --selftest
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$RUNNER_TEMP/glib"
+          test "$(git -C "$RUNNER_TEMP/glib" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          python3 tests/audit_c545d_appinfo_dup_callsite_scope.py \
+            --repo . --upstream "$RUNNER_TEMP/glib/gio/gwin32appinfo.c" \
+            | tee "$RUNNER_TEMP/c545d_dup_scope_numeric_only.txt"
+          grep -Fx 'C545D_APPINFO_DUP_CALLSITE_SCOPE_PASS,recording_launcher_files=9,diagnostic_probe_files=4,production_explicit_dup_calls=0,probe_explicit_dup_calls=0,probe_get_all_present=4,get_all_creates_new_info=1,dup_requires_separate_iface_dispatch=1,dynamic_sdk_callers_excluded=1,runtime_call_frequency_unobserved=1,ETW_UMDH_function_level_provenance_unavailable=1,residual_PrivateUsage_causality_unproven=1,new_windows_runs=0,real_recorder_untested=1' "$RUNNER_TEMP/c545d_dup_scope_numeric_only.txt"
+          echo 'C545D_APPINFO_DUP_CALLSITE_SOURCE_CI_PASS,recorder_host_used=0,no_leak_fix_claim=1'
