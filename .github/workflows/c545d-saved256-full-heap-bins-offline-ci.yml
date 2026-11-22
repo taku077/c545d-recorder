@@ -1,0 +1,47 @@
+name: C545D archived256 complete HeapWalk size histogram offline CI
+# Original four-arm numeric-only artifact, no Windows or camera process.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_saved256_full_heap_bins.py'
+      - '.github/workflows/c545d-saved256-full-heap-bins-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  reconcile-capped-heap-bins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rejection fixtures and exact original source format
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_saved256_full_heap_bins.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved256
+      - name: Reconstruct all exact small buckets and aggregated large allocation payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find saved256 -type f | wc -l)" -eq 1
+          test -f saved256/ab64_safe_trace.txt
+          python3 tests/analyze_c545d_saved256_full_heap_bins.py \
+            --root saved256 --probe-source tests/gio_appinfo_key_handle_probe.c \
+            | tee /tmp/c545d_fullbins_numeric.txt
+          grep -F 'C545D_HEAP_FULLBINS_RECONCILE,source_run=44918598339,mode=combo,window=192_256,total_busy_effect=28600,' /tmp/c545d_fullbins_numeric.txt
+          grep -F 'C545D_HEAP_FULLBINS_PASS,source_run=44918598339,arms=2,checkpoints_each=2,selected_size_classes=8,' /tmp/c545d_fullbins_numeric.txt
+          test "$(grep -c '^C545D_HEAP_FULLBINS_ARM,' /tmp/c545d_fullbins_numeric.txt)" -eq 4
+          if grep -E '[/\\:]|0x[[:xdigit:]]+' /tmp/c545d_fullbins_numeric.txt; then
+            echo 'Private paths, addresses or raw strings forbidden' >&2
+            exit 3
+          fi
+          echo 'C545D_HEAP_FULLBINS_CI_PASS,windows_runs=0,original_256_not_repeated=1,host_modified=0,raw_heap_dump_uploaded=0'
