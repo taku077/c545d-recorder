@@ -3,18 +3,25 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4f25ea7908cd1209a981cf764bcefccae747dc9d`
-- **PR updated at (UTC):** `2026-11-22T06:31:31Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4f25ea7908cd1209a981cf764bcefccae747dc9d/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ddc44f77e4ded66c26b9420a439e7f3900707d53`
+- **PR updated at (UTC):** `2026-11-22T06:32:37Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ddc44f77e4ded66c26b9420a439e7f3900707d53/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44994115083](https://github.com/taku077/c545d-recorder/actions/runs/44994115083) |
-| C545D GLib Win32 APC versus AppInfo worker quiescence audit | success | [#44994112832](https://github.com/taku077/c545d-recorder/actions/runs/44994112832) |
+| C545D active development handoff auto-refresh | in_progress | [#44994195112](https://github.com/taku077/c545d-recorder/actions/runs/44994195112) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-22 JST — GLib 2.82.4 APC versus AppInfo worker idle contract audited and CI PASS (no new Windows benchmark)
+
+- **Authoritative branch**: open draft [PR #62](https://github.com/taku077/c545d-recorder/pull/62) `investigate/c545d-status-only-monitor-20261120`. Previous verified PR HEAD was `fc8840f40307a8fa4ee7ec08c370b0e84e3ee59d`, with actual [Windows2022 #44992842208 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44992842208) and the saved numeric [Ubuntu replay #44993510336 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44993510336). Those results remain authoritative; neither 16-cycle nor 256-cycle Windows tests were repeated in this update.
+- **Primary source finding now validated against PINNED upstream** [GLib 2.82.4 AppInfo](https://github.com/GNOME/glib/blob/2.82.4/gio/gwin32appinfo.c) + [Win32 registry watcher](https://github.com/GNOME/glib/blob/2.82.4/gio/gwin32registrykey.c): `g_win32_registry_key_watch()` posts an asynchronous Windows NT registry notification whose `key_changed()` APC callback is dispatched only once the watch-registering thread enters alertable state. After its callback enters `keys_updated()`, GIO increments `gio_win32_appinfo_update_counter` and pushes a separate AppInfo worker. `gio_win32_appinfo_thread_func()` finishes `update_registry_data()`, conditionally resets that counter via CAS, and broadcasts `gio_win32_appinfo_cond` after completion; `gio_win32_appinfo_init(TRUE)` only waits on the AppInfo update counter. **Counter=0 does NOT acknowledge any still-undelivered Windows APC or native WinRT callback**, and an arbitrary 2.5-second `Sleep()` is NOT a sound global idle barrier. This is a SOURCE-VERIFIED lifecycle constraint, not evidence of a new leak.
+- **New fail-closed archived/source diagnostic implemented**: [commit 6de87b2](https://github.com/taku077/c545d-recorder/commit/6de87b24a673bd040f2bab65986370c339742193) `tests/audit_c545d_gio_quiescence_contract.py` verifies exact pinned source anchors, synthetic counter/worker/queued/APC/WinRT interleavings, and the previously validated sanitized Windows numeric archive. It explicitly **rejects** false assertions of global idle from a zero GIO counter, including seven quiet-looking but not globally settled cases. [commit 4f25ea7](https://github.com/taku077/c545d-recorder/commit/4f25ea7908cd1209a981cf764bcefccae747dc9d) adds Ubuntu-only `.github/workflows/c545d-gio-quiescence-source-audit-ci.yml`, pins GLib 2.82.4 and consumes ONLY the already-produced Windows2022 artifact `14743065670`. **[CI #44994112832 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/44994112832)**: `C545D_IDLE_SOURCE_AUDIT_PASS`, `C545D_IDLE_MODEL_SELFTEST_PASS,unproven_quiet_scenarios=7`, `C545D_IDLE_ARCHIVE_INTERPRETATION`, `windows_runs=0`, `real_host_untouched=1`.
+- **Evidence-specific interpretation:** saved Windows registry arm `worker_active_after_cleanup=1`, `worker_scans_idle=1`, `worker_completed_after_cleanup=1`, and `worker_active_final=0`. Therefore original `after_cleanup` is *transitional*, not a valid quiescent leak baseline; the final sample is only `no worker observed running`, **NOT** proof that pending APC/WinRT notifications have been drained. The previously observed `-1635/+1635` GObjects across cleanup with `0/-4096 B` PrivateUsage in those intervals is unchanged. The more meaningful original Combo256 control-adjusted settled `+368640 B` remains **unattributed**, and the exact HeapWalk 360 B +4 count does not identify its owner. **No claim of memory leak zero or improvement percentage change.**
+- **Next AI-only**: do not try to force close handles or mutate registry watchers to manufacture 'quiescence'. First use preserved exact saved 256 numeric and separate source lifecycle measurements to distinguish *observer/control perturbation* from sustained retention, and design only a genuinely new narrow allocation-site discriminator if still needed. An externally frozen producer/ack protocol is not implemented in pinned GLib; a bounded observation can at most report lack of observed work, not global idle. Avoid any user 4h runs, repeated UMDH/4x256, and unwarranted C545D host trial. Existing camera stream1-left/stream6-right, 2560×720 15fps x264 medium QP24, AAC mono 48kHz ~192kbps, one-hour MP4, EOS and avdec_h264 preference unchanged. `install_approved=0`, `live_test_authorized=0`, **REAL DEVICE UNTESTED**, user action **NONE**.
 
 ### UPDATE 2026-11-22 JST — actual Windows async worker chronology SUCCESS; archival replay SUCCESS; remaining 256-cycle leak unproven
 
