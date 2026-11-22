@@ -1,0 +1,39 @@
+name: C545D memory classification accountability and exit gate
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'docs/C545D_MEMORY_CLASSIFICATION_EXIT_GATE.md'
+      - 'docs/MEMORY_CLASSIFICATION_CASES.json'
+      - 'tests/validate_c545d_memory_classification_cases.py'
+      - '.github/workflows/c545d-memory-classification-contract-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-evidence-gap-accountability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject silent unknowns, false completed labels and missing diagnostic plans
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=docs/MEMORY_CLASSIFICATION_CASES.json
+          python3 tests/validate_c545d_memory_classification_cases.py --source "$src" --selftest
+          python3 tests/validate_c545d_memory_classification_cases.py --source "$src"
+      - name: Prove classification completion remains BLOCKED until new evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=docs/MEMORY_CLASSIFICATION_CASES.json
+          if python3 tests/validate_c545d_memory_classification_cases.py --source "$src" --assert-closed > /tmp/closure.log; then
+            echo 'ERROR: missing evidence incorrectly treated as classification complete'
+            exit 1
+          else
+            code=$?
+            test "$code" -eq 3
+            grep -Fx 'C545D_CLASSIFICATION_COMPLETION_BLOCKED,reason=MISSING_ALLOCATION_LIFETIME_AND_HOST_VALIDATION,next_auto_actions_in=docs/MEMORY_CLASSIFICATION_CASES.json' /tmp/closure.log
+          fi
+          echo 'C545D_MEMORY_CLASSIFICATION_ACCOUNTABILITY_CI_PASS,source_replayed=1,case_count=4,open_evidence_gaps=4,not_approved_for_release=1,Windows_runs=0,host_untouched=1'
