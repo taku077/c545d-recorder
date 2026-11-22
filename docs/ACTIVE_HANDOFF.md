@@ -3,17 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `036a8bbf0ac7eedbc0df3cfbeb60d5e07ff94d03`
-- **PR updated at (UTC):** `2026-11-22T19:41:30Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/036a8bbf0ac7eedbc0df3cfbeb60d5e07ff94d03/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b44ad6d3cf3aa55a9ebd48ebf83bc6cd7aa48b38`
+- **PR updated at (UTC):** `2026-11-22T19:42:00Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b44ad6d3cf3aa55a9ebd48ebf83bc6cd7aa48b38/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45062187019](https://github.com/taku077/c545d-recorder/actions/runs/45062187019) |
-| C545D GIO ETW stop-worker QPC source-contract preflight | in_progress | [#45062183581](https://github.com/taku077/c545d-recorder/actions/runs/45062183581) |
-| C545D Windows GIO late 4 cycles of 16 source-stack ETW owner census | in_progress | [#45062183565](https://github.com/taku077/c545d-recorder/actions/runs/45062183565) |
+| C545D active development handoff auto-refresh | in_progress | [#45062231447](https://github.com/taku077/c545d-recorder/actions/runs/45062231447) |
+| C545D GIO ETW stop-worker QPC source-contract preflight | in_progress | [#45062227512](https://github.com/taku077/c545d-recorder/actions/runs/45062227512) |
+| C545D Windows GIO late 4 cycles of 16 source-stack ETW owner census | in_progress | [#45062227506](https://github.com/taku077/c545d-recorder/actions/runs/45062227506) |
 
 ## Current development findings from the active PR
 
