@@ -65,9 +65,17 @@ function Wait-Flag([string]$name){
   }
   throw 'Synthetic ETW handshake timed out'
 }
-function Call-Xperf([string[]]$ArgsList) {
+function Call-Xperf([string]$Phase,[string[]]$ArgsList) {
   & $tool @ArgsList *> $local
-  if($LASTEXITCODE -ne 0){throw 'Isolated ETW command failed, local diagnostic suppressed'}
+  if($LASTEXITCODE -ne 0){
+    $reason='OTHER'
+    $message=Get-Content $local -Raw -ErrorAction SilentlyContinue
+    if($message -match '(?i)access.denied|privilege|elevation|administrator'){$reason='PRIVILEGE'}
+    elseif($message -match '(?i)already.exists|in.use|already.running|duplicate'){$reason='SESSION_COLLISION'}
+    elseif($message -match '(?i)invalid|incorrect|unknown|syntax|usage:'){$reason='COMMAND_UNSUPPORTED'}
+    elseif($message -match '(?i)buffer|memory'){$reason='BUFFER_LIMIT'}
+    throw "C545D_ETW_PHASE_FAILED,phase=$Phase,reason=$reason,raw_uploaded=0"
+  }
 }
 try {
   & cl.exe /nologo /W4 /WX /MT /O2 /TC tests/c545d_umdh_stack_preflight.c "/Fe:$exe" *> $local
@@ -83,15 +91,15 @@ try {
   Wait-Flag 'ready.signal'
   $etwArgs=@('-start','HeapSession','-heap','-Pid',"$($proc.Id)",'-BufferSize','64','-MinBuffers','8','-MaxBuffers','16','-stackwalk','HeapAlloc+HeapRealloc')
   Assert-PidOnly -ArgsList $etwArgs
-  Call-Xperf -ArgsList @('-on','BASE','-BufferSize','64','-MinBuffers','8','-MaxBuffers','16')
+  Call-Xperf -Phase 'kernel' -ArgsList @('-on','BASE')
   $kernelStarted=$true
-  Call-Xperf -ArgsList $etwArgs
+  Call-Xperf -Phase 'heap' -ArgsList $etwArgs
   $heapStarted=$true
   New-Item -ItemType File -Path (Join-Path $root 'allocate.signal') -Force | Out-Null
   Wait-Flag 'allocated.signal'
   Start-Sleep -Milliseconds 300
   # Use documented -stop -stop HeapSession -d sequence to merge ETL.
-  Call-Xperf -ArgsList @('-stop','-stop','HeapSession','-d',$etl)
+  Call-Xperf -Phase 'merge' -ArgsList @('-stop','-stop','HeapSession','-d',$etl)
   $heapStarted=$false
   $kernelStarted=$false
   if(-not(Test-Path $etl -PathType Leaf)){throw 'No local ETL written'}
