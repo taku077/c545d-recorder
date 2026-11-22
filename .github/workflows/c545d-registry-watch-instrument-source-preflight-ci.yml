@@ -1,0 +1,31 @@
+name: C545D registry APC numeric lifetime instrumentation source preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_registry_watch_lifetime_ci.py'
+      - 'tests/analyze_c545d_gio_watch_lifetime_ci.py'
+      - '.github/workflows/c545d-registry-watch-instrument-source-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-2824-numeric-lifetime-instrument:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline fixture safety before exact pinned GLib source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_watch_lifetime_ci.py --selftest
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$tmp/glib"
+          test "$(git -C "$tmp/glib" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          python3 tests/patch_glib_registry_owned_path.py "$tmp/glib/gio/gwin32registrykey.c"
+          python3 tests/patch_glib_registry_watch_lifetime_ci.py "$tmp/glib/gio/gwin32registrykey.c" --selftest
+          python3 tests/patch_glib_registry_watch_lifetime_ci.py "$tmp/glib/gio/gwin32registrykey.c"
+          git -C "$tmp/glib" diff --check
+          echo 'C545D_REGISTRY_WATCH_TRACE_PREFLIGHT_PASS,glib=2_82_4,pinned_commit=1,existing_owned_path_patch=1,source_instrumentation=1,Windows_runs=0,private_log_uploaded=0'
