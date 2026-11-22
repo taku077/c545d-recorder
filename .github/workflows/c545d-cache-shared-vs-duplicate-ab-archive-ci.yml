@@ -1,0 +1,44 @@
+name: C545D original 4x4 synthetic UTF16 cache comparison archive replay (NO Windows)
+# Freeze the only successful bounded Windows synthetic comparison. No camera,
+# Glib/GIO runtime, WinRT, registry, ETW, new Windows or user host process.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-cache-shared-vs-duplicate-ab-archive-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archive-unchanged-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject malformed, reordered, leaked or incomplete 8-arm numeric material
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_cache_shared_vs_duplicate_ab.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45024512983
+          name: c545d-cache-utf16-synthetic-ab-numeric-only
+          github-token: ${{ github.token }}
+          path: original
+      - name: Match original Windows four-per-arm CPU/commit/handles without fresh measurements
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/c545d_cache_synth_ab_numeric_only.txt
+          python3 tests/analyze_c545d_cache_shared_vs_duplicate_ab.py \
+            --file original/c545d_cache_synth_ab_numeric_only.txt \
+            | tee "$RUNNER_TEMP/c545d_cache_replay_summary.txt"
+          grep -Fx 'C545D_CACHE_SYNTH_AB_ARM,mode=old,replicates=4,median_private_delta=0,median_handles_delta=0,median_cpu_100ns=312500,median_wall_us=31427,median_peak_pagefile=1372160,per_hit_utf16_copies=524288,real_world_cache_hits_unmeasured=1' "$RUNNER_TEMP/c545d_cache_replay_summary.txt"
+          grep -Fx 'C545D_CACHE_SYNTH_AB_ARM,mode=shared,replicates=4,median_private_delta=0,median_handles_delta=0,median_cpu_100ns=156250,median_wall_us=16421,median_peak_pagefile=1376256,per_hit_utf16_copies=0,real_world_cache_hits_unmeasured=1' "$RUNNER_TEMP/c545d_cache_replay_summary.txt"
+          grep -Fx 'C545D_CACHE_SYNTH_AB_COMPARE,identical_synthetic_payload=1,paired_order_control=1,old_copy_count=524288,new_copy_count=0,median_cpu_diff_candidate_minus_old_100ns=-156250,median_private_delta_diff_candidate_minus_old=0,median_handles_diff_candidate_minus_old=0,synthetic_only=1,source_allocator_not_fully_equivalent=1,noise_bounds_unproven=1,real_gio_memory_benefit_unproven=1' "$RUNNER_TEMP/c545d_cache_replay_summary.txt"
+          grep -Fx 'C545D_CACHE_SYNTH_AB_PASS,arms=2,replicates_each=4,total_runs=8,cache_hit_count_each=524288,process_resets_between_arms=1,no_registry_or_package_modifications=1,private_memory_leak_fix_proven=0,cpu_stability_proven=0,recording_pc_untouched=1' "$RUNNER_TEMP/c545d_cache_replay_summary.txt"
+          echo 'C545D_CACHE_AB_ARCHIVED_CI_PASS,original_windows_run=45024512983,artifact_id=14755192522,synthetic_only=1,new_windows_runs=0,user_host_untouched=1,real_recorder_memory_improvement_proven=0'
