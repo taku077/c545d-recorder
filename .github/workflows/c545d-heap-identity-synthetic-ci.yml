@@ -1,0 +1,41 @@
+name: C545D synthetic locked HeapWalk identity capability (CI ONLY)
+# Does not run GIO/RTSP, create ETL, touch the registry or change any DLL.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_heap_identity_snapshot_synthetic.c'
+      - '.github/workflows/c545d-heap-identity-synthetic-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-heap-lifetime:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile and verify known 360B live/freed blocks without any ETW
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'c545d_identity_only'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $exe = Join-Path $root 'heap_identity.exe'
+          & cl.exe /nologo /W4 /WX /O2 /TC tests/c545d_heap_identity_snapshot_synthetic.c "/Fe:$exe" *> (Join-Path $root 'compiler_local_only.txt')
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe -PathType Leaf)) {throw 'Isolated synthetic C fixture build failed'}
+          try {
+            $raw = @(& $exe)
+            if ($LASTEXITCODE -ne 0) { throw 'Synthetic snapshot identity invariant failed' }
+            $expected = 'C545D_HEAP_IDENTITY_SYNTHETIC_PASS,baseline_known_live=0,after_alloc_known_live=64,after_partial_free_known_live=16,after_all_free_known_live=0,requested_size=360,known_allocations=64,known_early_frees=48,original_256_rerun=0,gio_runs=0,raw_addresses_emitted=0,continuous_lifetime_proven=0,allocator_owner_proven=0'
+            if ($raw.Count -ne 1 -or $raw[0] -cne $expected) {
+              throw 'Synthetic identity output missing or unsafe'
+            }
+            Write-Host $expected
+            Write-Host 'C545D_HEAP_IDENTITY_CI_PASS,windows_synthetic=1,gio_runs=0,real_recorder_runs=0,ETL=0,raw_uploaded=0,live_owner_proven=0'
+          } finally {
+            Remove-Item -Path $root -Recurse -Force -ErrorAction SilentlyContinue
+          }
