@@ -1,0 +1,59 @@
+name: C545D original late256 vs live360 GIO16 per-arm scope (OFFLINE)
+# Read only two already completed sanitized GitHub Actions artifacts.
+# NO new Windows tests, HEAP enumeration, RTSP, recorder or registry changes.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_late360_cross_archive_scope.py'
+      - '.github/workflows/c545d-late360-cross-archive-offline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-numeric-only-reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Counterfactual interpretation negative selftest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_late360_cross_archive_scope.py --selftest
+      - name: Fetch immutable original four-arm Windows256 numeric archive
+        uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved256
+      - name: Fetch existing newer Windows GIO16 numeric-only live360 archive
+        uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45018787046
+          name: c545d-gio-live360-safe-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: saved16
+      - name: Compare same-run arm deltas and forbid cross-run improvement claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find saved256 -type f | wc -l)" -eq 1
+          test "$(find saved16 -type f | wc -l)" -eq 1
+          test -f saved256/ab64_safe_trace.txt
+          test -f saved16/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_late360_cross_archive_scope.py \
+            --old-root saved256 --new-source saved16/combo16-scanfree-summary.txt \
+            | tee /tmp/c545d_saved360_scope.txt
+          grep -Fx 'C545D_LATE360_SCOPE_ARCHIVES_PASS,original_256_windows_rerun=0,new_16_windows_rerun=0,source_runs=2,paired_comparisons_within_run_only=1,new_user_measurements=0,release_approved=0' /tmp/c545d_saved360_scope.txt
+          test "$(grep -c '^C545D_LATE360_256_ARM_SCOPE,' /tmp/c545d_saved360_scope.txt)" -eq 2
+          test "$(grep -c '^C545D_LATE360_16_ARM_SCOPE,' /tmp/c545d_saved360_scope.txt)" -eq 2
+          if grep -E '[\\/:]|0x[0-9a-fA-F]+' /tmp/c545d_saved360_scope.txt; then
+            echo 'Unsafe path/address in numeric-only output' >&2
+            exit 3
+          fi
+          echo 'C545D_LATE360_CROSS_ARCHIVE_CI_PASS,no_new_windows_runs=1,raw_memory_not_uploaded=1,real_recorder_untouched=1'
