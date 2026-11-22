@@ -1,0 +1,51 @@
+name: C545D immutable shared UTF16 DisplayName source-safe candidate (OFFLINE)
+# Source-only guard. No Windows runner, WinRT call, process heap probe or camera.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_uwp_displayname_shared_bytes_ci.py'
+      - '.github/workflows/c545d-uwp-shared-displayname-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-upstream-graft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned upstream 2.82.4 + full existing diagnostic source chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/patch_glib_uwp_displayname_shared_bytes_ci.py
+          python3 tests/patch_glib_uwp_displayname_shared_bytes_ci.py --selftest
+          git clone --quiet --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$RUNNER_TEMP/glib"
+          test "$(git -C "$RUNNER_TEMP/glib" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          app="$RUNNER_TEMP/glib/gio/gwin32appinfo.c"
+          parser="$RUNNER_TEMP/glib/gio/gwin32packageparser.c"
+          key="$RUNNER_TEMP/glib/gio/gwin32registrykey.c"
+          python3 tests/patch_glib_appinfo_weak_backrefs.py "$app"
+          python3 tests/patch_glib_registry_owned_path.py "$key"
+          python3 tests/patch_glib_uwp_api_isolation.py "$app" "$parser"
+          python3 tests/patch_glib_uwp_native_path_diagnostic.py "$parser"
+          python3 tests/patch_glib_uwp_displayname_cache_diagnostic.py "$parser"
+          python3 tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$parser"
+          python3 tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$app" "$parser"
+          python3 tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$app"
+          python3 tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$app" "$parser"
+          python3 tests/patch_glib_uwp_displayname_shared_bytes_ci.py "$parser"
+          git -C "$RUNNER_TEMP/glib" diff --check
+          python3 - "$parser" <<'PY'
+          import pathlib,sys
+          s=pathlib.Path(sys.argv[1]).read_text()
+          assert s.count("g_bytes_ref (stored)") == 1
+          assert s.count("(GDestroyNotify) g_bytes_unref") == 2
+          assert s.count("g_clear_pointer (&c545d_cached_display_name, g_bytes_unref)") == 1
+          assert "result = g_wcsdup (stored, -1)" not in s
+          assert s.count("c545d_bridge_epoch_still_valid (before)") == 1
+          assert s.count("c545d_cache_display_report ();") == 1
+          assert s.count("C545D_CI_CACHE_SHARED_BYTES") == 1
+          print("C545D_CACHE_SHARED_BYTES_SOURCE_PASS,pinned_tag=2_82_4,epoch_checked=1,cache_hit_utf16_allocations=0,old_gio_unmodified=1,windows_runs=0")
+          PY
