@@ -1,0 +1,40 @@
+name: C545D saved 16-cycle AppInfo worker phase and GObject rebound replay
+# Replays ONE existing sanitized Windows2022 run 44992842208 on Ubuntu.
+# NEVER triggers an additional 2x16 or 4x256 Windows benchmark.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_phase_trace_archived.py'
+      - '.github/workflows/c545d-appinfo-phase-archive-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archive-numeric-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict synthetic archive integrity and negative fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_phase_trace_archived.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44992842208
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: archived-phase
+      - name: Verify exactly original numeric-only Windows2022 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find archived-phase -type f | wc -l)" -eq 1
+          test -f archived-phase/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_phase_trace_archived.py \
+            --source archived-phase/combo16-scanfree-summary.txt
+          echo 'C545D_PHASE_ARCHIVE_REPLAY_CI_PASS,source_run=44992842208,windows_runs=0,real_host_untouched=1'
