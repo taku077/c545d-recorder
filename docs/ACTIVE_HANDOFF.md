@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8c7f49dda330dba5d8c4831d4a6c9ba601b267d3`
-- **PR updated at (UTC):** `2026-11-22T16:49:56Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8c7f49dda330dba5d8c4831d4a6c9ba601b267d3/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `55b173c79363222b5ade51e48cf2cb9af3587c03`
+- **PR updated at (UTC):** `2026-11-22T16:52:14Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/55b173c79363222b5ade51e48cf2cb9af3587c03/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45046010777](https://github.com/taku077/c545d-recorder/actions/runs/45046010777) |
-| C545D GLib registry APC ownership and bounded-watch source gate | in_progress | [#45046008171](https://github.com/taku077/c545d-recorder/actions/runs/45046008171) |
+| C545D active development handoff auto-refresh | in_progress | [#45046225960](https://github.com/taku077/c545d-recorder/actions/runs/45046225960) |
 
 ## Current development findings from the active PR
 
