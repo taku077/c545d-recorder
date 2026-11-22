@@ -192,7 +192,7 @@ def selftest(registry: str, appinfo: str) -> None:
                      "g_object_unref (key);", "/* missed unref */"), appinfo),
         (in_function(registry, apcstart, apcend,
                      "G_WIN32_KEY_UNWATCHED);", "G_WIN32_KEY_WATCHED);"), appinfo),
-        (registry, appinfo.replace("g_win32_registry_key_watch (user_clients_key;", "removed_watch (user_clients_key;", 1)),
+        (registry, in_function(appinfo, "static void\nwatch_keys (void)\n{", "/* This is the main function of the AppInfo thread */", "g_win32_registry_key_watch (user_clients_key,", "removed_watch (user_clients_key,")),
         (registry, appinfo.replace("g_atomic_int_inc (&gio_win32_appinfo_update_counter);", "/* lost epoch */", 1)),
         (registry, appinfo.replace("while (g_atomic_int_get (&gio_win32_appinfo_update_counter) > 0)", "while (FALSE)", 1)),
         (registry, appinfo.replace("GET_MODULE_HANDLE_EX_FLAG_PIN", "GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT", 1)),
