@@ -258,18 +258,17 @@ jobs:
               }
             }
           }
-      # Fail-closed QPC postmortem on the SAME nochange and registry processes.
-      # Uses local source logs only; no second workload, symbols or ETL upload.
-      - name: Extract numeric GIO worker activity through Xperf stop bracket
+      # Same-PID source worker and ETW stop interval. No re-run or raw upload.
+      - name: Reconcile QPC source-worker lifetime against ETW stop bracket
         if: always()
         continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference='Continue'
           $root=Join-Path (Get-Location).Path 'artifacts'
-          New-Item -ItemType Directory -Force (Join-Path $root 'numeric') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'numeric') | Out-Null
           $out=Join-Path $root 'numeric/etw-worker-stop-qpc-only.txt'
-          $errorFile=Join-Path $env:RUNNER_TEMP 'c545d_qpc_error_private.txt'
+          $errorFile=Join-Path $env:RUNNER_TEMP 'c545d_qpc_private_error.txt'
           $valid=0
           foreach($arm in @('nochange','registry')){
             $log=Join-Path $root ("combo-"+$arm+"-16.txt")
@@ -280,17 +279,7 @@ jobs:
             $result=@(& py tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py --report $log --arm $arm 2> $errorFile)
             $rc=$LASTEXITCODE
             $safe=@($result | Where-Object {
-              $_ -match ('^C545D_GIO_ETW_WORKER_STOP_QPC,arm='+$arm+',[A-Za-z0-9_,=]+        if: always()
-        with:
-          name: c545d-gio-etw-source-cohort-numeric-only
-          path: |
-            artifacts/numeric/etw-*-summary-only.txt
-            artifacts/numeric/same-run-resource-only.txt
-            artifacts/numeric/etw-worker-stop-qpc-only.txt
-            artifacts/numeric/gio-etw-source-cohorts-only.txt
-          if-no-files-found: warn
-          retention-days: 60
-)
+              $_ -match ('^C545D_GIO_ETW_WORKER_STOP_QPC,arm='+$arm+',[A-Za-z0-9_,=]+$')
             })
             if($rc -eq 0 -and $safe.Count -eq 1){
               $safe[0] | Add-Content -Path $out -Encoding ascii
@@ -309,6 +298,7 @@ jobs:
           path: |
             artifacts/numeric/etw-*-summary-only.txt
             artifacts/numeric/same-run-resource-only.txt
+            artifacts/numeric/etw-worker-stop-qpc-only.txt
             artifacts/numeric/gio-etw-source-cohorts-only.txt
           if-no-files-found: warn
           retention-days: 60
