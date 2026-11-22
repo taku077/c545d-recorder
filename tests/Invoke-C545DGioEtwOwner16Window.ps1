@@ -162,6 +162,26 @@ try {
       $allow[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-stack-gap-summary-only.txt")) -Encoding ascii
       Write-Host $allow[0]
     }
+    # When a top-1024 call-stack report is incomplete, try the documented
+    # Xperf -images mode as an independent *top-frame-image group* count.
+    # It is NOT an allocating function, and can also be incomplete.
+    # Any raw image strings, addresses, symbols stay runner-local.
+    $imagePrivate=Join-Path $local 'heap_images_private.txt'
+    & $xperf -i $etl -o $imagePrivate -symbols -a heap -images -top 1024 *> $rawLocal
+    if($LASTEXITCODE -eq 0 -and (Test-Path $imagePrivate -PathType Leaf) -and
+       (Get-Item $imagePrivate).Length -gt 100 -and
+       (Get-Item $imagePrivate).Length -lt 16MB){
+      $imageSafe=@(& py tests/analyze_c545d_gio_etw_image_aggregate_ci.py --report $imagePrivate --arm $Arm 2> $rawLocal)
+      $imageMatch=@($imageSafe | Where-Object {$_ -match ('^C545D_GIO_ETW_IMAGE_AGGREGATE,arm='+$Arm+',[A-Za-z0-9_,=]+$')})
+      if($LASTEXITCODE -eq 0 -and $imageMatch.Count -eq 1){
+        $imageMatch[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-image-summary-only.txt")) -Encoding ascii
+        Write-Host $imageMatch[0]
+      } else {
+        Write-Host "C545D_GIO_ETW_IMAGE_GAP,arm=$Arm,reason=IMAGE_REPORT_SCHEMA_UNVERIFIED,raw_uploaded=0"
+      }
+    } else {
+      Write-Host "C545D_GIO_ETW_IMAGE_GAP,arm=$Arm,reason=IMAGE_ACTION_UNAVAILABLE,raw_uploaded=0"
+    }
     throw 'Incomplete or unsafely parsed source stack cohort report'
   }
   $numericOnly=$counts[0]

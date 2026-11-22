@@ -185,6 +185,7 @@ def diagnose(raw: str, arm: str) -> str:
     accepted_alloc = 0
     accepted_out = 0
     accepted_out_kb_tenths = 0
+    partial_cohorts = defaultdict(lambda: [0, 0, 0])
     for block in parts:
         if GLOBAL.search(block) or TOP.search(block):
             continue
@@ -212,10 +213,24 @@ def diagnose(raw: str, arm: str) -> str:
             accepted_alloc += a
             accepted_out += o
             accepted_out_kb_tenths += int(kb * 10)
+            bucket = partial_cohorts[cohort(block)]
+            bucket[0] += a
+            bucket[1] += o
+            bucket[2] += int(kb * 10)
     # A top-1024 row report is not a complete census merely because the
     # standalone heap totals table is complete. This is a coverage gap.
     top_k = int(TOP.findall(raw)[0]) if len(TOP.findall(raw)) == 1 else 0
     top_limit_may_truncate = int(top_k > 0 and numeric_rows >= top_k)
+    unresolved_valid = int(bool(glob_valid) and accepted_out <= glob_out)
+    unknown_out = glob_out - accepted_out if unresolved_valid else 0
+    # This is a numeric LOWER BOUND among well-formed rows only; source
+    # frame inclusion is not ownership, and dropped rows/top-k truncation
+    # MUST remain an explicit unknown rather than being silently 'OTHER'.
+    partial = "".join(
+        f",{g.lower()}_wellformed_alloc={partial_cohorts[g][0]}"
+        f",{g.lower()}_wellformed_out={partial_cohorts[g][1]}"
+        for g in GROUPS
+    )
     return (
         "C545D_GIO_ETW_STACK_PARSE_DIAGNOSTIC,"
         f"arm={arm},reason={reason},global_headers={len(GLOBAL.findall(raw))},"
@@ -232,6 +247,8 @@ def diagnose(raw: str, arm: str) -> str:
         f"accepted_alloc={accepted_alloc},accepted_out={accepted_out},"
         f"accepted_out_kb_tenths={accepted_out_kb_tenths},"
         f"top_limit={top_k},top_limit_may_truncate={top_limit_may_truncate},"
+        f"unattributed_out={unknown_out},unattributed_out_valid={unresolved_valid},"
+        f"wellformed_cohort_summary_not_owner=1{partial},"
         "full_source_classification_proven=0,raw_uploaded=0"
     )
 
@@ -281,6 +298,9 @@ def selftest() -> None:
     assert "rejected_rows=1" in diagnostic
     assert "full_source_classification_proven=0" in diagnostic
     assert "top_limit_may_truncate=0" in diagnostic
+    assert "unattributed_out=2" in diagnostic
+    assert "gio_wellformed_out=0" in diagnostic
+    assert "other_wellformed_out=1" in diagnostic
     print("C545D_GIO_ETW_STACK_COHORT_SELFTEST_PASS,positive=2,negative=8,"
           "source_stack_coverage_gated=1,unknown_frames_not_discarded=1,"
           "raw_symbols_output=0,real_GIO_tested=0")
