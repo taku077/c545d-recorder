@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `154e78524575260dd3a01eaf750a32472b4bc514`
-- **PR updated at (UTC):** `2026-11-22T19:09:12Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/154e78524575260dd3a01eaf750a32472b4bc514/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `d09ea3916c27dc5325bf52c90a5d06389a250389`
+- **PR updated at (UTC):** `2026-11-22T19:09:26Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/d09ea3916c27dc5325bf52c90a5d06389a250389/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45059117285](https://github.com/taku077/c545d-recorder/actions/runs/45059117285) |
+| C545D active development handoff auto-refresh | in_progress | [#45059142944](https://github.com/taku077/c545d-recorder/actions/runs/45059142944) |
+| C545D GIO ETW image aggregate fallback parser source preflight | success | [#45059137899](https://github.com/taku077/c545d-recorder/actions/runs/45059137899) |
 
 ## Current development findings from the active PR
 
