@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Independently audit the late epochs of THREE SAVED Windows 2022 GIO runs.
 
+WARNING: the source parser's legacy `private_usage` key for these old GIO_VM
+records is actually VirtualQuery MEM_COMMIT/MEM_PRIVATE region bytes. It is
+NOT PSAPI PROCESS_MEMORY_COUNTERS_EX.PrivateUsage and must not be merged
+with original Combo256 GIO_PROBE PrivateUsage. This follows from the exact
+old process-probe blob 36411d34ea324115c13335b6d1248787811e6271.
+
 This script never triggers a GStreamer build, Windows runner, registry update,
 or new host measurement. It consumes the SAME numerical old artifacts as the
 earlier per-64 residual analyzer, with strict paired treatment-minus-control
@@ -18,6 +24,30 @@ from analyze_gio_cached_residual_epochs import (
 
 METRICS = ("private_usage", "heap_busy", "size:24", "size:28",
            "size:360") + tuple("type:" + t for t in TYPES)
+
+
+def audit_vm_source(source: str) -> None:
+    if source.count("static void report_vm(const char *label, int cycle)") != 1:
+        raise ValueError("historical VirtualQuery probe missing")
+    start = source.index("static void report_vm(const char *label, int cycle)")
+    end = source.index("static void report_heaps(const char *label, int cycle)")
+    if start >= end:
+        raise ValueError("historical source reporting order invalid")
+    vm = source[start:end]
+    for marker in (
+        "VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi))",
+        "if (mbi.State == MEM_COMMIT)",
+        "if (mbi.Type == MEM_PRIVATE) private_bytes +=",
+        'printf("GIO_VM,%s,%d,%llu,%llu,%llu,%llu,%u',
+        "label, cycle, private_bytes, mapped_bytes, image_bytes,",
+    ):
+        if vm.count(marker) != 1:
+            raise ValueError("original GIO_VM field has unverified provenance")
+    if "GetProcessMemoryInfo" in vm or "memory.PrivateUsage" in vm:
+        raise ValueError("GIO_VM incorrectly combined with PSAPI PrivateUsage")
+    if "GetProcessMemoryInfo(GetCurrentProcess()" not in source or (
+            "memory.PrivateUsage" not in source):
+        raise ValueError("distinct PSAPI GIO_PROBE measurement missing")
 
 
 def guard(data: dict[str, dict[str, tuple[int, ...]]]) -> dict[str, object]:
@@ -128,18 +158,28 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path)
     parser.add_argument("--selftest", action="store_true")
+    parser.add_argument("--probe-source", type=Path,
+                        default=Path("tests/gio_appinfo_key_handle_probe.c"))
     a = parser.parse_args()
     if a.selftest:
         selftest()
         return
     if a.root is None:
         parser.error("--root required for saved artifacts")
+    audit_vm_source(a.probe_source.read_text(encoding="utf-8"))
     result = guard(load(a.root))
     for row in result["rows"]:
-        print("C545D_LATE_EPOCH_NUMERIC,run={run_id},private_last64={private_last64},"
+        print("C545D_LATE_EPOCH_NUMERIC,run={run_id},"
+              "virtualquery_mem_private_last64={private_last64},"
               "heap_busy_last64={heap_busy_last64},blocks24_last64={last64_24_blocks},"
               "blocks28_last64={last64_28_blocks},blocks360_last64={last64_360_blocks},"
               "GObjects_seven_last128={last128_checked_GObject_net}".format(**row))
+    print("C545D_OLD_VM_METRIC_SCOPE,source_blob=36411d34ea324115c13335b6d1248787811e6271,"
+          "source_runs=44533452892;44537371920;44545844200,"
+          "archived_field=GIO_VM_first_numeric,"
+          "measurement=VirtualQuery_MEM_COMMIT_MEM_PRIVATE_region_bytes,"
+          "PSAPI_PrivateUsage=0,comparable_with_GIO_PROBE_PrivateUsage=0,"
+          "legacy_internal_alias_private_usage=1")
     print("C545D_LATE_EPOCH_GUARD_PASS,old_windows_runs=3,new_windows_runs=0,"
           "control_subtracted=1,private_late_positive=2of3,"
           "exact_360_bin_late_positive=3of3,"
