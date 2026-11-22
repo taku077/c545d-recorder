@@ -194,6 +194,14 @@ try {
        (Select-String -Path $sizes -SimpleMatch 'c545d_synthetic_owner_alloc_360' -Quiet)){
       $ownerStackVisible=1
     }
+    $imageVisible=[int]((Test-Path $sizes) -and
+      [bool](Select-String -Path $sizes -SimpleMatch 'c545d_owner_life_cal' -Quiet))
+    $wmainVisible=[int]((Test-Path $sizes) -and
+      [bool](Select-String -Path $sizes -SimpleMatch 'wmain' -Quiet))
+    $ntdllVisible=[int]((Test-Path $sizes) -and
+      [bool](Select-String -Path $sizes -SimpleMatch 'ntdll' -Quiet))
+    $pdbVisible=[int](Test-Path (Join-Path $root 'c545d_owner_cal.pdb'))
+    Write-Host "C545D_OWNER_CAL_STACK_CAPABILITY,local_pdb_exists=$pdbVisible,synthetic_image_present=$imageVisible,synthetic_wmain_present=$wmainVisible,synthetic_allocator_present=$ownerStackVisible,ntdll_present=$ntdllVisible,raw_symbol_names_uploaded=0"
     Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
   }
   # Symbol/filter options are an INDEPENDENT capability, not the ETW
