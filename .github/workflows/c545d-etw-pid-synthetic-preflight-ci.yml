@@ -1,0 +1,33 @@
+name: C545D isolated existing-PID ETW heap tracing synthetic capability CI
+# Disposable 64x360B allocation only. Never captures user recorder or uploads raw ETL.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/Invoke-C545DEtwPidSyntheticPreflight.ps1'
+      - '.github/workflows/c545d-etw-pid-synthetic-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-existing-pid-etw-no-ifeo:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Static safety policy and malformed command tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwPidSyntheticPreflight.ps1 -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'CI-only ETW safety script selftest failed'}
+      - name: Check xperf presence and optional PID-only synthetic heap trace
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwPidSyntheticPreflight.ps1
+          if(-not $?) {throw 'Synthetic PID-only trace safety script failed'}
+          Write-Host 'C545D_ETW_PID_SYNTHETIC_WORKFLOW_PASS,user_host_modified=0,raw_etl_uploaded=0,UMDH256_repeated=0,GIO16_repeated=0'
