@@ -1,0 +1,43 @@
+name: C545D GLib Win32 APC versus AppInfo worker quiescence audit
+# Ubuntu source/archived-numeric proof only. No camera, Win10 host, 16/256 cycle Windows reruns.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_gio_quiescence_contract.py'
+      - '.github/workflows/c545d-gio-quiescence-source-audit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  static-contract-plus-archived-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify GIO counter/APC interleavings with strict model cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_gio_quiescence_contract.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44992842208
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: archived
+      - name: Audit exact GNOME GLib 2.82.4 sources versus actual saved Windows trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$temp/glib"
+          test -f archived/combo16-scanfree-summary.txt
+          python3 tests/audit_c545d_gio_quiescence_contract.py \
+            --appinfo "$temp/glib/gio/gwin32appinfo.c" \
+            --registry "$temp/glib/gio/gwin32registrykey.c" \
+            --numeric archived/combo16-scanfree-summary.txt
+          echo 'C545D_GIO_IDLE_CONTRACT_CI_PASS,glib=2.82.4,archive=44992842208,windows_runs=0,real_host_untouched=1'
