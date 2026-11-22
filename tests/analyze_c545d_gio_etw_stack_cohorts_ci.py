@@ -171,6 +171,51 @@ def diagnose(raw: str, arm: str) -> str:
             glob_alloc, glob_out, glob_valid = metrics[0], metrics[2], 1
         except ValueError:
             pass
+    # The real late-window registry #45053779999 has 619727 Alloc /
+    # 16061 Out in the independent totals, but a top-1024 stack row
+    # violated the numeric invariant. Inspect ONLY aggregate counts of
+    # the rejected row types. Never print a source frame, pointer, path,
+    # individual size or private ETL.
+    numeric_rows = 0
+    rejected_count_rows = 0
+    rows_out_exceeds_alloc = 0
+    rows_cap_exceeded = 0
+    rows_missing_field = 0
+    rows_invalid_kb = 0
+    accepted_alloc = 0
+    accepted_out = 0
+    accepted_out_kb_tenths = 0
+    for block in parts:
+        if GLOBAL.search(block) or TOP.search(block):
+            continue
+        if not any(rx.search(block) for rx in METRICS.values()):
+            continue
+        numeric_rows += 1
+        fields = {key: rx.findall(block) for key, rx in METRICS.items()}
+        if any(len(v) != 1 for v in fields.values()):
+            rows_missing_field += 1
+            continue
+        alloc = int(fields["alloc"][0][0])
+        out = int(fields["out"][0][0])
+        realloc = int(fields["realloc"][0])
+        if out > alloc:
+            rows_out_exceeds_alloc += 1
+        if max(alloc, out, realloc) > CAP:
+            rows_cap_exceeded += 1
+        try:
+            a, _, o, kb, _ = num(block)
+        except ValueError as exc:
+            rejected_count_rows += 1
+            if str(exc) in {"invalid_heap_kb", "invalid_heap_sizes"}:
+                rows_invalid_kb += 1
+        else:
+            accepted_alloc += a
+            accepted_out += o
+            accepted_out_kb_tenths += int(kb * 10)
+    # A top-1024 row report is not a complete census merely because the
+    # standalone heap totals table is complete. This is a coverage gap.
+    top_k = int(TOP.findall(raw)[0]) if len(TOP.findall(raw)) == 1 else 0
+    top_limit_may_truncate = int(top_k > 0 and numeric_rows >= top_k)
     return (
         "C545D_GIO_ETW_STACK_PARSE_DIAGNOSTIC,"
         f"arm={arm},reason={reason},global_headers={len(GLOBAL.findall(raw))},"
@@ -180,6 +225,13 @@ def diagnose(raw: str, arm: str) -> str:
         f"out_lines={len(METRICS['out'].findall(raw))},"
         f"realloc_lines={len(METRICS['realloc'].findall(raw))},"
         f"global_valid={glob_valid},global_alloc={glob_alloc},global_out={glob_out},"
+        f"numeric_rows={numeric_rows},rejected_rows={rejected_count_rows},"
+        f"rows_out_exceeds_alloc={rows_out_exceeds_alloc},"
+        f"rows_cap_exceeded={rows_cap_exceeded},"
+        f"rows_missing_field={rows_missing_field},rows_invalid_kb={rows_invalid_kb},"
+        f"accepted_alloc={accepted_alloc},accepted_out={accepted_out},"
+        f"accepted_out_kb_tenths={accepted_out_kb_tenths},"
+        f"top_limit={top_k},top_limit_may_truncate={top_limit_may_truncate},"
         "full_source_classification_proven=0,raw_uploaded=0"
     )
 
@@ -221,6 +273,14 @@ def selftest() -> None:
             continue
         raise AssertionError(f"invalid_etw_stack_accepted,index={index}")
     assert "reason=missing_or_ambiguous_global_top_section" in diagnose(valid.replace("TOP 1024:", "MISSING:"), "registry")
+    # Synthetic top-limited row with Out > Alloc must remain unclassified.
+    bad_source = valid.replace("Alloc : 7, 1.2 KB", "Alloc : 1, 1.2 KB")
+    diagnostic = diagnose(bad_source, "registry")
+    assert "reason=invalid_heap_counts" in diagnostic
+    assert "rows_out_exceeds_alloc=1" in diagnostic
+    assert "rejected_rows=1" in diagnostic
+    assert "full_source_classification_proven=0" in diagnostic
+    assert "top_limit_may_truncate=0" in diagnostic
     print("C545D_GIO_ETW_STACK_COHORT_SELFTEST_PASS,positive=2,negative=8,"
           "source_stack_coverage_gated=1,unknown_frames_not_discarded=1,"
           "raw_symbols_output=0,real_GIO_tested=0")
