@@ -1,0 +1,22 @@
+name: C545D ETW GIO paired sanitized numeric offline gate
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_etw16_safe_pair.py'
+      - '.github/workflows/c545d-gio-etw16-offline-pair-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safe-paired-numeric-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate confidentiality and distinct-arm invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_etw16_safe_pair.py --selftest
+          echo 'C545D_ETW16_PAIR_OFFLINE_CI_PASS,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
