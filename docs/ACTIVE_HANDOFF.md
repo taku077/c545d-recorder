@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8be2038baf5a0f9721189b747b045014f922628c`
-- **PR updated at (UTC):** `2026-11-22T13:20:25Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8be2038baf5a0f9721189b747b045014f922628c/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5561b80218f89ae69a75214d62ac88f3cadafff8`
+- **PR updated at (UTC):** `2026-11-22T13:21:41Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5561b80218f89ae69a75214d62ac88f3cadafff8/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45026961722](https://github.com/taku077/c545d-recorder/actions/runs/45026961722) |
-| C545D source-grounded GAppInfo dup non-attribution audit (offline) | in_progress | [#45026958562](https://github.com/taku077/c545d-recorder/actions/runs/45026958562) |
+| C545D active development handoff auto-refresh | in_progress | [#45027076993](https://github.com/taku077/c545d-recorder/actions/runs/45027076993) |
 
 ## Current development findings from the active PR
 
