@@ -23,7 +23,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           & ./tests/Invoke-C545DEtwPidSyntheticPreflight.ps1 -SelfTest
-          if($LASTEXITCODE -ne 0){throw 'CI-only ETW safety script selftest failed'}
+          if(-not $?) {throw 'CI-only ETW safety script selftest failed'}
       - name: Check xperf presence and optional PID-only synthetic heap trace
         shell: pwsh
         run: |
