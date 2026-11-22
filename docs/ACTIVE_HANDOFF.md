@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f100e5167cff830469112e65086c8102d289a511`
-- **PR updated at (UTC):** `2026-11-22T12:46:39Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f100e5167cff830469112e65086c8102d289a511/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `c03f0ec9283b57cdafe9fa5245797902635cde62`
+- **PR updated at (UTC):** `2026-11-22T12:48:48Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c03f0ec9283b57cdafe9fa5245797902635cde62/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45024030349](https://github.com/taku077/c545d-recorder/actions/runs/45024030349) |
-| C545D matched synthetic UTF16 cache old-vs-shared 4x4 resource comparison | in_progress | [#45024028693](https://github.com/taku077/c545d-recorder/actions/runs/45024028693) |
+| C545D active development handoff auto-refresh | in_progress | [#45024215293](https://github.com/taku077/c545d-recorder/actions/runs/45024215293) |
+| C545D matched synthetic UTF16 cache old-vs-shared 4x4 resource comparison | in_progress | [#45024213350](https://github.com/taku077/c545d-recorder/actions/runs/45024213350) |
 
 ## Current development findings from the active PR
 
