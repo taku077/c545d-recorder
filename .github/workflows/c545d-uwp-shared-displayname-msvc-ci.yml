@@ -1,0 +1,179 @@
+name: C545D MSVC shared UTF16 DisplayName candidate ABI+GAppInfo lifecycle (CI ONLY)
+# One new matched 2x16 diagnostic: no ETW/UMDH/256/camera/user-host.
+# Never install or upload the resulting DLL or publish raw profile data.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_glib_uwp_displayname_shared_bytes_ci.py'
+      - '.github/workflows/c545d-uwp-shared-displayname-msvc-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  candidate-shared-utf16:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify shared-UTF16 cache source guards before any native build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/patch_glib_uwp_displayname_shared_bytes_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Shared UTF16 source selftest failed'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core
+      - name: Build existing exact WinRT candidate with one cache-hit GBytes substitution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $core=(Resolve-Path artifacts/core/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core/manifest.txt -Raw
+          $hash=(Get-FileHash $core -Algorithm SHA256).Hash
+          if($hash -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$hash") -or
+             $manifest -notmatch 'STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){
+            throw 'Core-only candidate provenance mismatch'
+          }
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if($LASTEXITCODE -ne 0){throw 'Meson tools failed'}
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $src
+          if($LASTEXITCODE -ne 0){throw 'Source clone failed'}
+          py tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'Core weakref patch failed'}
+          py tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'Core UTF16 patch failed'}
+          py tests/patch_glib_msvc_gio_sdk_export.py "$src/gio/meson.build"
+          if($LASTEXITCODE -ne 0){throw 'SDK export patch failed'}
+          py tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'UWP staging source patch failed'}
+          py tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native path patch failed'}
+          py tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Owned DisplayName cache source patch failed'}
+          py tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Dedicated WinRT epoch bridge source patch failed'}
+          py tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Generation lazy rescan source patch failed'}
+          py tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'GAppInfoMonitor worker source patch failed'}
+          py tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
+          py tests/patch_glib_uwp_displayname_shared_bytes_ci.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Shared immutable UTF16 cache patch failed'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'AppInfo worker/parser source phase trace patch failed'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher signal source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher status source patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC native PackageCatalog sidecar build failed'}
+          git -C $src diff --check
+          if($LASTEXITCODE -ne 0){throw 'Source diff whitespace invalid'}
+          $changed=@(git -C $src diff --name-only | Sort-Object)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32packageparser.c','gio/gwin32registrykey.c','gio/meson.build')
+          $expected=@($expected | Sort-Object)
+          if($changed.Count -ne 4 -or (Compare-Object $changed $expected)){throw 'Unexpected source changes'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){throw 'SDK provenance mismatch'}
+          $env:LIB="$sdk/lib;$env:LIB"; $env:INCLUDE="$sdk/include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdk/lib/pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdk;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdk/bin;$env:PATH"
+          $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path configure failed'}
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path compile failed'}
+          $built=@(Get-ChildItem $build -Recurse -Filter gio-2.0-0.dll -File)
+          if($built.Count -ne 1){throw 'Built GIO DLL not unique'}
+          function GetExports($path){
+            $rows=@(& dumpbin.exe /nologo /exports $path)
+            if($LASTEXITCODE -ne 0){throw 'dumpbin export inventory failed'}
+            return ,@($rows | ForEach-Object {
+              if($_ -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)'){$Matches[1]}
+            } | Sort-Object -Unique)
+          }
+          $official=GetExports "$sdk/bin/gio-2.0-0.dll"
+          $new=GetExports $built[0].FullName
+          if($official.Count -ne 2047 -or $new.Count -ne 2047 -or
+             @($official | Where-Object {$_ -notin $new}).Count){throw 'SDK 2047-export ABI mismatch'}
+          foreach($mode in @('core','combo')){
+            $dir=Join-Path (Resolve-Path artifacts).Path "overlay-$mode"
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            if($mode -eq 'core'){$file=$core}else{$file=$built[0].FullName}
+            Copy-Item $file (Join-Path $dir 'gio-2.0-0.dll')
+          }
+          $zip=Join-Path $env:RUNNER_TEMP 'handle.zip'
+          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 60
+          $dir=Join-Path $env:RUNNER_TEMP 'handle'
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          if(-not (Test-Path "$dir/handle64.exe")){throw 'Handle64 missing'}
+          "C545D_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "C545D_HANDLE_EXE=$dir/handle64.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+          "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'C545D_SHARED_UTF16_MSVC_BUILD_PASS,pinned_source=1,provenance=1,exports2047=1,watcher_compiled=1,host_modified=0,real_recorder_untested=1'
+      - name: Run safe public GAppInfo API and cache-hit reuse with ephemeral CI-only registry value
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sdk=$env:C545D_SDK_ROOT
+          $root=(Resolve-Path artifacts).Path
+          $exe=Join-Path $root 'shared_utf16_public_api.exe'
+          $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@('tests/gio_appinfo_public_api_regression.c',"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','advapi32.lib')) 1> (Join-Path $root 'compile_private.txt') 2>&1
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'Public API CI smoke compiler failed'}
+          $oldPath=$env:PATH
+          try {
+            $env:PATH="$root/overlay-combo;$sdk/bin;$oldPath"
+            $env:C545D_DIAG_UWP_NATIVE_PATH='1'
+            $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+            $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
+            $env:C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN='1'
+            $env:C545D_DIAG_APPINFO_MONITOR_UNSOLICITED='1'
+            $env:C545D_CI_EVENT_PACKAGE_NAME='C545D.CI.PackageEvents'
+            & $exe 1> (Join-Path $root 'runtime_private.txt') 2> (Join-Path $root 'stderr_private.txt')
+            if($LASTEXITCODE -ne 0){throw 'Public GAppInfo API regression under shared cache candidate'}
+            $rows=@(Get-Content (Join-Path $root 'runtime_private.txt'))
+            if(@($rows | Where-Object {$_ -match '^GIO_API_PASS,cycles=8,'}).Count -ne 1){
+              throw 'Public API/held object invariants not proven'
+            }
+            $cache=@($rows | Where-Object {
+              $_ -match '^C545D_CI_CACHE_SHARED_BYTES,hits=[0-9]+,utf16_hit_copies=0,cache_capacity=1024,epoch_bridge_required=1$'
+            })
+            if($cache.Count -lt 1){throw 'Shared cache diagnostics not executed'}
+            $hitCounts=@($cache | ForEach-Object {
+              if($_ -match '^C545D_CI_CACHE_SHARED_BYTES,hits=([0-9]+),'){[int]$Matches[1]}
+            })
+            $maxHits=($hitCounts | Measure-Object -Maximum).Maximum
+            if($null -eq $maxHits -or $maxHits -lt 1){
+              throw 'No actual cache hits observed; refusing unqualified runtime success'
+            }
+            Write-Host "C545D_SHARED_UTF16_GIO_API_PASS,cycles=8,cache_reuse_hits=$maxHits,utf16_hit_copies=0,public_API_stable=1,old_256_rerun=0,real_host_tested=0"
+          } finally {
+            $env:PATH=$oldPath
+            Remove-Item (Join-Path $root 'runtime_private.txt') -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $root 'stderr_private.txt') -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $root 'compile_private.txt') -Force -ErrorAction SilentlyContinue
+          }
