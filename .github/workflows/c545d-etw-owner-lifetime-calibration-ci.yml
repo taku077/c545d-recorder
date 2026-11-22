@@ -28,7 +28,10 @@ jobs:
           [void][Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1).Path,
             [ref]$tokens,[ref]$errors)
-          if(@($errors).Count){throw 'Owner calibration controller syntax rejected'}
+          if(@($errors).Count){
+            foreach($e in $errors){Write-Host ("C545D_OWNER_CAL_SYNTAX_DIAGNOSTIC,line={0},column={1},id={2}" -f $e.Extent.StartLineNumber,$e.Extent.StartColumnNumber,$e.ErrorId)}
+            throw 'Owner calibration controller syntax rejected'
+          }
           & ./tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1 -SelfTest
           if(-not $?){throw 'Owner calibration source safety fixture rejected'}
       - name: Run short exact known alloc/free Xperf capability in isolated runner
