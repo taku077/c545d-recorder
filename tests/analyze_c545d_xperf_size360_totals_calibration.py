@@ -104,7 +104,7 @@ def verify_calibration(report: str, *, owner_only: bool = False) -> str:
     if abs(d["outstanding_kb"] - Decimal(EXPECTED_OUT * SIZE_B) / KB) > Decimal("0.1"):
         raise ValueError("display_kb_inconsistent_with_exact_size_filter")
     if abs(d["alloc_kb"] - Decimal(d["alloc"] * SIZE_B) / KB) > Decimal("0.1"):
-        raise ValueError("alloc_kb_inconsistent_with_exact_size_filter")
+        raise ValueError(f"alloc_kb_inconsistent,observed_alloc={d['alloc']},observed_alloc_kb={d['alloc_kb']},observed_out={d['outstanding']},observed_out_kb={d['outstanding_kb']}")
     scope = "owner" if owner_only else "all"
     return (
         "C545D_XPERF_360_TOTALS_CALIBRATION_PASS,"
