@@ -122,7 +122,16 @@ try {
                      (Get-Item $heapReport -ErrorAction SilentlyContinue).Length -gt 0)
   $stackActionOk=0
   if($heapActionOk -eq 1){
-    & $tool -i $etl -o $stackReport -a heap -stacks -top 25 *> $local
+    # Follow Microsoft's documented -symbols -a heap -stacks order.
+    # Cache public Windows symbols only under a disposable CI directory.
+    $priorSymbolPath=$env:_NT_SYMBOL_PATH
+    try {
+      $env:_NT_SYMBOL_PATH='srv*'+(Join-Path $root 'symbol_cache_local_only')+'*https://msdl.microsoft.com/download/symbols'
+      & $tool -i $etl -o $stackReport -symbols -a heap -stacks -top 25 *> $local
+    } finally {
+      if($null -eq $priorSymbolPath){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+      else{$env:_NT_SYMBOL_PATH=$priorSymbolPath}
+    }
     $stackActionOk=[int]($LASTEXITCODE -eq 0 -and
                         (Test-Path $stackReport -PathType Leaf) -and
                         (Get-Item $stackReport -ErrorAction SilentlyContinue).Length -gt 0)
@@ -144,4 +153,7 @@ try {
 }
 if($ok){
   Write-Host 'C545D_ETW_PID_PREFLIGHT_PASS,capability_confirmed=1,real_GIO_tested=0,host_untouched=1'
+  # An OPTIONAL stack-action return code is not an error in the already
+  # verified ETL capture and heap-summary parse. Do not inherit it.
+  $global:LASTEXITCODE=0
 }
