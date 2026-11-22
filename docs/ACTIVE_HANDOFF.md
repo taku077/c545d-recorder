@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#44999852294](https://github.com/taku077/c545d-recorder/actions/runs/44999852294) |
+| C545D original Combo256 HeapWalk cbData versus PrivateUsage scope audit | success | [#44999850078](https://github.com/taku077/c545d-recorder/actions/runs/44999850078) |
 
 ## Current development findings from the active PR
 
