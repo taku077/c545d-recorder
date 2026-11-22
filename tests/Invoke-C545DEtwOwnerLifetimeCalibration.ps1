@@ -204,10 +204,11 @@ try {
     # Determine whether the 'top' stack section contains actual frames
     # rather than only aggregate GLOBAL ALLOCATIONS counters; all probing
     # stays in the disposable CI directory and prints only safe booleans.
-    $safeSizes=Get-Content $sizes -Raw -ErrorAction SilentlyContinue
-    $stackGlobal=[int]($safeSizes -match '(?i)GLOBAL\s+ALLOCATIONS')
-    $stackTop=[int]($safeSizes -match '(?i)TOP\s+100\s*:')
-    $filteredExclam=[int]($safeSizes -match '[A-Za-z0-9_.]+![A-Za-z0-9_?@]+')
+    $safeSizes=[string]((Get-Content $sizes -Raw -ErrorAction SilentlyContinue) -join "`n")
+    $stackGlobal=0;$stackTop=0;$filteredExclam=0
+    if($safeSizes -match '(?i)GLOBAL\s+ALLOCATIONS'){$stackGlobal=1}
+    if($safeSizes -match '(?i)TOP\s+100\s*:'){$stackTop=1}
+    if($safeSizes -match '[A-Za-z0-9_.]+![A-Za-z0-9_?@]+'){$filteredExclam=1}
     Write-Host "C545D_OWNER_CAL_STACK_CAPABILITY,local_pdb_exists=$pdbVisible,synthetic_image_present=$imageVisible,synthetic_wmain_present=$wmainVisible,synthetic_allocator_present=$ownerStackVisible,ntdll_present=$ntdllVisible,global_section_present=$stackGlobal,top100_section_present=$stackTop,symbol_frame_pattern_present=$filteredExclam,raw_symbol_names_uploaded=0"
     $unfilteredStacks=Join-Path $root 'all_stack_heads_local_only.txt'
     $unfilteredAction=0
@@ -223,10 +224,10 @@ try {
     }
     $fullKnown=0;$fullFrame=0;$fullGlobal=0
     if($unfilteredAction -eq 1){
-      $fullReport=Get-Content $unfilteredStacks -Raw
-      $fullKnown=[int]($fullReport -match 'c545d_synthetic_owner_alloc_360')
-      $fullFrame=[int]($fullReport -match '[A-Za-z0-9_.]+![A-Za-z0-9_?@]+')
-      $fullGlobal=[int]($fullReport -match '(?i)GLOBAL\s+ALLOCATIONS')
+      $fullReport=[string]((Get-Content $unfilteredStacks -Raw) -join "`n")
+      if($fullReport -match 'c545d_synthetic_owner_alloc_360'){$fullKnown=1}
+      if($fullReport -match '[A-Za-z0-9_.]+![A-Za-z0-9_?@]+'){$fullFrame=1}
+      if($fullReport -match '(?i)GLOBAL\s+ALLOCATIONS'){$fullGlobal=1}
     }
     Write-Host "C545D_OWNER_CAL_FULL_STACK_CAPABILITY,action=$unfilteredAction,synthetic_allocator_present=$fullKnown,any_symbol_frame_pattern=$fullFrame,global_section_present=$fullGlobal,raw_uploaded=0"
     Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
