@@ -132,6 +132,9 @@ try {
       $lostChecked=1
     }
   }
+  if($statChecked -ne 1 -or $lostChecked -ne 1){
+    throw 'Missing strict ETW event and log-buffer zero-loss evidence'
+  }
   Check-Xperf 'merge' @('-stop','-stop','HeapSession','-d',$etl)
   $heapStarted=$false;$kernelStarted=$false
   if(-not(Test-Path $etl) -or (Get-Item $etl).Length -lt 512 -or
@@ -301,4 +304,10 @@ try {
     }
   }
 }
-if($traceOk){$global:LASTEXITCODE=0}
+if($traceOk){
+  if($ownerVerified -ne 1){
+    Write-Host 'C545D_OWNER_CAL_GATE_BLOCKED,reason=SOURCE_STACK_NOT_VERIFIED,classification_ready=0'
+    throw 'Cannot complete source attribution calibration without exact 64/16 stack proof'
+  }
+  $global:LASTEXITCODE=0
+}
