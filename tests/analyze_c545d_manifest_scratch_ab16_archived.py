@@ -33,7 +33,7 @@ FLAGS = {
     "old256_untouched": 1,
     "real_host_untouched": 1,
 }
-LINE = re.compile(r"C545D_MANIFEST_SCRATCH_AB16(?:,[a-z][a-z0-9_]*=-?\\d+)+$")
+LINE = re.compile(r"C545D_MANIFEST_SCRATCH_AB16(?:,[a-z][a-z0-9_]*=-?\d+)+$")
 
 
 def validate(raw: str) -> str:
