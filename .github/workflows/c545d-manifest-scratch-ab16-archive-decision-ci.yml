@@ -1,0 +1,39 @@
+name: C545D manifest scratch 16-cycle original memory A/B decision offline
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_manifest_scratch_ab16_archived.py'
+      - '.github/workflows/c545d-manifest-scratch-ab16-archive-decision-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-sanitized-numeric-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on changed source arithmetic or unproven release claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_manifest_scratch_ab16_archived.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 45033642809
+          name: c545d-manifest-scratch-ab16-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: original
+      - name: Verify real original Windows numeric evidence, prohibit promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/manifest-scratch-ab16.txt
+          python3 tests/analyze_c545d_manifest_scratch_ab16_archived.py \
+            --source original/manifest-scratch-ab16.txt | tee /tmp/c545d_manifest_ab16.txt
+          grep -F 'decision=DO_NOT_PROMOTE_UNPROVEN_MICRO_OPT' /tmp/c545d_manifest_ab16.txt
+          echo 'C545D_MANIFEST_SCRATCH_ARCHIVE_DECISION_CI_PASS,source_run=45033642809,artifact=14758892656,Windows_reruns=0,host_untouched=1'
