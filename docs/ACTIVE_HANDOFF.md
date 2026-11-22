@@ -11,7 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#44995208711](https://github.com/taku077/c545d-recorder/actions/runs/44995208711) |
+| C545D active development handoff auto-refresh | in_progress | [#44995208711](https://github.com/taku077/c545d-recorder/actions/runs/44995208711) |
 | C545D isolated Windows heap region committed-byte capability (synthetic only) | in_progress | [#44995206770](https://github.com/taku077/c545d-recorder/actions/runs/44995206770) |
 
 ## Current development findings from the active PR
