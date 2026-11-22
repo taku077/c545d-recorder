@@ -1,11 +1,13 @@
 name: C545D MSVC shared UTF16 DisplayName candidate ABI+GAppInfo lifecycle (CI ONLY)
-# One new matched 2x16 diagnostic: no ETW/UMDH/256/camera/user-host.
+# One new Windows candidate build with deterministic synthetic cache-hit smoke.
+# No ETW/UMDH/256/recorder/camera/user-host.
 # Never install or upload the resulting DLL or publish raw profile data.
 on:
   push:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/patch_glib_uwp_displayname_shared_bytes_ci.py'
+      - 'tests/patch_glib_uwp_shared_bytes_source_smoke_ci.py'
       - '.github/workflows/c545d-uwp-shared-displayname-msvc-ci.yml'
   workflow_dispatch:
 permissions:
@@ -72,6 +74,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
           py tests/patch_glib_uwp_displayname_shared_bytes_ci.py "$src/gio/gwin32packageparser.c"
           if($LASTEXITCODE -ne 0){throw 'Shared immutable UTF16 cache patch failed'}
+          py tests/patch_glib_uwp_shared_bytes_source_smoke_ci.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'CI-only synthetic cache-hit smoke injection failed'}
           py tests/patch_glib_appinfo_phase_trace_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
           py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
@@ -134,7 +138,7 @@ jobs:
           $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
           "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host 'C545D_SHARED_UTF16_MSVC_BUILD_PASS,pinned_source=1,provenance=1,exports2047=1,watcher_compiled=1,host_modified=0,real_recorder_untested=1'
-      - name: Run safe public GAppInfo API and cache-hit reuse with ephemeral CI-only registry value
+      - name: Prove actual static GIO cache helpers on synthetic UTF16, then preserve public GAppInfo API with ephemeral runner registry value
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -144,9 +148,30 @@ jobs:
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@('tests/gio_appinfo_public_api_regression.c',"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','advapi32.lib')) 1> (Join-Path $root 'compile_private.txt') 2>&1
           if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'Public API CI smoke compiler failed'}
+          $smoke=Join-Path $root 'shared_utf16_synthetic_trigger.exe'
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@('tests/gio_appinfo_displayname_snapshot.c',"/Fe:$smoke",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib')) 1> (Join-Path $root 'smoke_compile_private.txt') 2>&1
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $smoke)){throw 'Synthetic trigger compiler failed'}
           $oldPath=$env:PATH
           try {
             $env:PATH="$root/overlay-combo;$sdk/bin;$oldPath"
+            # Smoke uses the same compiled cache helpers but no host strings.
+            # The actual g_app_info_get_all() merely reaches the CI-only
+            # parser interception with a fixed Japanese synthetic UTF16.
+            $env:C545D_CI_CACHE_REF_SMOKE='1'
+            $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE=$null
+            $env:C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN=$null
+            $env:C545D_DIAG_APPINFO_MONITOR_UNSOLICITED=$null
+            $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+            & $smoke 1> (Join-Path $root 'smoke_runtime_private.txt') 2> (Join-Path $root 'smoke_stderr_private.txt')
+            if($LASTEXITCODE -ne 0){throw 'Synthetic GIO cache-hit runtime failed'}
+            $smokeLines=@(Get-Content (Join-Path $root 'smoke_runtime_private.txt'))
+            $smokeExpected='C545D_SHARED_BYTES_SOURCE_SMOKE_PASS,synthetic_utf16=1,same_cached_pointer=1,reader_valid_after_eviction=1,hit_utf16_copies=0,external_WinRT_enumeration=0,raw_host_identifiers_printed=0'
+            if(@($smokeLines | Where-Object {$_ -ceq $smokeExpected}).Count -lt 1){
+              throw 'Actual GIO cache-hit and eviction still unverified'
+            }
+            $env:C545D_CI_CACHE_REF_SMOKE=$null
+            Write-Host 'C545D_SHARED_UTF16_DETERMINISTIC_GIO_PASS,synthetic_cache_hits=2,post_eviction_ref_valid=1,utf16_hit_copies=0,private_strings_uploaded=0'
+
             $env:C545D_DIAG_UWP_NATIVE_PATH='1'
             $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
             $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
@@ -167,12 +192,16 @@ jobs:
               if($_ -match '^C545D_CI_CACHE_SHARED_BYTES,hits=([0-9]+),'){[int]$Matches[1]}
             })
             $maxHits=($hitCounts | Measure-Object -Maximum).Maximum
-            if($null -eq $maxHits -or $maxHits -lt 1){
-              throw 'No actual cache hits observed; refusing unqualified runtime success'
-            }
-            Write-Host "C545D_SHARED_UTF16_GIO_API_PASS,cycles=8,cache_reuse_hits=$maxHits,utf16_hit_copies=0,public_API_stable=1,old_256_rerun=0,real_host_tested=0"
+            if($null -eq $maxHits){throw 'No numeric cache diagnostic evidence'}
+            # Natural GIO16 can legitimately have no packaged application on
+            # the runner; deterministic synthetic smoke above tests the hit.
+            Write-Host "C545D_SHARED_UTF16_GIO_API_PASS,cycles=8,natural_cache_hits=$maxHits,synthetic_cache_hits=2,utf16_hit_copies=0,public_API_stable=1,old_256_rerun=0,real_host_tested=0"
           } finally {
             $env:PATH=$oldPath
+            $env:C545D_CI_CACHE_REF_SMOKE=$null
+            foreach($p in @('smoke_runtime_private.txt','smoke_stderr_private.txt','smoke_compile_private.txt')) {
+              Remove-Item (Join-Path $root $p) -Force -ErrorAction SilentlyContinue
+            }
             Remove-Item (Join-Path $root 'runtime_private.txt') -Force -ErrorAction SilentlyContinue
             Remove-Item (Join-Path $root 'stderr_private.txt') -Force -ErrorAction SilentlyContinue
             Remove-Item (Join-Path $root 'compile_private.txt') -Force -ErrorAction SilentlyContinue
