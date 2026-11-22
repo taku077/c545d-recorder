@@ -1,0 +1,41 @@
+name: C545D saved Windows Combo16 heap region commit/control chronology replay
+# Reuse original Windows run 44995353780 numeric artifact, NO Windows workload or recorder.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_heapregion_archived.py'
+      - '.github/workflows/c545d-heapregion-archived-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-combo16-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject malformed or mixed archived region/private records
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_heapregion_archived.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44995353780
+          name: c545d-combo16-scanfree-numeric-only-CI
+          github-token: ${{ github.token }}
+          path: original
+      - name: Verify original numeric-only Windows evidence and prohibit causal overclaim
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find original -type f | wc -l)" -eq 1
+          test -f original/combo16-scanfree-summary.txt
+          python3 tests/analyze_c545d_heapregion_archived.py \
+            --source original/combo16-scanfree-summary.txt | tee /tmp/c545d_region_replay.txt
+          test "$(grep -c '^C545D_HEAP_REGION_ARCHIVE_VERIFIED,' /tmp/c545d_region_replay.txt)" -eq 1
+          test "$(grep -c '^C545D_HEAP_REGION_ARCHIVE_INFERENCE,' /tmp/c545d_region_replay.txt)" -eq 1
+          echo 'C545D_HEAP_REGION_ARCHIVE_CI_PASS,source_windows_run=44995353780,new_windows_runs=0,real_host_modified=0'
