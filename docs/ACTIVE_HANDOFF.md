@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6de87b24a673bd040f2bab65986370c339742193`
-- **PR updated at (UTC):** `2026-11-22T06:31:22Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6de87b24a673bd040f2bab65986370c339742193/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4f25ea7908cd1209a981cf764bcefccae747dc9d`
+- **PR updated at (UTC):** `2026-11-22T06:31:31Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4f25ea7908cd1209a981cf764bcefccae747dc9d/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44994102570](https://github.com/taku077/c545d-recorder/actions/runs/44994102570) |
+| C545D active development handoff auto-refresh | in_progress | [#44994115083](https://github.com/taku077/c545d-recorder/actions/runs/44994115083) |
+| C545D GLib Win32 APC versus AppInfo worker quiescence audit | success | [#44994112832](https://github.com/taku077/c545d-recorder/actions/runs/44994112832) |
 
 ## Current development findings from the active PR
 
