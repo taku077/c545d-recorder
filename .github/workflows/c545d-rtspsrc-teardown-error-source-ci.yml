@@ -1,0 +1,42 @@
+name: C545D GStreamer 1.28.8 RTSP TEARDOWN error-path leak source check
+# Checks exact official 1.28.8 vs 1.28.9 source only; no GStreamer
+# process, network camera, registry write or test media output.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_rtspsrc_teardown_error_1289.py'
+      - '.github/workflows/c545d-rtspsrc-teardown-error-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ubuntu-source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source-error-path fail-closed fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_rtspsrc_teardown_error_1289.py --selftest
+      - name: Compare pinned official 1.28.8 and 1.28.9 TEARDOWN function only
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          path='subprojects/gst-plugins-good/gst/rtsp/gstrtspsrc.c'
+          curl --fail --location --silent --show-error --retry 3 --max-time 90 \
+            "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.8/$path" \
+            -o "$tmp/old.c"
+          curl --fail --location --silent --show-error --retry 3 --max-time 90 \
+            "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.9/$path" \
+            -o "$tmp/fixed.c"
+          test "$(git hash-object "$tmp/old.c")" = '2203fb5a5d6d100d1a0a6ec566a7a4adb1cce996'
+          test "$(git hash-object "$tmp/fixed.c")" = '19511e0b53e9a77d59ae032a3d1df1dd2720749f'
+          python3 tests/audit_c545d_rtspsrc_teardown_error_1289.py \
+            --old "$tmp/old.c" --fixed "$tmp/fixed.c" --out "$tmp/ci-only-candidate.c"
+          test -s "$tmp/ci-only-candidate.c"
+          echo 'C545D_RTSP_TEARDOWN_SCOPE_CI_PASS,source=official_GStreamer_1_28_8_to_1_28_9,RTSP_close_error_only=1,private_memory_rerun=0,production_DLL_changed=0,host_untouched=1'
