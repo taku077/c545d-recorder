@@ -92,7 +92,7 @@ function Check-Xperf([string]$phase,[string[]]$arguments){
 try {
   if(Test-Path $ifeo){throw 'Existing synthetic IFEO policy — refuse changes'}
   if(@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count){throw 'Synthetic EXE name already active'}
-  & cl.exe /nologo /W4 /WX /MT /TC tests/c545d_etw_owner_lifetime_calibration.c "/Fe:$exe" *> $raw
+  & cl.exe /nologo /W4 /WX /MT /Zi /TC tests/c545d_etw_owner_lifetime_calibration.c "/Fe:$exe" "/Fd:$root\\c545d_owner_cal.pdb" /link /DEBUG "/PDB:$root\\c545d_owner_cal.pdb" *> $raw
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'Synthetic known-allocation C compile failed'}
   $existing=@(& logman.exe query -ets 2>$null)
   if($LASTEXITCODE -ne 0 -or @($existing | Where-Object {$_ -match '(?i)\bHeapSession\b|\bNT Kernel Logger\b'}).Count){
@@ -144,8 +144,16 @@ try {
   # capture itself. A failure remains explicitly incomplete evidence.
   # It must NEVER be mistaken for source attribution or leak absence.
   $filterOk=0;$filterReason='NONE'
-  & $tool -i $etl -o $sizes -a heap -stacks -size 360 361 -top 100 *> $raw
-  if($LASTEXITCODE -eq 0 -and (Test-Path $sizes) -and
+  $priorSymbolPath=$env:_NT_SYMBOL_PATH
+  try {
+    $env:_NT_SYMBOL_PATH="$root;srv*$(Join-Path $root 'ms_symbols_local_only')*https://msdl.microsoft.com/download/symbols"
+    & $tool -i $etl -o $sizes -symbols -a heap -stacks -size 360 361 -top 100 *> $raw
+    $filteredExit=$LASTEXITCODE
+  } finally {
+    if($null -eq $priorSymbolPath){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+    else{$env:_NT_SYMBOL_PATH=$priorSymbolPath}
+  }
+  if($filteredExit -eq 0 -and (Test-Path $sizes) -and
      (Get-Item $sizes).Length -gt 40) {
     $filterOk=1
   } else {
