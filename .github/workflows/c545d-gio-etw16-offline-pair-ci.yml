@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/analyze_c545d_etw16_safe_pair.py'
+      - 'tests/analyze_c545d_etw16_frozen_archive.py'
       - '.github/workflows/c545d-gio-etw16-offline-pair-ci.yml'
   workflow_dispatch:
 permissions:
@@ -20,6 +21,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/analyze_c545d_etw16_safe_pair.py --selftest
+          python3 tests/analyze_c545d_etw16_frozen_archive.py --selftest
           echo 'C545D_ETW16_PAIR_OFFLINE_SELFTEST_PASS,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
       - uses: actions/download-artifact@v4
         with:
@@ -38,4 +40,7 @@ jobs:
             --source original/combo16-scanfree-summary.txt | tee /tmp/c545d_safe_pair.txt
           grep -Fx 'C545D_GIO_ETW16_PAIRED_REPLAY_PASS,distinct_processes=2,cycles_each=16,actual_private_commit_ownership_proven=0,stack_frame_count_not_allocation_bytes=1,real_host_untouched=1,original_256_rerun=0' /tmp/c545d_safe_pair.txt
           test "$(grep -c '^C545D_GIO_ETW16_PAIRED_REPLAY_ARM,' /tmp/c545d_safe_pair.txt)" -eq 2
+          python3 tests/analyze_c545d_etw16_frozen_archive.py \
+            --source original/combo16-scanfree-summary.txt | tee /tmp/c545d_frozen.txt
+          grep -Fx 'C545D_GIO_ETW16_FROZEN_ARCHIVE_PASS,source_run=45015173260,artifact_id=14750474942,two_exact_arms=1,counts_locked=1,circular_trace=1,alloc_owner_proven=0,windows_runs=0,real_host_untouched=1' /tmp/c545d_frozen.txt
           echo 'C545D_ETW16_PAIR_ARCHIVE_CI_PASS,source_run=45015173260,windows_runs=0,no_ETL_downloaded=1,no_recorder_changes=1'
