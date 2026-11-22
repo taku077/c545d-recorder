@@ -91,9 +91,8 @@ def strict_original(group: dict[str, list[str]]) -> tuple[list[str], dict]:
                     f"mode={mode},arm={arm},window={a}_{b},"
                     + ",".join(f"{k}={v}" for k, v in d.items()
                                if k not in ("start", "end"))
-                    + ",single_process=int("
-                    + str(int(arm != "controlled"))
-                    + "),allocator_capacity_measured=0"
+                    + f",single_process={int(arm != 'controlled')},"
+                    "allocator_capacity_measured=0"
                 )
 
     # Historic Combo latest: late 64 control-adjusted +53,248 despite a
