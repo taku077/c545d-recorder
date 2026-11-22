@@ -68,6 +68,10 @@ jobs:
             } | Sort-Object -Unique)
             if($err.Count -eq 0){Write-Host 'C545D_CACHE_SYNTH_BUILD_ERROR_CODES=UNKNOWN'}
             else {Write-Host "C545D_CACHE_SYNTH_BUILD_ERROR_CODES=$($err -join ',')"}
+            $warnings=@(Get-Content (Join-Path $root 'build_private.txt') | ForEach-Object {
+              if($_ -match 'warning (C[0-9]{4})'){$Matches[1]}
+            } | Sort-Object -Unique)
+            Write-Host "C545D_CACHE_SYNTH_BUILD_WARNING_CODES=$(if($warnings.Count){$warnings -join ','}else{'NONE'})"
             throw 'MSVC synthetic build failed; no A/B claim'
           }
           $originalPath=$env:PATH
