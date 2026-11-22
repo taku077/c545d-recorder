@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `49a6bf0aab26f7dc2496c5557b56682dece4ebd0`
-- **PR updated at (UTC):** `2026-11-22T16:53:37Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/49a6bf0aab26f7dc2496c5557b56682dece4ebd0/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `39241baa38cbf3727a2aa62daccc2dbcf8edbb47`
+- **PR updated at (UTC):** `2026-11-22T16:54:45Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/39241baa38cbf3727a2aa62daccc2dbcf8edbb47/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45046350769](https://github.com/taku077/c545d-recorder/actions/runs/45046350769) |
-| C545D registry APC numeric lifetime instrumentation source preflight | success | [#45046347672](https://github.com/taku077/c545d-recorder/actions/runs/45046347672) |
+| C545D active development handoff auto-refresh | in_progress | [#45046449085](https://github.com/taku077/c545d-recorder/actions/runs/45046449085) |
+| C545D real Windows GIO 8-watch APC registration/completion runtime boundary CI | in_progress | [#45046446784](https://github.com/taku077/c545d-recorder/actions/runs/45046446784) |
 
 ## Current development findings from the active PR
 
