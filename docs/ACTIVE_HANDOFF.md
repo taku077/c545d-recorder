@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `eef574f773060ed294f5a7de011954239cc0b02c`
-- **PR updated at (UTC):** `2026-11-22T13:28:20Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/eef574f773060ed294f5a7de011954239cc0b02c/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5d77ef6fc42ed77748bb3e813b3ffd2621a36f97`
+- **PR updated at (UTC):** `2026-11-22T13:32:58Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5d77ef6fc42ed77748bb3e813b3ffd2621a36f97/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45027655024](https://github.com/taku077/c545d-recorder/actions/runs/45027655024) |
-| C545D pinned GStreamer SDK GAppInfo dup static PE import-only audit | in_progress | [#45027652735](https://github.com/taku077/c545d-recorder/actions/runs/45027652735) |
+| C545D active development handoff auto-refresh | in_progress | [#45028067302](https://github.com/taku077/c545d-recorder/actions/runs/45028067302) |
+| C545D pinned GStreamer SDK GAppInfo dup static PE import-only audit | in_progress | [#45028064488](https://github.com/taku077/c545d-recorder/actions/runs/45028064488) |
 
 ## Current development findings from the active PR
 
