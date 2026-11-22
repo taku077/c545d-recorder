@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `eb2de5fa14aff0ce188ad095ddd2b5f7d76852c8`
-- **PR updated at (UTC):** `2026-11-22T14:28:33Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/eb2de5fa14aff0ce188ad095ddd2b5f7d76852c8/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `21c957b07c0e594c44be4af2ef139057d3ac2789`
+- **PR updated at (UTC):** `2026-11-22T14:29:20Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/21c957b07c0e594c44be4af2ef139057d3ac2789/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45033010513](https://github.com/taku077/c545d-recorder/actions/runs/45033010513) |
-| .github/workflows/c545d-uwp-manifest-scratch-ab16-ci.yml | failure | [#45033007500](https://github.com/taku077/c545d-recorder/actions/runs/45033007500) |
+| C545D active development handoff auto-refresh | in_progress | [#45033075608](https://github.com/taku077/c545d-recorder/actions/runs/45033075608) |
+| C545D manifest scratch candidate Windows matched 16-run A/B | in_progress | [#45033072773](https://github.com/taku077/c545d-recorder/actions/runs/45033072773) |
 
 ## Current development findings from the active PR
 
