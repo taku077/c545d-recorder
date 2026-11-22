@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1b3a93169f6204b9219ca9a0989bc5ebf305c082`
-- **PR updated at (UTC):** `2026-11-22T12:09:32Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1b3a93169f6204b9219ca9a0989bc5ebf305c082/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ea7d76356927916cc6c3ab638b0f03086e1be381`
+- **PR updated at (UTC):** `2026-11-22T12:10:10Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ea7d76356927916cc6c3ab638b0f03086e1be381/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45020835030](https://github.com/taku077/c545d-recorder/actions/runs/45020835030) |
-| C545D eight BUSY-band collector safety + Windows synthetic CI | in_progress | [#45020831910](https://github.com/taku077/c545d-recorder/actions/runs/45020831910) |
+| C545D active development handoff auto-refresh | in_progress | [#45020889484](https://github.com/taku077/c545d-recorder/actions/runs/45020889484) |
 
 ## Current development findings from the active PR
 
