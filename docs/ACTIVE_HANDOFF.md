@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8653e773023752f6506cc7aa5287b45e53bfe312`
-- **PR updated at (UTC):** `2026-11-22T17:51:11Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8653e773023752f6506cc7aa5287b45e53bfe312/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ed19e4e60c2317f20b492781f517bef5bb89cc94`
+- **PR updated at (UTC):** `2026-11-22T17:56:27Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ed19e4e60c2317f20b492781f517bef5bb89cc94/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45051752664](https://github.com/taku077/c545d-recorder/actions/runs/45051752664) |
-| C545D real Windows GIO preworkload zero-loss ETW owner stacks paired16 | in_progress | [#45051751198](https://github.com/taku077/c545d-recorder/actions/runs/45051751198) |
+| C545D active development handoff auto-refresh | in_progress | [#45052230185](https://github.com/taku077/c545d-recorder/actions/runs/45052230185) |
+| C545D real Windows GIO preworkload zero-loss ETW owner stacks paired16 | in_progress | [#45052226913](https://github.com/taku077/c545d-recorder/actions/runs/45052226913) |
 
 ## Current development findings from the active PR
 
