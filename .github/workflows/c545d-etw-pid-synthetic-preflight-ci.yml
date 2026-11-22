@@ -5,6 +5,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/Invoke-C545DEtwPidSyntheticPreflight.ps1'
+      - 'tests/analyze_c545d_etw_stack_safe.py'
       - '.github/workflows/c545d-etw-pid-synthetic-preflight-ci.yml'
   workflow_dispatch:
 permissions:
@@ -23,6 +24,8 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           & ./tests/Invoke-C545DEtwPidSyntheticPreflight.ps1 -SelfTest
+          & py tests/analyze_c545d_etw_stack_safe.py --selftest
+          if($LASTEXITCODE -ne 0) {throw 'Stack sanitizer synthetic corruption tests failed'}
           if(-not $?) {throw 'CI-only ETW safety script selftest failed'}
       - name: Check xperf presence and optional PID-only synthetic heap trace
         shell: pwsh
@@ -30,4 +33,5 @@ jobs:
           $ErrorActionPreference='Stop'
           & ./tests/Invoke-C545DEtwPidSyntheticPreflight.ps1
           if(-not $?) {throw 'Synthetic PID-only trace safety script failed'}
+          if($LASTEXITCODE -ne 0){throw 'ETW sanitized stack gate failed'}
           Write-Host 'C545D_ETW_PID_SYNTHETIC_WORKFLOW_PASS,user_host_modified=0,raw_etl_uploaded=0,UMDH256_repeated=0,GIO16_repeated=0'
