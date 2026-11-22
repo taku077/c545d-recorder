@@ -1,0 +1,52 @@
+name: C545D C ABI WinRT package-event bridge resource lifecycle
+
+on:
+  push:
+    branches:
+      - investigate/c545d-display-cache-invalidation-20261119
+      - investigate/gio-2824-key-handle-lifecycle
+    paths:
+      - tests/c545d_winrt_event_bridge.h
+      - tests/c545d_winrt_event_bridge.cpp
+      - tests/c545d_winrt_event_bridge_c_probe.c
+      - .github/workflows/c545d-winrt-c-abi-bridge-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  c-abi-windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build a C-callable DLL from C++ WinRT and a pure C probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_event_bridge.cpp /Fe:artifacts/c545d_winrt_event_bridge.dll /link /IMPLIB:artifacts/c545d_winrt_event_bridge.lib windowsapp.lib runtimeobject.lib
+          if ($LASTEXITCODE -ne 0) { throw 'WinRT C++ bridge DLL compile/link failed' }
+          & cl.exe /nologo /TC /W4 /MD /O2 tests/c545d_winrt_event_bridge_c_probe.c /Fe:artifacts/c545d_c_abi_probe.exe /link artifacts/c545d_winrt_event_bridge.lib psapi.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Pure C program failed to link against MSVC WinRT bridge' }
+          & artifacts/c545d_c_abi_probe.exe 2> artifacts/winrt_c_abi_errors.txt | Tee-Object -FilePath artifacts/winrt_c_abi_summary.txt
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content artifacts/winrt_c_abi_errors.txt
+            throw "WinRT C event bridge lifecycle/handle gate failed with exit code $LASTEXITCODE"
+          }
+          if ((Get-Content artifacts/winrt_c_abi_summary.txt -Raw) -notmatch 'C545D_WINRT_C_ABI_PASS') {
+            throw 'WinRT C ABI success marker missing'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-winrt-c-abi-numeric-only
+          path: |
+            artifacts/winrt_c_abi_summary.txt
+            artifacts/winrt_c_abi_errors.txt
+          retention-days: 7
+          if-no-files-found: warn

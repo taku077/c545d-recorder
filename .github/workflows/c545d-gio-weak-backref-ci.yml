@@ -1,0 +1,367 @@
+name: C545D GLib 2.82.4 weak-backref ownership A/B
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_appinfo_weak_backrefs.py'
+      - 'tests/patch_glib_registry_owned_path.py'
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/analyze_gio_residual_growth.py'
+      - 'tests/analyze_gio_heap_sizes.py'
+      - 'tests/analyze_gio_handle_types.py'
+      - 'tests/gio_appinfo_retained_lifetime.c'
+      - 'tests/gio_appinfo_public_api_regression.c'
+      - '.github/workflows/c545d-gio-weak-backref-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-versus-weakrefs:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            unzip
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Compile GLib 2.82.4 unmodified and collect baseline
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_retained_lifetime.exe ../tests/gio_appinfo_retained_lifetime.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_api_regression.exe ../tests/gio_appinfo_public_api_regression.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+          git -C glib-src rev-parse HEAD > artifacts/glib_source_sha.txt
+          export GOBJECT_DEBUG=instance-count
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/baseline_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/baseline_api.log
+          grep -q 'GIO_API_PASS' artifacts/baseline_api.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/baseline_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/baseline_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/baseline_registry.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/baseline_lifetime.log
+
+      - name: Apply weak-backref source change and rebuild
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          git -C glib-src diff --check
+          meson compile -C glib-build
+          git -C glib-src diff -- gio/gwin32appinfo.c > artifacts/weak_backref_source.diff
+          export GOBJECT_DEBUG=instance-count
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/patched_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/patched_api.log
+          grep -q 'GIO_API_PASS' artifacts/patched_api.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change > artifacts/patched_nochange.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/patched_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/patched_registry.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/patched_lifetime.log
+          # Count Key handles separately from total handles at the two boundaries.
+          # Official Microsoft Sysinternals executable is used read-only, on CI only.
+          curl -fsSL --retry 2 --connect-timeout 20 -o ci-handle.zip https://download.sysinternals.com/files/Handle.zip
+          mkdir -p ci-handle-bin
+          unzip -qo ci-handle.zip handle64.exe -d ci-handle-bin
+          test -s ci-handle-bin/handle64.exe
+          export C545D_HANDLE_EXE="$(cygpath -w "$PWD/ci-handle-bin/handle64.exe")"
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --report-types --heap-summary > artifacts/patched_registry_64.log
+          unset C545D_HANDLE_EXE
+          grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/patched_registry_64.log
+
+      - name: Remove redundant registry UTF16 path copy and retest
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          git -C glib-src diff --check
+          meson compile -C glib-build
+          git -C glib-src diff -- gio/gwin32registrykey.c > artifacts/registry_utf16_ownership.diff
+          export GOBJECT_DEBUG=instance-count
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_retained_lifetime.exe" > artifacts/ownedpath_lifetime.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_api_regression.exe" > artifacts/ownedpath_api.log
+          grep -q 'C545D_RETAINED_APPINFO,PASS' artifacts/ownedpath_lifetime.log
+          grep -q 'GIO_API_PASS' artifacts/ownedpath_api.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types > artifacts/ownedpath_registry.log
+          export C545D_HANDLE_EXE="$(cygpath -w "$PWD/ci-handle-bin/handle64.exe")"
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --report-types --cycles=64 --heap-summary > artifacts/ownedpath_registry_64.log
+          unset C545D_HANDLE_EXE
+          grep -q 'GIO_PROBE_DONE,cycles=16' artifacts/ownedpath_registry.log
+          grep -q 'GIO_PROBE_DONE,cycles=64' artifacts/ownedpath_registry_64.log
+
+      - name: Consolidated residual-memory test - 256 cycles in disposable Windows runner
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          # Both runs use the same candidate DLL and process-scoped public API.
+          # No camera and no real recorder. Registry variation is the only
+          # intended experimental dimension; no-change is the control.
+          export GOBJECT_DEBUG=instance-count
+          unset C545D_HANDLE_EXE || true
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --no-registry-change --cycles=256 --heap-summary --vm-summary --report-types > artifacts/ownedpath_nochange_256.log
+          grep -q 'GIO_PROBE_DONE,cycles=256' artifacts/ownedpath_nochange_256.log
+          meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=256 --heap-summary --vm-summary --report-types > artifacts/ownedpath_registry_256.log
+          grep -q 'GIO_PROBE_DONE,cycles=256' artifacts/ownedpath_registry_256.log
+
+      - name: Quantify residual private/heap/virtual commit slopes against control
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_residual_growth.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Residual analyzer selftest failed' }
+          if (-not (Test-Path artifacts/ownedpath_nochange_256.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_256.log)) {
+            Write-Warning '256-cycle residual test missing; no plateau claim possible'
+            exit 0
+          }
+          py tests/analyze_gio_residual_growth.py --output artifacts/residual_slope.csv artifacts/ownedpath_nochange_256.log artifacts/ownedpath_registry_256.log
+          if ($LASTEXITCODE -ne 0) { throw 'Residual test data is incomplete or corrupt' }
+          Get-Content artifacts/residual_slope.csv.status.txt
+
+      - name: Quantify exact retained heap size classes against same-run control
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_heap_sizes.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Heap-size analyzer selftest failed' }
+          if (-not (Test-Path artifacts/ownedpath_nochange_256.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_256.log)) {
+            Write-Warning '256-cycle heap-size logs unavailable; do not infer sizes'
+            exit 0
+          }
+          py tests/analyze_gio_heap_sizes.py --output artifacts/heap_size_deltas.csv artifacts/ownedpath_nochange_256.log artifacts/ownedpath_registry_256.log
+          if ($LASTEXITCODE -ne 0) { throw 'Heap-size data mismatched HeapWalk block count' }
+
+      - name: Compare counts with independent pass-fail gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=@()
+          foreach($mode in @('baseline_nochange','baseline_registry','patched_nochange','patched_registry','ownedpath_registry')) {
+            $lines=@(Get-Content "artifacts/$mode.log")
+            $before=@($lines | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+            $after=@($lines | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+            $cycles=@($lines | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+            if ($before.Count -ne 1 -or $after.Count -ne 1 -or $cycles.Count -ne 16) {
+              throw "Incomplete cycle data: $mode"
+            }
+            $b=$before[0].Split(',');$e=$after[0].Split(',')
+            $out += [pscustomobject]@{
+              mode=$mode
+              handles_before=[long]$b[4];handles_after=[long]$e[4]
+              handles_delta=[long]$e[4]-[long]$b[4]
+              private_before=[long]$b[5];private_after=[long]$e[5]
+              private_delta=[long]$e[5]-[long]$b[5]
+            }
+          }
+          $out | Export-Csv -Path artifacts/weak_backref_summary.csv -NoTypeInformation
+          $out | Format-Table -AutoSize
+          $bc=$out | Where-Object mode -eq baseline_nochange
+          $br=$out | Where-Object mode -eq baseline_registry
+          $pc=$out | Where-Object mode -eq patched_nochange
+          $pr=$out | Where-Object mode -eq patched_registry
+          $ur=$out | Where-Object mode -eq ownedpath_registry
+          if ($br.handles_delta -lt 300) { throw 'Baseline failure: GLib 2.82.4 registry leak not reproduced' }
+          if ([math]::Abs($bc.handles_delta) -gt 4 -or [math]::Abs($pc.handles_delta) -gt 4) { throw 'Control conditions unexpectedly grew' }
+          if ($pr.handles_delta -gt 4) { throw "Weak backref candidate failed handle plateau: $($pr.handles_delta)" }
+          if ($pr.private_delta -ge $br.private_delta) { throw 'Weak backref did not improve private memory delta' }
+          if ([math]::Abs($ur.handles_delta) -gt 4) { throw 'UTF16 ownership patch reintroduced handle growth' }
+          $lines64=@(Get-Content artifacts/patched_registry_64.log)
+          $base64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+          $after64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+          $cycles64=@($lines64 | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+          if ($base64.Count -ne 1 -or $after64.Count -ne 1 -or $cycles64.Count -ne 64) {
+            throw '64-cycle stress data incomplete'
+          }
+          $first64=$base64[0].Split(',')
+          $final64=$after64[0].Split(',')
+          $delta64=[long]$final64[4]-[long]$first64[4]
+          $mem64=[long]$final64[5]-[long]$first64[5]
+          "PATCHED_64_HANDLE_DELTA=$delta64" | Set-Content artifacts/longer_summary.txt
+          "PATCHED_64_PRIVATE_DELTA=$mem64" | Add-Content artifacts/longer_summary.txt
+          $keyBase=@($lines64 | Where-Object {$_ -match '^GIO_KEY,baseline,'})
+          $keyEnd=@($lines64 | Where-Object {$_ -match '^GIO_KEY,after_cleanup,'})
+          if ($keyBase.Count -ne 1 -or $keyEnd.Count -ne 1) { throw 'Weakref Key handle counts missing' }
+          $weakKeyDelta=[long]$keyEnd[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
+          "PATCHED_64_KEY_DELTA=$weakKeyDelta" | Add-Content artifacts/longer_summary.txt
+          if ($weakKeyDelta -gt 2) { throw "64-cycle Key handles grew: $weakKeyDelta" }
+          # The baseline GIO_PROBE snapshot is BEFORE the very first Handle64
+          # subprocess; after_cleanup is during asynchronous registry rescan.
+          # Compare like-for-like Handle64 type census checkpoints instead.
+          # Keep the strict +/-4 total gate and independent per-type checks.
+          $h64=@{}
+          foreach ($mark in @('baseline','before_cleanup','settled_cleanup')) {
+            $rows=@($lines64 | Where-Object { $_ -match "^GIO_H64TOTAL,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing weakref 64-cycle H64 $mark" }
+            $cells=$rows[0].Split(',')
+            if ([long]$cells[3] -ne [long]$cells[4]) { throw "H64 sum mismatch: $mark" }
+            $h64[$mark]=[long]$cells[3]
+          }
+          $steady64=$h64['before_cleanup']-$h64['baseline']
+          $settled64=$h64['settled_cleanup']-$h64['baseline']
+          "PATCHED_64_TRANSIENT_NATIVE_AFTER_CLEANUP_DELTA=$delta64" | Add-Content artifacts/longer_summary.txt
+          "PATCHED_64_STEADY_H64_DELTA=$steady64" | Add-Content artifacts/longer_summary.txt
+          "PATCHED_64_SETTLED_H64_DELTA=$settled64" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($steady64) -gt 4 -or [math]::Abs($settled64) -gt 4) {
+            throw "Weakref 64-cycle H64 total growth: steady=$steady64 settled=$settled64"
+          }
+          foreach ($mark in @('before_cleanup','settled_cleanup')) {
+            $rows=@($lines64 | Where-Object { $_ -match "^GIO_KEY,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing weakref 64-cycle Key $mark" }
+            $keyDelta=[long]$rows[0].Split(',')[3]-[long]$keyBase[0].Split(',')[3]
+            if ($keyDelta -gt 2) { throw "Weakref 64-cycle Key growth at $mark : $keyDelta" }
+          }
+          Write-Host (Get-Content artifacts/longer_summary.txt)
+
+          $owned64=@(Get-Content artifacts/ownedpath_registry_64.log)
+          $uBefore=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,baseline,'})
+          $uAfter=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,after_cleanup,'})
+          $uRounds=@($owned64 | Where-Object {$_ -match '^GIO_PROBE,cycle,'})
+          if ($uBefore.Count -ne 1 -or $uAfter.Count -ne 1 -or $uRounds.Count -ne 64) {
+            throw 'UTF16 owner patch 64-cycle test incomplete'
+          }
+          $u0=$uBefore[0].Split(',')
+          $u1=$uAfter[0].Split(',')
+          $uHandle=[long]$u1[4]-[long]$u0[4]
+          $uPrivate=[long]$u1[5]-[long]$u0[5]
+          $uKeyB=@($owned64 | Where-Object {$_ -match '^GIO_KEY,baseline,'})
+          $uKeyA=@($owned64 | Where-Object {$_ -match '^GIO_KEY,after_cleanup,'})
+          if ($uKeyB.Count -ne 1 -or $uKeyA.Count -ne 1) { throw 'Combined fix Key census missing' }
+          $uKeyDelta=[long]$uKeyA[0].Split(',')[3]-[long]$uKeyB[0].Split(',')[3]
+          "COMBINED_64_KEY_DELTA=$uKeyDelta" | Add-Content artifacts/longer_summary.txt
+          if ($uKeyDelta -gt 2) { throw "Combined fix Key handles grew: $uKeyDelta" }
+          $comparison=@(
+            [pscustomobject]@{mode='weakref_only';delta_16=$pr.private_delta;delta_64=$mem64;handles_64=$delta64},
+            [pscustomobject]@{mode='weakref_plus_utf16';delta_16=$ur.private_delta;delta_64=$uPrivate;handles_64=$uHandle}
+          )
+          $comparison | Export-Csv -Path artifacts/utf16_memory_comparison.csv -NoTypeInformation
+          $comparison | Format-Table -AutoSize
+          # Use the same H64 baseline/steady/settled checkpoints for combined
+          # fix; do not alter the +/-4 gate or hide any type growth.
+          $h64Combined=@{}
+          foreach ($mark in @('baseline','before_cleanup','settled_cleanup')) {
+            $rows=@($owned64 | Where-Object { $_ -match "^GIO_H64TOTAL,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing combined 64-cycle H64 $mark" }
+            $cells=$rows[0].Split(',')
+            if ([long]$cells[3] -ne [long]$cells[4]) { throw "Combined H64 sum mismatch: $mark" }
+            $h64Combined[$mark]=[long]$cells[3]
+          }
+          $uSteady=$h64Combined['before_cleanup']-$h64Combined['baseline']
+          $uSettled=$h64Combined['settled_cleanup']-$h64Combined['baseline']
+          "COMBINED_64_TRANSIENT_NATIVE_AFTER_CLEANUP_DELTA=$uHandle" | Add-Content artifacts/longer_summary.txt
+          "COMBINED_64_STEADY_H64_DELTA=$uSteady" | Add-Content artifacts/longer_summary.txt
+          "COMBINED_64_SETTLED_H64_DELTA=$uSettled" | Add-Content artifacts/longer_summary.txt
+          if ([math]::Abs($uSteady) -gt 4 -or [math]::Abs($uSettled) -gt 4) {
+            throw "Combined 64-cycle H64 total growth: steady=$uSteady settled=$uSettled"
+          }
+          foreach ($mark in @('before_cleanup','settled_cleanup')) {
+            $rows=@($owned64 | Where-Object { $_ -match "^GIO_KEY,$mark," })
+            if ($rows.Count -ne 1) { throw "Missing combined 64-cycle Key $mark" }
+            $keyDelta=[long]$rows[0].Split(',')[3]-[long]$uKeyB[0].Split(',')[3]
+            if ($keyDelta -gt 2) { throw "Combined 64-cycle Key growth at $mark : $keyDelta" }
+          }
+          if ($uPrivate -ge $mem64) {
+            throw 'UTF16 fix did not reduce 64-cycle Private Bytes under this workload; investigate'
+          }
+
+          $objectSummaries = @()
+          foreach ($mode in @('baseline_registry','patched_registry','patched_registry_64','ownedpath_registry','ownedpath_registry_64')) {
+            $rows = @(Get-Content "artifacts/$mode.log" | Where-Object { $_ -match '^GIO_TYPE,' })
+            if ($rows.Count -lt 14) { throw "GObject instrumentation missing: $mode" }
+            $first = @{}
+            $last = @{}
+            foreach ($row in $rows) {
+              $cells = $row.Split(',')
+              if ($cells.Count -ne 5) { throw "Malformed GIO_TYPE entry in $mode" }
+              if ($cells[1] -eq 'baseline') { $first[$cells[3]] = [int]$cells[4] }
+              if ($cells[1] -eq 'after_cleanup') { $last[$cells[3]] = [int]$cells[4] }
+            }
+            $initialized=@($first.GetEnumerator() | Where-Object { $_.Value -gt 0 })
+            if ($initialized.Count -eq 0) { throw "GObject debug instance counting unavailable in $mode" }
+            foreach($name in $first.Keys) {
+              if (-not $last.ContainsKey($name)) { throw "Missing end count for $name in $mode" }
+              $objectSummaries += [pscustomobject]@{
+                mode = $mode; type = $name;
+                baseline = $first[$name]; after = $last[$name];
+                delta = $last[$name] - $first[$name]
+              }
+            }
+          }
+          $objectSummaries | Sort-Object mode,type | Export-Csv -Path artifacts/gobject_live_types.csv -NoTypeInformation
+          $objectSummaries | Sort-Object mode,type | Format-Table -AutoSize
+          $heapSummary = @()
+          foreach ($mode in @('patched_registry_64','ownedpath_registry_64')) {
+            $heapRows = @(Get-Content "artifacts/$mode.log" | Where-Object { $_ -match '^GIO_HEAP,' })
+            if ($heapRows.Count -lt 6) { throw "No sparse heap inventory: $mode" }
+            $firstRow = $null
+            $lastRow = $null
+            foreach ($line in $heapRows) {
+              $parts=$line.Split(',')
+              if ($parts.Count -ne 7) { throw "Malformed heap summary record: $mode" }
+              if ([int]$parts[6] -ne 0) { throw "HeapWalk failed during $mode (error heap count $($parts[6]))" }
+              if ($parts[1] -eq 'baseline') { $firstRow=$parts }
+              if ($parts[1] -eq 'after_cleanup') { $lastRow=$parts }
+            }
+            if ($null -eq $firstRow -or $null -eq $lastRow) { throw "Heap bounds absent: $mode" }
+            $heapSummary += [pscustomobject]@{
+              mode=$mode
+              busy_blocks_before=[long]$firstRow[3]
+              busy_blocks_after=[long]$lastRow[3]
+              busy_bytes_before=[long]$firstRow[4]
+              busy_bytes_after=[long]$lastRow[4]
+              busy_bytes_delta=[long]$lastRow[4]-[long]$firstRow[4]
+              heap_count_before=[int]$firstRow[5]
+              heap_count_after=[int]$lastRow[5]
+            }
+          }
+          $heapSummary | Export-Csv -Path artifacts/heap_busy_comparison.csv -NoTypeInformation
+          $heapSummary | Format-Table -AutoSize
+          Write-Host 'GIO_HEAP = live PROCESS_HEAP_ENTRY_BUSY bytes, not the same quantity as PrivateUsage.'
+          'WEAK_BACKREF_EXPERIMENT=GATES_PASSED; NOT_PRODUCTION_RELEASE' | Set-Content artifacts/status.txt
+          Get-Content artifacts/status.txt
+
+      - name: Cross-check full Handle64 type totals and detect masked growth
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_handle_types.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Type analyzer selftest failed' }
+          if (-not (Test-Path artifacts/patched_registry_64.log) -or
+              -not (Test-Path artifacts/ownedpath_registry_64.log)) {
+            Write-Warning '64-cycle logs missing; no type-level claim possible'
+            exit 0
+          }
+          py tests/analyze_gio_handle_types.py --output artifacts/handle_type_deltas.csv artifacts/patched_registry_64.log artifacts/ownedpath_registry_64.log
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unexplained type-specific handle growth or inconsistent Handle64 totals; see handle_type_deltas.csv"
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-glib-2824-weak-backref-ab
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn

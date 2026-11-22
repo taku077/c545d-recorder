@@ -1,0 +1,90 @@
+name: C545D GIO residual-memory stage-isolation diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'tests/patch_glib_appinfo_stage_isolation.py'
+      - 'tests/analyze_gio_stage_isolation.py'
+      - '.github/workflows/c545d-gio-stage-isolation-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c545d-stage-isolation
+  cancel-in-progress: true
+
+jobs:
+  ablate-appinfo-stages:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-python
+
+      - name: Build GLib 2.82.4 combined fix plus stage toggles in throwaway runner
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git glib-src
+          git -C glib-src rev-parse HEAD > glib_sha.txt
+          python tests/patch_glib_appinfo_weak_backrefs.py glib-src/gio/gwin32appinfo.c
+          python tests/patch_glib_registry_owned_path.py glib-src/gio/gwin32registrykey.c
+          python tests/patch_glib_appinfo_stage_isolation.py glib-src/gio/gwin32appinfo.c
+          git -C glib-src diff --check
+          meson setup glib-build glib-src -Dglib_debug=enabled -Dtests=false -Dintrospection=disabled -Ddocumentation=false -Dman-pages=disabled -Ddefault_library=shared
+          meson compile -C glib-build
+          meson devenv -C glib-build sh -c 'gcc -O2 -Wall -Wextra -o gio_appinfo_probe.exe ../tests/gio_appinfo_key_handle_probe.c $(pkg-config --cflags --libs gio-2.0) -lpsapi -ladvapi32'
+          mkdir -p artifacts
+          cp glib_sha.txt artifacts/glib_sha.txt
+          echo 'DIAGNOSTIC_STAGE_SKIP_BUILD_ONLY; NOT_RELEASABLE' > artifacts/diagnostic_only.txt
+
+      - name: Single-batch A/B 64-cycle synthetic registry scans per isolated stage
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export GOBJECT_DEBUG=instance-count
+          unset C545D_HANDLE_EXE || true
+          for stage in default skip_uwp skip_uwp_enum skip_uwp_handlers; do
+            unset C545D_DIAG_SKIP_UWP C545D_DIAG_SKIP_UWP_ENUM C545D_DIAG_SKIP_UWP_HANDLERS C545D_DIAG_SKIP_ASSOCIATIONS C545D_DIAG_SKIP_EXE_CLASSES || true
+            case "$stage" in
+              skip_uwp) export C545D_DIAG_SKIP_UWP=1 ;;
+              skip_uwp_enum) export C545D_DIAG_SKIP_UWP_ENUM=1 ;;
+              skip_uwp_handlers) export C545D_DIAG_SKIP_UWP_HANDLERS=1 ;;
+            esac
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --no-registry-change --heap-summary --vm-summary --report-types > "artifacts/$stage"_nochange_64.log
+            grep -q 'GIO_PROBE_DONE,cycles=64' "artifacts/$stage"_nochange_64.log
+            meson devenv -C glib-build "$PWD/glib-build/gio_appinfo_probe.exe" --cycles=64 --heap-summary --vm-summary --report-types > "artifacts/$stage"_registry_64.log
+            grep -q 'GIO_PROBE_DONE,cycles=64' "artifacts/$stage"_registry_64.log
+          done
+
+      - name: Compare control-subtracted growing blocks and memory by stage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_gio_stage_isolation.py --dir artifacts --output artifacts/stage_isolation.csv
+          if ($LASTEXITCODE -ne 0) { throw 'Stage isolation comparison failed/incomplete' }
+          Get-Content artifacts/stage_isolation.csv
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c545d-gio-residual-stage-isolation
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
