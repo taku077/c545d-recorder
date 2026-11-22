@@ -89,7 +89,12 @@ try {
   if($numericOnly -notmatch '^classification=module_frame_occurrences,'){
     throw 'Expected sanitized report shape missing'
   }
-  Write-Host "C545D_GIO_ETW16_MODULE_COUNTS,arm=$Arm,$numericOnly"
+  $safeOutput="C545D_GIO_ETW16_MODULE_COUNTS,arm=$Arm,$numericOnly"
+  if($safeOutput -notmatch '^C545D_GIO_ETW16_MODULE_COUNTS,arm=(nochange|registry),[A-Za-z0-9_,=]+$'){
+    throw 'Unsafe summary output shape rejected'
+  }
+  Set-Content -Path (Join-Path $Root ("etw-"+$Arm+"-safe.txt")) -Encoding ascii -Value $safeOutput
+  Write-Host $safeOutput
   Write-Host "C545D_GIO_ETW16_ARM_PASS,arm=$Arm,cycles=16,raw_etl_uploaded=0,matched_control_not_in_this_arm=1,prebaseline_trace_proven=0,source_owner_proven=0"
   $success=$true
 } finally {
