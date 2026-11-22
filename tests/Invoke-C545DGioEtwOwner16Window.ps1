@@ -177,6 +177,12 @@ try {
         $imageMatch[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-image-summary-only.txt")) -Encoding ascii
         Write-Host $imageMatch[0]
       } else {
+        $imageDiag=@(& py tests/analyze_c545d_gio_etw_image_aggregate_ci.py --report $imagePrivate --arm $Arm --diagnose 2> $rawLocal)
+        $imageAllowed=@($imageDiag | Where-Object {$_ -match ('^C545D_GIO_ETW_IMAGE_PARSE_DIAGNOSTIC,arm='+$Arm+',[A-Za-z0-9_,=]+$')})
+        if($LASTEXITCODE -eq 0 -and $imageAllowed.Count -eq 1){
+          $imageAllowed[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-image-gap-summary-only.txt")) -Encoding ascii
+          Write-Host $imageAllowed[0]
+        }
         Write-Host "C545D_GIO_ETW_IMAGE_GAP,arm=$Arm,reason=IMAGE_REPORT_SCHEMA_UNVERIFIED,raw_uploaded=0"
       }
     } else {

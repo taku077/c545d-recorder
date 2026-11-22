@@ -213,12 +213,48 @@ jobs:
           (@($etw)+@($watch)+@($phases)) | Set-Content "$root/numeric/gio-etw-source-cohorts-only.txt" -Encoding ascii
           (@($etw)+@($watch)+@($phases)) | ForEach-Object {Write-Host $_}
           Write-Host 'C545D_GIO_ETW_OWNER_PAIR_CI_PASS,arms=2,total_cycles=16,etw_traced_cycles=4,prelatewindow=1,precleanup=1,seq=1,no_lost_events=1,source_cohorts_aggregated=1,full_global_idle_unproven=1,real_leak_unproven=1,raw_uploaded=0,host_untouched=1'
+      # Even if strict ETW source attribution fails, reuse the SAME
+      # disposable processes' already captured numeric snapshots and worker
+      # chronology. This runs no new GIO workload and uploads no raw logs.
+      - name: Preserve same-run PrivateUsage, heap REGION and worker timing numeric evidence
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $root=Join-Path (Get-Location).Path 'artifacts'
+          if(-not(Test-Path (Join-Path $root 'combo-registry-16.txt')) -or
+             -not(Test-Path (Join-Path $root 'combo-nochange-16.txt'))){
+            Write-Host 'C545D_GIO_ETW_POSTMORTEM_GAP,reason=INCOMPLETE_ARM_LOGS,host_untouched=1'
+          } else {
+            $out=Join-Path $root 'numeric/same-run-resource-only.txt'
+            New-Item -ItemType Directory -Force -Path (Split-Path $out) | Out-Null
+            $privateError=Join-Path $env:RUNNER_TEMP 'c545d_postmortem_private_error.txt'
+            foreach($name in @('analyze_c545d_combo16_scanfree.py',
+                               'analyze_c545d_combo16_heapregion.py',
+                               'analyze_c545d_appinfo_phase_trace.py',
+                               'analyze_c545d_gio_watch_lifetime_ci.py')){
+              $rows=@(& py "tests/$name" --folder $root 2> $privateError)
+              $rc=$LASTEXITCODE
+              $safe=@($rows | Where-Object {
+                $_ -match '^(C545D_COMBO16_SCANFREE_RESOURCE|C545D_HEAP_REGION_CONTROLLED|C545D_APPINFO_PHASE_TRACE|C545D_GIO_WATCH_RUNTIME_PASS),[A-Za-z0-9_,=.-]+$'
+              })
+              if($rc -eq 0 -and $safe.Count -gt 0){
+                $safe | Add-Content -Path $out -Encoding ascii
+                $safe | ForEach-Object {Write-Host $_}
+                Write-Host "C545D_GIO_ETW_POSTMORTEM_ANALYZER_PASS,analyzer=$($name.Replace('.py','')),sanitized_rows=$($safe.Count),same_run=1,raw_uploaded=0"
+              } else {
+                Write-Host "C545D_GIO_ETW_POSTMORTEM_GAP,analyzer=$($name.Replace('.py','')),reason=SOURCE_SCHEMA_INCOMPLETE_OR_NO_SAFE_ROWS,raw_uploaded=0"
+              }
+            }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: c545d-gio-etw-source-cohort-numeric-only
           path: |
             artifacts/numeric/etw-*-summary-only.txt
+            artifacts/numeric/same-run-resource-only.txt
             artifacts/numeric/gio-etw-source-cohorts-only.txt
           if-no-files-found: warn
           retention-days: 60

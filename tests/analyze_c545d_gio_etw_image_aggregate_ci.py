@@ -104,6 +104,38 @@ def summarize(source: str, arm: str) -> str:
     return ",".join(fields)
 
 
+
+ERROR_CODES = {
+    "unapproved_control_arm", "empty_or_oversized_image_report",
+    "missing_global_or_top_header", "ambiguous_heap_global",
+    "no_heap_allocations", "image_metric_rows_absent_or_oversized",
+    "image_group_rows_exceed_global", "invalid_heap_counts",
+    "invalid_heap_sizes", "invalid_heap_kb",
+    "heap_stack_metric_missing_or_duplicated"
+}
+
+
+def diagnose(source: str, arm: str) -> str:
+    reason = "NONE"
+    try:
+        summarize(source, arm)
+    except ValueError as exc:
+        key = str(exc).split(",", 1)[0]
+        reason = key if key in ERROR_CODES else "OTHER_REJECTED"
+    blocks = [s for s in DASH.split(source) if s.strip()] if isinstance(source, str) else []
+    return (
+        "C545D_GIO_ETW_IMAGE_PARSE_DIAGNOSTIC,"
+        f"arm={arm},reason={reason},"
+        f"global_headers={len(GLOBAL.findall(source))},"
+        f"top_headers={len(TOP.findall(source))},"
+        f"dash_parts={len(blocks)},"
+        f"alloc_lines={len(METRICS['alloc'].findall(source))},"
+        f"out_lines={len(METRICS['out'].findall(source))},"
+        f"realloc_lines={len(METRICS['realloc'].findall(source))},"
+        "source_owner_unproven=1,raw_uploaded=0"
+    )
+
+
 def selftest() -> None:
     sample = (
         "GLOBAL ALLOCATIONS:\nAlloc : 20, 3.5 KB\n"
@@ -126,6 +158,9 @@ def selftest() -> None:
     result = summarize(clipped, "registry")
     assert "image_group_coverage_complete=0" in result
     assert "unattributed_out=1" in result
+    assert "reason=missing_global_or_top_header" in diagnose(
+        sample.replace("TOP 1024:", "NO_TOP:"), "registry")
+    assert "reason=NONE" in diagnose(sample, "registry")
     corrupted = [
         sample.replace("GLOBAL ALLOCATIONS:", "NO GLOBAL:"),
         sample.replace("TOP 1024:", "TOP ?:"),
@@ -148,6 +183,7 @@ def selftest() -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--selftest", action="store_true")
+    p.add_argument("--diagnose", action="store_true")
     p.add_argument("--report", type=Path)
     p.add_argument("--arm", choices=("registry", "nochange"))
     a = p.parse_args()
@@ -156,7 +192,8 @@ def main() -> None:
     else:
         if a.report is None or a.arm is None:
             p.error("--report and --arm required")
-        print(summarize(a.report.read_text(encoding="utf-8-sig", errors="replace"), a.arm))
+        source=a.report.read_text(encoding="utf-8-sig", errors="replace")
+        print(diagnose(source, a.arm) if a.diagnose else summarize(source, a.arm))
 
 
 if __name__ == "__main__":
