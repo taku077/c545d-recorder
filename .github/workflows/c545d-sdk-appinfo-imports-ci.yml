@@ -1,0 +1,65 @@
+name: C545D pinned GStreamer SDK GAppInfo dup static PE import-only audit
+# One short Windows CI for the official SDK file inventory. Never starts
+# GStreamer, recorder, GIO, RTSP, WinRT, AppInfo or writes to user registry.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_sdk_appinfo_imports.py'
+      - '.github/workflows/c545d-sdk-appinfo-imports-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  windows2022-pinned-sdk-static:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate direct vs dynamic call caveats without loading any module
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/audit_c545d_sdk_appinfo_imports.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'PE import scanner selftest failed'}
+          py -m pip install --disable-pip-version-check pefile==2024.8.26
+          if($LASTEXITCODE -ne 0){throw 'Pinned PE parser package installation failed'}
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Confirm pinned GStreamer SDK provenance and count only PE imports
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'c545d_sdk_imports'
+          $installer=Join-Path $env:RUNNER_TEMP 'gstreamer-sdk-private.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'GStreamer SDK installer truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'GStreamer SDK isolated runner install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          $manifest=Get-Content reference/manifest.txt -Raw
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){
+            throw 'SDK baseline hash did not match previously validated reference'
+          }
+          $rows=@(& py tests/audit_c545d_sdk_appinfo_imports.py --sdk $sdk)
+          if($LASTEXITCODE -ne 0 -or $rows.Count -ne 6){
+            throw 'Static GStreamer import census incomplete'
+          }
+          if($rows[0] -cnotmatch '^C545D_SDK_APPINFO_IMPORT_SCOPE,pe_images=[0-9]+,bad_images=[0-9]+,direct_import_g_app_info_dup=[0-9]+,direct_import_g_app_info_get_all=[0-9]+,scope=IAT_and_delay_IAT_only,dynamic_calls_unobserved=1,private_alloc_owner_unknown=1,recorder_host_unmodified=1$'){
+            throw 'Unexpected or unsafe SDK import scope result'
+          }
+          $expected=@('gst_launch','gst_plugin','gst_binlib','gio_dll','sdk_other')
+          for($i=1; $i -lt 6; $i++){
+            $group=$expected[$i-1]
+            if($rows[$i] -cnotmatch "^C545D_SDK_APPINFO_IMPORT_GROUP,group=$group,images=[0-9]+,imports_dup=[0-9]+,imports_get_all=[0-9]+,all_dynamic_calls_unknown=1$"){
+              throw 'SDK import group unexpected or missing'
+            }
+          }
+          foreach($row in $rows){Write-Host $row}
+          Write-Host 'C545D_SDK_APPINFO_IMPORT_CI_PASS,source=verified_GStreamer_1_28_8,only_PE_imports=1,dynamic_api_dispatch_not_covered=1,private_inputs=0,Windows10_recorder_untested=1'
