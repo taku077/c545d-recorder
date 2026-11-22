@@ -108,7 +108,7 @@ def selftest() -> None:
     assert "worker_after_notify" in patched_app
     assert "precleanup_ready_before" in patched_probe
     assert "trace_stopped_ack" in patched_probe
-    assert patched_app.count("C545D_CI_APPINFO_QPC") == 1
+    assert patched_app.count("C545D_CI_APPINFO_QPC") == 2  # regular phase + post-notify
     assert patched_probe.count("C545D_CI_ETW_FENCE_QPC") == 2
     negatives = 0
     cases = [
