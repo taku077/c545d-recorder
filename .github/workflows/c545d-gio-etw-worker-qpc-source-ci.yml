@@ -1,0 +1,26 @@
+name: C545D GIO ETW stop-worker QPC source-contract preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_c545d_gio_etw_stop_qpc_ci.py'
+      - 'tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py'
+      - '.github/workflows/c545d-gio-etw-worker-qpc-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject changed source/fence anchors and misleading worker classification
+        run: |
+          python3 tests/patch_c545d_gio_etw_stop_qpc_ci.py --selftest
+          python3 tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py --selftest
+          python3 tests/patch_glib_appinfo_phase_trace_ci.py --selftest
+          python3 tests/analyze_c545d_appinfo_phase_trace.py --selftest
+      - name: Confirm no host operation
+        run: |
+          echo 'C545D_GIO_ETW_QPC_SOURCE_ONLY_PASS,windows_runs=0,original_ETW_reuse=1,global_idle_proven=0,real_device_untested=1'
