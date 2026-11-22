@@ -1,8 +1,55 @@
+### UPDATE 2026-11-19 JST — real Win32 heap allocation remained; exact additional source bug found
+
+- CI run #44340368530 (experimental GWeakRef patch): **+0 Key handles** after 16 iterations, Private Usage **+10,399,744 bytes**, Windows `HeapSummary` **cbAllocated +8,094,437 bytes**, **cbCommitted +10,383,360 bytes** across all 4 heaps, status MEASURED (zero failed heaps). Residual is not explained solely by committed-but-unused heap space. UWP-skip variant: cbAllocated +8,018,322 bytes; UWP not main contributor.
+- Audited upstream GLib `gio/gwin32appinfo.c` `read_capable_app()`: `friendly_name` returned by `g_win32_registry_key_get_value_w(...,L"LocalizedString",...)` has a g_wcsdup/g_utf16_to_utf8 copy into the app but **no normal-path g_free of original friendly_name**; only cleared if value type invalid. It is a real caller-owned allocation leak in both 2.82.4 and 2.88.3. This defect may explain only a fraction of overall residual.
+- New isolated source patch `native/gio_patch/apply_gio_friendly_free.py` adds final `g_clear_pointer(&friendly_name,g_free)` while preserving GWeakRef change. Windows CI now compares original, weakref-only and combined patch using 16 cycles; combined must also pass API lifetime smoke and UWP comparison. Do not install on PC, merge, or claim overall memory stability until CI.
+- Current approach avoids serial hours-long user measurements; status remains draft PR #55.
+
+### UPDATE — A/B proof: registry Key leak eliminated in candidate, Private Memory not yet stable
+
+- A/B Windows run **44336149870**: unmodified GLib 2.82.4: total handles **694→5846 (+5152)**, Private **5,505,024→28,995,584 (+23,490,560 bytes)** after 16 synthetic HKCU change cycles. Experimental GWeakRef patch **builds successfully** and same test: handles **693→693 (+0)**, Private **5,566,464→16,220,160 (+10,653,696 bytes)**.
+- **HANDLE_GATE PASS**, **PRIVATE_GATE FAIL**, overall CI intentionally fails (not ready to release). Quantitative proof only in synthetic Windows runner. See `gio-2824-cycle-ab-aggregated` artifact from run 44336149870.
+- The key-handle and GObject ref-cycle hypothesis is strongly corroborated: zero cumulative handles in patched A/B; Private Bytes growth remains and may have a distinct mechanism.
+- Added per-cycle `GIO_TYPES` counts for GWin32AppInfoApplication/Handler/ShellVerb/FileExtension/URLSchema and set `GOBJECT_DEBUG=instance-count` in *both* baseline/candidate CI runs (new run **44337631872**). This is source-level automated diagnostic and user need not do anything.
+- Next: inspect object-count deltas; if stable while Private grows, differentiate native OS/COM heap reuse vs persistent non-GObject allocations; if object counts rise, isolate residual retaining edge. Keep current recorder untouched and do not request host 4-hour test.
+
+## CURRENT 2026-11-19 JST — GIO 2.82.4 experimental weak-backref fix, PR #55
+
+- User constraint: source audit, independent automated Windows build/tests and reuse existing measurements first; user-side manual tests only if unavoidable; avoid serial 4-hour tests.
+- Source-level finding: GLib AppInfo `Application->verbs->ShellVerb->app` and `Application->Handler->ShellVerb->app` create owning cycles; Handler can retain Windows registry Key.
+- Existing fixed-version A/B trigger (GIO 2.82.4.0, run #44332409627): **16 no-registry-change rounds: 698→698 handles / unchanged Private Bytes**; 16 synthetic HKCU changes: **696→5848 handles** (+5152), Private Bytes 5,484,544→28,377,088, ~322 extra handles per registry-change round. CI test uses only a disposable Windows runner.
+- New `fix/gio-2824-weak-refs-experiment` branch and draft PR **#55**: https://github.com/taku077/c545d-recorder/pull/55. Source transformation `native/gio_patch/apply_gio_weakref_patch.py` changes the ShellVerb back-reference to thread-safe GWeakRef and replaces readers with acquired/released strong temporary refs. Windows MSYS2 workflow `.github/workflows/c545d-gio-cycle-ab.yml` builds GLib **2.82.4 from source**, runs baseline and patched 16-cycle synthetic A/B, and gates handles and Private bytes with `native/gio_patch/evaluate_ab.py`.
+- This is **not deployed**, not an official upstream fix, and not accepted until source build/A-B/g_app_info regression checks succeed. Do not patch in-process DLL or adjust RTSP/record settings.
+- Current CI run for PR55 **44336149870**: https://github.com/taku077/c545d-recorder/actions/runs/44336149870 . Check status and job logs before making claims.
+- If build fails, fix test harness first; if baseline does not reproduce, report inconclusive, not success; if candidate fails metrics, fix lifetime design before any user-side request. Verify GAppInfo get_all_for_type and get_default_for_type while retaining returned objects across cache rebuilds.
+- Avoid generating repeated user measurements; do not merge until an isolated safe DLL strategy and regression passing.
+
 # HANDOFF_CURRENT — C545D recorder
 
 **⚠️ 重要：この `main` の引継ぎは現行開発の最新ではありません。** 現在の開発結果は [ACTIVE_HANDOFF.md](ACTIVE_HANDOFF.md) と [PR #54](https://github.com/taku077/c545d-recorder/pull/54) にあります。古い「ETL解析待ち」に戻ってはいけません。64回テストでPrivateUsage増加96.29%削減、16回ハンドル増加+5,152→0をWindows CIで確認済み。実機録画PCへの適用は未実施です。
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
+
+### UPDATE: Two successful camera-free CI runs (2026-11-19 JST)
+
+- Run #44331665421: 16 synthetic-registry-change cycles on exact GIO **2.82.4.0**, process total handles **700→5853**, Private Bytes **5,533,696→28,913,664**; Handle64 reports overwhelmingly Key increase.
+- Run #44332409627: decisive **16-cycle control with NO registry changes**: total handles **698→698**, Private Bytes **5,918,720→5,918,720**. With one disposable HKCU RegisteredApplications value modified per cycle: total handles **696→5848** (+5,152 after cleanup), Private Bytes **5,484,544→28,377,088**. Growth ~322 handles per cycle; Handle64 post-init Key **434→5585** (+5,151). GAppInfoMonitor changed callback=0, so do not claim this callback necessarily caused growth; test comparison demonstrates a registry-change-dependent resource leak.
+- Host observed +428 per event = 214×2; CI +322 ≈161×2. Per-registration two handles per rebuild is plausible, **not a proven object cardinality** for CI.
+- Results are sanitized and recorded in `docs/GIO_2824_KEY_HANDLE_INVESTIGATION.md`. CI source `tests/gio_appinfo_key_handle_probe.c`, workflow `.github/workflows/c545d-gio-key-probe.yml`, PR #54. Still no native GIO patched DLL, no real PC modification.
+- **Next engineer-side**: implement narrowed GLib reference-lifetime patch in CI isolated build, prove live Key plateau in this reproducible short synthetic test, and preserve GAppInfo functional semantics. No additional user WPR / 4h measurement for now.
+
+## CURRENT 2026-11-19 JST — GIO 2.82.4 source-level leak candidate and zero-user-effort CI gate
+
+- User's instruction: Do all source inspection, existing-data analysis, CI and automated checks **before** any fresh user-side work. Manual checks only when technically necessary; do not request serial 4-hour experiments. If a host-only test eventually remains necessary, aggregate all required metrics into **one** automated capture and analyze before proposing any further run.
+- Investigation draft PR #54: https://github.com/taku077/c545d-recorder/pull/54 on branch `investigate/gio-2824-key-handle-lifecycle`; no production recorder edits or release.
+- Investigation note: `docs/GIO_2824_KEY_HANDLE_INVESTIGATION.md`. 4-hour measured +3424 Key, 214 registry names duplicated 79 times, WPA creating stack rooted in GLib/GIO. Key creation **events** are not outstanding handles.
+- New source-level finding (tag GLib 2.82.4): `Application->verbs` owns `ShellVerb` and `ShellVerb->app` owns `Application` (strong reference cycle); some fake-app paths additionally create `Application->Handler->ShellVerb->Application` cycle; Handler holds GWin32RegistryKey. This is a promising leak mechanism but **not** confirmed as the exact source of the host's periodic +428 live Key handles.
+- Added camera-free 16-cycle Windows CI prototype: `tests/gio_appinfo_key_handle_probe.c` with `.github/workflows/c545d-gio-key-probe.yml`. It uses a disposable runner HKCU value, queries GAppInfo, and measures total process handles/Private Bytes and Key counts using Microsoft's Handle. Tests and ownership change must not use camera credentials or modify the actual user recorder.
+- Source-level inspection of GLib 2.82.4 vs 2.88.3 shows the key AppInfo reference edges persist, so blind version upgrade is not a demonstrated solution.
+- **Next**: Inspect CI outcome, correct any build/test harness errors, determine whether real rescan was triggered (`GAppInfoMonitor::changed` events). If reproducible, implement **narrow** ownership/lifetime fix with regression tests in isolation. If not reproducible, document status and only then consider a single minimal on-host automated discriminator; no repeat 4-hour monitor.
+- Preserve CPU-stable recorder baseline, no forced handle closing, no GIO DLL swapping into an active process, no privileged tool instructions to user.
+
+
 
 ## CURRENT 2026-11-18 JST — ETL自動オフライン解析ツール完成、実機レポート待ち
 
