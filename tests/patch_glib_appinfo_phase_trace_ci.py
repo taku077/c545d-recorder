@@ -70,13 +70,25 @@ def patch(source: str) -> str:
         "      c545d_ci_appinfo_trace (\"worker_scan_end\", ordinal);\n"
         "    }",
         "worker scan begin/end")
+    # The established Combo overlay replaces the original direct callback
+    # with an env-gated selector. Both forms are pinned and fail closed.
+    original_call = (
+        "  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))"
+    )
+    combo_call = (
+        "  if (!g_win32_package_parser_enum_packages (\n"
+        '       g_getenv ("C545D_DIAG_UWP_NOOP_CALLBACK") != NULL ?\n'
+        "       c545d_diag_noop_uwp_callback : uwp_package_cb,\n"
+        "       NULL, &error))"
+    )
+    found = [call for call in (original_call, combo_call) if source.count(call) == 1]
+    if len(found) != 1:
+        raise ValueError("package parser begin: neither or ambiguous pinned call-site")
     source = replace_once(
-        source,
-        "  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))",
+        source, found[0],
         "  c545d_ci_appinfo_trace (\"parser_begin\",\n"
         "                          g_atomic_int_get (&c545d_ci_trace_active_worker));\n"
-        "  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))",
-        "package parser begin")
+        + found[0], "package parser begin")
     source = replace_once(
         source,
         "  read_uwp_handler_info ();\n\n  uwp_end = GetTickCount ();",
@@ -109,6 +121,16 @@ def selftest() -> None:
         "  /* Notify from the completed AppInfo worker,"
     )
     result = patch(raw)
+    combo_call = (
+        "  if (!g_win32_package_parser_enum_packages (\\n"
+        '       g_getenv ("C545D_DIAG_UWP_NOOP_CALLBACK") != NULL ?\\n'
+        "       c545d_diag_noop_uwp_callback : uwp_package_cb,\\n"
+        "       NULL, &error))"
+    )
+    raw_call = "  if (!g_win32_package_parser_enum_packages (uwp_package_cb, NULL, &error))"
+    combo_raw = raw.replace(raw_call, combo_call, 1)
+    combo_result = patch(combo_raw)
+    assert combo_result.count('c545d_ci_appinfo_trace ("parser_begin"') == 1
     for marker in ("registry_callback", "worker_begin", "worker_scan_end",
                    "parser_begin", "parser_end", "worker_unlocked"):
         assert marker in result
