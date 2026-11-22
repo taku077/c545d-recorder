@@ -117,6 +117,9 @@ def inspect(original_root: Path, live360_source: Path) -> list[str]:
             if selected_nominal_busy_effect != 2068:
                 raise ValueError("selected_size_data_bytes_changed")
             total_busy_effect = saved.difference(data, "heap", LEFT, RIGHT)
+            if (total_busy_effect != 28600 or
+                    total_busy_effect - selected_nominal_busy_effect != 26532):
+                raise ValueError("archived_full_busy_effect_or_unselected_share_changed")
             out.append(
                 "C545D_LATE256_BUSY_SCOPE,"
                 f"source_run={OLD_RUN},window=192_256,"
