@@ -153,7 +153,7 @@ def selftest() -> None:
             verify_calibration(report, owner_only=index in (10, 11))
         except ValueError:
             continue
-        raise AssertionError("corrupted_or_not_owner_filtered_report_accepted")
+        raise AssertionError(f"corrupted_or_not_owner_filtered_report_accepted,fixture_index={index}")
     print(
         "C545D_XPERF_TOTALS_SELFTEST_PASS,positive=2,negative=12,"
         "independent_process_extra_allocations=20,"
