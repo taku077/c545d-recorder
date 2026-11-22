@@ -2,7 +2,7 @@
 """Read-only high-water/churn audit of original saved Windows2022 C545D experiments.
 
 Original 4-arm 256-cycle source run 44918598339; three DIFFERENT earlier
-cache-mode 256-cycle experiments 44533452892/44537371920/44545844200.
+cache-mode 256-cycle experiments 44533452892/44537371920/44545844200.\nCRITICAL: legacy older-cache private_last64 is VirtualQuery MEM_PRIVATE\ncommitted region bytes, NOT GetProcessMemoryInfo PrivateUsage.
 Never reinterpret different binaries/configurations as a shared timeseries,
 or a difference between TWO processes as a physical process memory trace.
 
@@ -132,7 +132,7 @@ def audit_older(root: Path) -> list[str]:
     for item in checked["rows"]:
         out.append(
             f"C545D_256_HIGHWATER_OLDER_CACHE,run={item['run_id']},"
-            f"private_last64={item['private_last64']},"
+            f"virtualquery_mem_private_last64={item['private_last64']},"
             f"heap_busy_last64={item['heap_busy_last64']},"
             f"exact360_blocks_last64={item['last64_360_blocks']},"
             "different_experiment_from_combo=1,"
@@ -140,7 +140,7 @@ def audit_older(root: Path) -> list[str]:
         )
     out.append(
         "C545D_256_HIGHWATER_OLDER_SUMMARY,old_runs=3,"
-        "private_last64_values=57344;8192;0,"
+        "virtualquery_mem_private_last64_values=57344;8192;0,"
         "different_patch_experiments=1,not_single_convergence_curve=1,"
         "plateau_not_proven=1"
     )
