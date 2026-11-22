@@ -1,0 +1,32 @@
+name: C545D GIO ETW pre-workload and precleanup timing fence preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_gio_probe_etw_phase_fence_ci.py'
+      - '.github/workflows/c545d-gio-etw-phase-fence-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe-phase-window-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply all existing disposable probe overlays before timing fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          cp tests/gio_appinfo_key_handle_probe.c "$tmp/disposable.c"
+          python3 tests/patch_gio_probe_scanfree_ci.py "$tmp/disposable.c"
+          python3 tests/patch_gio_probe_phase_census_ci.py "$tmp/disposable.c"
+          python3 tests/patch_gio_probe_heapregion_ci.py "$tmp/disposable.c"
+          python3 tests/patch_gio_probe_per_heap_owner_ci.py "$tmp/disposable.c"
+          python3 tests/patch_gio_probe_etw_phase_fence_ci.py "$tmp/disposable.c" --selftest
+          python3 tests/patch_gio_probe_etw_phase_fence_ci.py "$tmp/disposable.c"
+          grep -Fq 'baseline_ready.signal' "$tmp/disposable.c"
+          grep -Fq 'precleanup_ready.signal' "$tmp/disposable.c"
+          echo 'C545D_GIO_ETW_FENCE_PREFLIGHT_CI_PASS,existing_probe_overlays=4,preworkload_capture=1,pre_cleanup_stop=1,whole_process_quiescence_proven=0,Windows_runs=0,host_untouched=1'
