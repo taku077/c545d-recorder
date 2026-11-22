@@ -1,0 +1,23 @@
+name: C545D GIO ETW image aggregate fallback parser source preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_etw_image_aggregate_ci.py'
+      - '.github/workflows/c545d-gio-etw-image-fallback-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-privacy-and-coverage-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check image aggregate attribution scope and incomplete-report detection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --selftest
+          python3 tests/analyze_c545d_gio_etw_image_aggregate_ci.py --selftest
+          echo 'C545D_GIO_ETW_IMAGE_FALLBACK_PREFLIGHT_PASS,source_owner_not_assumed=1,partial_coverage_explicit=1,Windows_runs=0,host_untouched=1'
