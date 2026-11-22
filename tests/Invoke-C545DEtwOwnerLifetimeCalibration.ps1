@@ -1,4 +1,4 @@
-# CI-only calibration: official Xperf launch-before-allocation heap capture.
+# CI-only calibration: Xperf PID-only capture BEFORE controlled allocation workload.
 # No GIO, no camera, no recorder host, no raw ETL/stack upload.
 param([switch]$SelfTest)
 Set-StrictMode -Version Latest
@@ -6,23 +6,23 @@ $ErrorActionPreference='Stop'
 
 function Check-Plan([string[]]$argv) {
   $line=$argv -join ' '
-  if($line -notmatch '(?i)-PidNewProcess\s+' -or
+  if($line -notmatch '(?i)-Pids?\s+[0-9]+' -or
      $line -notmatch '(?i)-FileMode\s+Sequential' -or
      $line -notmatch 'HeapAlloc\+HeapRealloc' -or
-     $line -match '(?i)\bCircular\b|\b-?pids?\b|gflags|TracingFlags|(?i)\bust\b') {
+     $line -match '(?i)\bCircular\b|PidNewProcess|gflags|TracingFlags|\bust\b') {
     throw 'Incomplete or unsafe prelaunch ETW plan'
   }
 }
 if($SelfTest){
-  $base=@('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe',
+  $base=@('-start','HeapSession','-heap','-Pids','1234',
           '-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc')
   Check-Plan $base
   $bad=@(
-    @('-start','HeapSession','-heap','-Pids','20','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc'),
-    @('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe','-FileMode','Circular','-stackwalk','HeapAlloc+HeapRealloc'),
-    @('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe','-stackwalk','HeapAlloc+HeapRealloc'),
-    @('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe','-FileMode','Sequential'),
-    @('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc','gflags')
+    @('-start','HeapSession','-heap','-PidNewProcess','ci_only.exe','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc'),
+    @('-start','HeapSession','-heap','-Pids','1234','-FileMode','Circular','-stackwalk','HeapAlloc+HeapRealloc'),
+    @('-start','HeapSession','-heap','-Pids','1234','-stackwalk','HeapAlloc+HeapRealloc'),
+    @('-start','HeapSession','-heap','-Pids','1234','-FileMode','Sequential'),
+    @('-start','HeapSession','-heap','-Pids','1234','-FileMode','Sequential','-stackwalk','HeapAlloc+HeapRealloc','gflags')
   )
   foreach($b in $bad){
     $caught=$false
@@ -70,10 +70,11 @@ function Signal([string]$which) {
 }
 function Wait-Signal([string]$which) {
   $path=Join-Path $root $which
-  for($i=0;$i -lt 900;$i++){
+  for($i=0;$i -lt 200;$i++){
     if(Test-Path $path -PathType Leaf){return}
     Start-Sleep -Milliseconds 100
   }
+  Write-Host "C545D_OWNER_CAL_TIMEOUT,signal=$which,real_host=0,raw_uploaded=0"
   throw 'Synthetic calibration stage timeout'
 }
 function Check-Xperf([string]$phase,[string[]]$arguments){
@@ -98,19 +99,23 @@ try {
     throw 'Refuse existing ETW sessions'
   }
   $env:C545D_OWNER_CAL_ROOT=$root
+  $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
+  Wait-Signal 'ready.signal'
+  Write-Host 'C545D_OWNER_CAL_STAGE,preworkload_ready=1,known_allocations_started=0'
   Check-Xperf 'kernel' @('-on','BASE')
   $kernelStarted=$true
-  $arguments=@('-start','HeapSession','-heap','-PidNewProcess',"$exe",
+  $arguments=@('-start','HeapSession','-heap','-Pids',"$($proc.Id)",
                '-BufferSize','1024','-MinBuffers','64','-MaxBuffers','64',
                '-FileMode','Sequential','-MaxFile','64','-stackwalk','HeapAlloc+HeapRealloc')
   Check-Plan $arguments
-  Check-Xperf 'prelaunch' $arguments
+  Check-Xperf 'preworkload_trace_started' $arguments
   $heapStarted=$true
-  Wait-Signal 'ready.signal'
+  Write-Host 'C545D_OWNER_CAL_STAGE,preworkload_trace_started=1,known_allocations_started=0'
   Signal 'allocate.signal'
   Wait-Signal 'allocated.signal'
   Signal 'free.signal'
   Wait-Signal 'freed.signal'
+  Write-Host 'C545D_OWNER_CAL_STAGE,alloc64_completed=1,free48_completed=1'
   # Stop before the process releases its known final 16 HeapAlloc blocks.
   # Thus the 16 blocks are outstanding at the ETW interval endpoint.
   # Buffer/EventsLost status is inspected privately and never ignored
@@ -142,7 +147,7 @@ try {
   # NOT that exact 16 outstanding were attributed by parser or all events
   # were captured. Separate parser and event-loss gates must follow.
   $traceOk=$true
-  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=1,sequential=1,circular=0,totals_action=1,size_filtered_action=1,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
+  Write-Host "C545D_OWNER_CAL_ETW_PREFLIGHT_PASS,known_alloc=64,known_free=48,known_outstanding=16,size=360,prelaunch=0,preworkload_trace=1,sequential=1,circular=0,totals_action=1,size_filtered_action=1,logger_stats_parsed=$statChecked,logger_loss_zero_checked=$lostChecked,allocation_owner_proven=0,source_GIO=0,raw_uploaded=0,host_untouched=1"
 } finally {
   if($heapStarted){& $tool -stop HeapSession *> $raw}
   if($kernelStarted){& $tool -stop *> $raw}
