@@ -5,6 +5,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/audit_glib_2824_allocator_routes.py'
+      - 'tests/audit_glib_2824_trace_capability.py'
       - '.github/workflows/c545d-glib2824-allocator-routes-fast-ci.yml'
   workflow_dispatch:
 permissions:
@@ -20,6 +21,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/audit_glib_2824_allocator_routes.py --selftest
+          python3 tests/audit_glib_2824_trace_capability.py --selftest
       - name: Pin actual GLib 2.82.4 source (no binary build)
         shell: bash
         run: |
@@ -29,4 +31,7 @@ jobs:
           python3 tests/audit_glib_2824_allocator_routes.py \
             --glib-root /tmp/c545d-glib2824-source | tee /tmp/c545d_alloc_routes.txt
           grep -Fx 'C545D_GLIB2824_ALLOCATOR_ROUTE_PASS,source_tag=2.82.4,real_device_untested=1,new_windows_runs=0,recorder_dll_unchanged=1' /tmp/c545d_alloc_routes.txt
+          python3 tests/audit_glib_2824_trace_capability.py \
+            --glib-root /tmp/c545d-glib2824-source | tee /tmp/c545d_trace.txt
+          grep -Fx 'C545D_GLIB2824_TRACE_SOURCE_PASS,windows_runs=0,user_host_untouched=1,production_dll_unchanged=1' /tmp/c545d_trace.txt
           echo 'C545D_GLIB2824_ALLOCATOR_ROUTES_CI_PASS,windows_runs=0,real_host_untouched=1'
