@@ -181,7 +181,20 @@ try {
     } else {$ownerReason='OWNER_STACK_REPORT_NOT_EXACT'}
   } else {$ownerReason='OWNER_STACK_FILTER_UNAVAILABLE'}
   if($ownerVerified -ne 1){
-    Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,source_owner_proven=0,raw_uploaded=0"
+    # Only diagnostic enum/counts may escape; raw report, symbol table,
+    # addresses, locations and Python tracebacks stay runner-local.
+    $localError=Get-Content $raw -Raw -ErrorAction SilentlyContinue
+    if($localError -match 'ValueError: calibration_mismatch,observed_alloc=(\d+),observed_outstanding=(\d+)'){
+      Write-Host "C545D_OWNER_CAL_FILTER_NUMERIC,observed_alloc=$($Matches[1]),observed_out=$($Matches[2]),source_filter_unverified=1,raw_uploaded=0"
+    } elseif($localError -match 'ValueError: owner_specific_calibration_mismatch,observed_alloc=(\d+),observed_realloc=(\d+)'){
+      Write-Host "C545D_OWNER_CAL_FILTER_NUMERIC,observed_alloc=$($Matches[1]),observed_realloc=$($Matches[2]),source_filter_unverified=1,raw_uploaded=0"
+    }
+    $ownerStackVisible=0
+    if((Test-Path $sizes) -and
+       (Select-String -Path $sizes -SimpleMatch 'c545d_synthetic_owner_alloc_360' -Quiet)){
+      $ownerStackVisible=1
+    }
+    Write-Host "C545D_OWNER_CAL_OWNER_ATTRIBUTION_GAP,reason=$ownerReason,synthetic_symbol_visible_in_stacks=$ownerStackVisible,source_owner_proven=0,raw_uploaded=0"
   }
   # Symbol/filter options are an INDEPENDENT capability, not the ETW
   # capture itself. A failure remains explicitly incomplete evidence.
