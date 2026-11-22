@@ -1,0 +1,48 @@
+name: C545D archived256 whitelist provenance and unclassified BUSY audit
+# No Windows tests. Inspects exact original numeric export pipeline and archive.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_saved256_archive_whitelist.py'
+      - '.github/workflows/c545d-saved256-archive-whitelist-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  full-histogram-not-archived:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static original-exporter fail-closed tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_saved256_archive_whitelist.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          repository: taku077/c545d-recorder
+          run-id: 44918598339
+          name: c545d-msvc-core-native-cache-combo-ab256-numeric-CI-only
+          github-token: ${{ github.token }}
+          path: saved256
+      - name: Confirm eight-size public archive scope and unavailable full histogram
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find saved256 -type f | wc -l)" -eq 1
+          test -f saved256/ab64_safe_trace.txt
+          python3 tests/audit_c545d_saved256_archive_whitelist.py \
+            --root saved256 \
+            --exporter .github/workflows/c545d-core-gio-msvc-native-cache-ab256-ci.yml \
+            --probe tests/gio_appinfo_key_handle_probe.c \
+            | tee /tmp/c545d_archive_whitelist_scope.txt
+          grep -Fx 'C545D_SAVED256_PARTIAL_BUSY_SCOPE,source_run=44918598339,window=192_256,selected_eight_size_busy_delta=2068,total_heapwalk_busy_delta=28600,unclassified_other_size_busy_delta=26532,private_usage_delta=53248,unclassified_cannot_be_subdivided_from_artifact=1,not_free_heap_bytes=1,not_allocation_site=1' /tmp/c545d_archive_whitelist_scope.txt
+          grep -Fx 'C545D_SAVED256_ARCHIVE_SCOPE_PASS,original_256_rerun=0,new_windows_runs=0,raw_256_dump_unavailable=1,release_approved=0,host_untouched=1,manual_measurement_requested=0' /tmp/c545d_archive_whitelist_scope.txt
+          if grep -E '[/\\:]|0x[[:xdigit:]]+' /tmp/c545d_archive_whitelist_scope.txt; then
+            echo 'Unsafe path or raw heap address in numeric results' >&2
+            exit 3
+          fi
+          echo 'C545D_SAVED256_WHITELIST_CI_PASS,no_new_windows_run=1,full_histogram_unavailable=1,user_host_untouched=1'
