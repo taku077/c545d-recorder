@@ -48,8 +48,8 @@ def records(folder: Path) -> list[tuple[str, dict[str, str]]]:
             items.append((parts[0], fields))
     return items
 
-def one(rows: list[tuple[str, dict[str, str]]], kind: str, **selector: str) -> dict[str, str]:
-    match = [f for k, f in rows if k == kind and all(f.get(x) == str(y) for x, y in selector.items())]
+def one(rows: list[tuple[str, dict[str, str]]], record_type: str, **selector: str) -> dict[str, str]:
+    match = [f for k, f in rows if k == record_type and all(f.get(x) == str(y) for x, y in selector.items())]
     if len(match) != 1:
         raise ValueError("incomplete_or_duplicated_source_row")
     return match[0]
