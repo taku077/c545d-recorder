@@ -233,9 +233,33 @@ def main() -> None:
             if args.root is None or args.probe_source is None:
                 p.error("--root and --probe-source required")
             print("\n".join(inspect(args.root, args.probe_source)))
-    except (OSError, ValueError):
+    except ValueError as exc:
+        # Only machine-authored, constant codes are permitted in public logs.
+        # Never expose raw input, source lines, paths, pointers or exceptions.
+        possible = {
+            "missing_or_duplicate_heap_checkpoint",
+            "bad_heap_checkpoint_schema",
+            "incomplete_heap_enumeration",
+            "malformed_size_bucket",
+            "capped_bucket_invalid_or_duplicate",
+            "heap_busy_blocks_do_not_match_all_bins",
+            "large_block_bytes_not_consistent_with_bucket_cap",
+            "original_heap_bin_source_semantics_drifted",
+            "incomplete_pinned_four_arm_source",
+            "original_complete_busy_not_reconciled",
+            "previously_pinned_selected_size_effect_changed",
+            "mandatory_original_size_class_disappeared",
+            "previous_selected8_reconstruction_mismatch",
+            "exact_small_histogram_failed_to_telescope",
+        }
+        reason = str(exc)
+        if reason not in possible:
+            reason = "OTHER_NUMERIC_SOURCE_GATE"
+        print(f"C545D_HEAP_FULLBINS_FAIL,reason={reason},raw_uploaded=0")
+        raise SystemExit(3) from None
+    except OSError:
         print("C545D_HEAP_FULLBINS_FAIL,"
-              "reason=INVALID_SOURCE_OR_ARCHIVE,raw_uploaded=0")
+              "reason=SOURCE_UNAVAILABLE,raw_uploaded=0")
         raise SystemExit(3) from None
 
 
