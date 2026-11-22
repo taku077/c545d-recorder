@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45019730034](https://github.com/taku077/c545d-recorder/actions/runs/45019730034) |
+| C545D original late256 vs live360 GIO16 per-arm scope (OFFLINE) | success | [#45019728109](https://github.com/taku077/c545d-recorder/actions/runs/45019728109) |
 
 ## Current development findings from the active PR
 
