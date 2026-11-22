@@ -28,9 +28,15 @@ APPINFO_TAIL = '''}\n\n/* Initializes Windows AppInfo.'''
 APPINFO_TAIL_NEW = '''  /* CI-only: this scan has passed monitor notification dispatch.
    * It is NOT proof of a globally drained WinRT/APC queue.
    */
-  if (saved_counter > 0)
-    c545d_ci_appinfo_trace ("worker_after_notify",
-                            g_atomic_int_get (&c545d_ci_trace_active_worker));
+  if (saved_counter > 0 &&
+      g_getenv ("C545D_CI_APPINFO_PHASE_TRACE") != NULL)
+    {
+      LARGE_INTEGER c545d_qpc;
+      if (QueryPerformanceCounter (&c545d_qpc))
+        g_print ("C545D_CI_APPINFO_QPC,phase=worker_after_notify,ordinal=%d,qpc=%lld\n",
+                 g_atomic_int_get (&c545d_ci_trace_active_worker),
+                 (long long) c545d_qpc.QuadPart);
+    }
 }\n\n/* Initializes Windows AppInfo.'''
 PROBE_BEFORE = '''    handle = CreateFileW(marker, GENERIC_WRITE, FILE_SHARE_READ, NULL,
                          CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);'''
