@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `37765123ac6d753c79c784c207578bd2004fedfb`
-- **PR updated at (UTC):** `2026-11-22T12:25:42Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/37765123ac6d753c79c784c207578bd2004fedfb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `cfe381886ce835f334428420f17dfe54e1d4757e`
+- **PR updated at (UTC):** `2026-11-22T12:26:25Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/cfe381886ce835f334428420f17dfe54e1d4757e/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45022223909](https://github.com/taku077/c545d-recorder/actions/runs/45022223909) |
-| C545D immutable shared UTF16 DisplayName source-safe candidate (OFFLINE) | in_progress | [#45022221411](https://github.com/taku077/c545d-recorder/actions/runs/45022221411) |
+| C545D active development handoff auto-refresh | in_progress | [#45022282129](https://github.com/taku077/c545d-recorder/actions/runs/45022282129) |
+| C545D immutable shared UTF16 DisplayName source-safe candidate (OFFLINE) | in_progress | [#45022279866](https://github.com/taku077/c545d-recorder/actions/runs/45022279866) |
 
 ## Current development findings from the active PR
 
