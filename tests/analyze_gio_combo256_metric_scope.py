@@ -87,7 +87,8 @@ def analyze(group, source):
         "C545D_COMBO256_METRIC_INFERENCE,nominal_ratio_is_not_attribution=1,"
         "full_HeapWalk_busy_size_classes_unattributed=1,"
         "allocator_metadata_and_nonheap_commit_unattributed=1,"
-        "final_global_quiescence_proven=0,cohort_identity_preserved_proven=0,"\n        "permanent_leak_rate_proven=0,"
+        "final_global_quiescence_proven=0,cohort_identity_preserved_proven=0,"
+        "permanent_leak_rate_proven=0,"
         "exact_360B_owner_proven=0",
         "C545D_COMBO256_METRIC_SCOPE_PASS,source_run=44918598339,"
         "old_windows_processes=4,new_windows_runs=0,host_modified=0,"
