@@ -21,6 +21,18 @@ import analyze_c545d_gio_live360_archived as live
 
 OLD_RUN = 44918598339
 NEW_RUN = 45018787046
+# Fixed from the SAME original four-arm Win2022 numeric evidence.
+# Values are (registry raw delta, nochange raw delta, controlled count).
+EXPECTED_COMBO_LATE_BINS = {
+    24: (10, 0, 10),
+    28: (3, 0, 3),
+    56: (-1, 0, -1),
+    120: (0, 0, 0),
+    190: (0, 0, 0),
+    194: (0, 0, 0),
+    196: (0, 0, 0),
+    360: (4, -1, 5),
+}
 LEFT = ("cycle", 192)
 RIGHT = ("cycle", 256)
 LAST = ("settled_cleanup", 258)
@@ -79,12 +91,18 @@ def inspect(original_root: Path, live360_source: Path) -> list[str]:
         # Same-run size class census, but ONLY the eight already recorded
         # exact HeapWalk BUSY sizes. It is not a whole-heap leak census.
         if mode == "combo":
+            if set(EXPECTED_COMBO_LATE_BINS) != set(saved.SIZES):
+                raise ValueError("selected_heap_bin_schema_changed")
+            selected_nominal_busy_effect = 0
             for size in saved.SIZES:
                 reg_bin = data["registry"]["bins"][size]
                 ctl_bin = data["nochange"]["bins"][size]
                 reg_change = reg_bin[RIGHT] - reg_bin[LEFT]
                 ctl_change = ctl_bin[RIGHT] - ctl_bin[LEFT]
                 delta = reg_change - ctl_change
+                if (reg_change, ctl_change, delta) != EXPECTED_COMBO_LATE_BINS[size]:
+                    raise ValueError("original_late_bin_per_arm_trajectory_changed")
+                selected_nominal_busy_effect += size * delta
                 out.append(
                     "C545D_LATE256_COMBO_BIN_SCOPE,"
                     f"source_run={OLD_RUN},window=192_256,"
@@ -96,8 +114,20 @@ def inspect(original_root: Path, live360_source: Path) -> list[str]:
                     "not_a_complete_heap_census=1,"
                     "not_private_usage_allocation_site=1"
                 )
-                if size == 360 and delta != 5:
-                    raise ValueError("360_class_cross_check_failed")
+            if selected_nominal_busy_effect != 2068:
+                raise ValueError("selected_size_data_bytes_changed")
+            total_busy_effect = saved.difference(data, "heap", LEFT, RIGHT)
+            out.append(
+                "C545D_LATE256_BUSY_SCOPE,"
+                f"source_run={OLD_RUN},window=192_256,"
+                f"selected_eight_sizes_busy_effect={selected_nominal_busy_effect},"
+                f"all_reported_heapwalk_busy_effect={total_busy_effect},"
+                f"remaining_unselected_busy_effect={total_busy_effect-selected_nominal_busy_effect},"
+                f"private_usage_effect={private_effect},"
+                "selected_size_not_complete_heap_coverage=1,"
+                "busy_delta_not_private_commit_delta=1,"
+                "allocation_site_unproven=1"
+            )
         settled_effect = controlled(
             bins["registry"][RIGHT], bins["registry"][LAST],
             bins["nochange"][RIGHT], bins["nochange"][LAST]
