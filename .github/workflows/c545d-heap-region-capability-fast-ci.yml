@@ -1,0 +1,35 @@
+name: C545D isolated Windows heap region committed-byte capability (synthetic only)
+# Probe only OS measurement support, never a GIO/RTSP or 256-cycle workload.
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_heap_region_capability_ci.c'
+      - '.github/workflows/c545d-heap-region-capability-fast-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-win32-heap-regions:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile and measure disposable Win32 process heap without modifying system state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /W4 /WX /MD /O2 /TC tests/c545d_heap_region_capability_ci.c /Fe:c545d_heap_region_capability_ci.exe /link kernel32.lib
+          if($LASTEXITCODE -ne 0){throw 'Win32 heap region fixture compile failed'}
+          $lines=@(& .\c545d_heap_region_capability_ci.exe)
+          $exit=$LASTEXITCODE
+          $lines | ForEach-Object { Write-Host $_ }
+          if($exit -ne 0){throw 'Synthetic heap census failed; this is NOT a GIO leak result'}
+          foreach($stage in @('baseline','allocated','released')){
+            if(@($lines | Where-Object {$_ -match "^C545D_HEAP_REGION_CAPABILITY,stage=$stage,heaps=[0-9]+,regions=[0-9]+,regions_known=[0-9]+,unknown_optional=[0-9]+,reported_region_commit=[0-9]+,busy_cbData=[0-9]+,errors=0,full_process_commit_proven=0,real_camera=0$"}).Count -ne 1){throw "Bad/missing $stage heap summary"}
+          }
+          if(@($lines | Where-Object {$_ -ceq 'C545D_HEAP_REGION_PREFLIGHT_PASS,synthetic_only=1,windows10_api_compatible=1,heap_commit_optional=1,large_blocks_may_be_unrepresented=1,windows256_rerun=0,host_modified=0'}).Count -ne 1){throw 'Missing exact synthetic capability boundary'}
+          Write-Host 'C545D_HEAP_REGION_WINDOWS_CI_PASS,synthetic_only=1,GIO_not_tested=1,user_host_unchanged=1'
