@@ -3,18 +3,26 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b6c40dbd2434d30b1d20d3d1498d050ae8f0361a`
-- **PR updated at (UTC):** `2026-11-22T11:26:18Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b6c40dbd2434d30b1d20d3d1498d050ae8f0361a/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `acf26031acd86e5ce390dd390949af837bb57913`
+- **PR updated at (UTC):** `2026-11-22T11:27:16Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/acf26031acd86e5ce390dd390949af837bb57913/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45017321303](https://github.com/taku077/c545d-recorder/actions/runs/45017321303) |
-| C545D ETW GIO paired sanitized numeric offline gate | in_progress | [#45017319847](https://github.com/taku077/c545d-recorder/actions/runs/45017319847) |
+| C545D active development handoff auto-refresh | in_progress | [#45017401117](https://github.com/taku077/c545d-recorder/actions/runs/45017401117) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-22 JST — original saved ETW16 private/region/BUSY/phase reconciliation PASS, no new Windows test
+
+- **Latest active branch:** draft [PR #62](https://github.com/taku077/c545d-recorder/pull/62), `investigate/c545d-status-only-monitor-20261120`. This update adds **only AI-side offline numeric interpretation/tests**. The source saved Windows run remains [#45015173260 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45015173260) / artifact `14750474942`; separate archived pair replay #45015660780 and exact numeric fingerprint #45016604395 already PASS. No Windows/ETW/GIO256 reruns. Original 256-cycle Combo PSAPI +368,640 B and separate historical reduction comparisons SDK→Core64 98.4091%, Core→Combo256 88.7359% are **unchanged**.
+- **New code:** [1da439e](https://github.com/taku077/c545d-recorder/commit/1da439e8b5f4a36cf565c75986490ab20dc005bd) adds `tests/analyze_c545d_etw16_commit_busy_scope.py`; [b6c40db](https://github.com/taku077/c545d-recorder/commit/b6c40dbd2434d30b1d20d3d1498d050ae8f0361a) adds its strict existing-artifact replay and selftest to the Ubuntu-only workflow `.github/workflows/c545d-gio-etw16-offline-pair-ci.yml`. It requires both frozen exact ETW module totals, strict original archived numeric resource/heap-cohort/phase rows, and rejects six altered/missing/duplicate outcomes.
+- **ACTUAL CI verified:** [#45017319847 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45017319847), Ubuntu job `safe-paired-numeric-fixtures`: `C545D_GIO_COMMIT_BUSY_SELFTEST_PASS,positive=1,negative=6,windows_runs=0,raw_uploaded=0`, plus `C545D_GIO_COMMIT_BUSY_ARCHIVE_PASS,source_run=45015173260,exact_archive=1,original_256_rerun=0,new_windows_runs=0,allocator_retention_plausible_not_proven=1,memory_leak_zero_proven=0,allocation_owner_proven=0`. Existing frozen and original pair checks also PASS. No new GIO process, camera or real recorder was started or modified.
+- **Same original two-arm controlled numeric decomposition:** `0→16`: PSAPI PrivateUsage **+221,184 B**, reported Win32 Heap REGION commit **+155,648 B** (default heap, other reported heaps 0), HeapWalk BUSY cbData **−7,794 B**; arithmetic PSAPI minus reported REGION **+65,536 B**, which is **NOT proven outside-heap allocation**. `16→17` after cleanup: PSAPI **+40,960 B**, reported REGION **+40,960 B**, BUSY **−852,951 B**. `17→18` rescan/rebuild: PSAPI **+4,096 B**, reported REGION **0 B**, BUSY **+852,951 B**. Telescoped `0→18`: PSAPI **+266,240 B**, REGION **+196,608 B**, BUSY **−7,794 B**; the two metrics' difference **+69,632 B** is NOT an independently measured nonheap leak. Commit-minus-BUSY differences are **not free-byte measurements** because different coverage and semantics.
+- **Interpretation:** deallocation can reduce live BUSY payload while committed heap pages remain; Microsoft's [Heap Extents](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/xperf/heap-extents) explicitly notes that committed heaps include free space and may shrink later. The archived phase rows also confirm registry worker **active after cleanup** and **scan during the idle interval**, with a time-stamp ambiguity; **global quiescence is not proven**. Treat heap-commit retention as plausible, not proven primary cause; exact live allocation ownership, zero leak and steady plateau **remain unproven**. Existing circular top25 ETW module-frame occurrences MUST NOT be interpreted as surviving allocation bytes.
+- **Next AI-only discriminator:** prioritize a source-level, lifecycle-specific proof of whether default process-heap commitment can remain high despite corresponding GObject/BUSY release, and determine if a *new* controlled observation could uniquely separate missing live allocations from retained heap pages. Before any new Windows probe require a prebaseline/full-history guarantee or explicitly bounded late-window claim, event-loss checks and a defensible asynchronous-worker barrier; existing top25 or original GIO256 tests must NOT be repeated. Do not use an isolated synthetic heap behavior as proof that GLib has no leak. No user requests or lengthy recorder measurements; `install_approved=0`, `live_test_authorized=0`, `real_device_untested=1`. Preserve stream1-left / stream6-right, 2560×720@15fps, x264 medium QP24, AAC mono 48kHz 192kbps, hourly MP4, AV sync/EOS and avdec_h264 priority.
 
 ### UPDATE 2026-11-22 JST — archived ETW16 exact numeric fingerprint CI PASS; no new Windows run or memory-fix claim
 
