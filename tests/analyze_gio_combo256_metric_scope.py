@@ -66,9 +66,9 @@ def analyze(group, source):
     p258 = effect(arms, "private", START, FINAL)
     b256 = effect(arms, "bucket", START, CYCLE)
     b258 = effect(arms, "bucket", START, FINAL)
-    if (p256, p258, b256) != (425984, 368640, 4):
+    if (p256, p258, b256, b258) != (425984, 368640, 4, 4):
         raise ValueError("Combo256 original controlled deltas changed")
-    data, frac = nominal(p258, b256)
+    data, frac = nominal(p258, b258)
     if p258 % 4096 or data != 1440 or frac != Fraction(1, 256):
         raise ValueError("unexpected original byte-scale comparison")
     return [
@@ -82,12 +82,12 @@ def analyze(group, source):
         f"combo_controlled_360B_0_256={b256},"
         f"combo_controlled_360B_0_258={b258},"
         f"nominal_360B_data_delta={data},"
-        "nominal_ratio_to_private_final=1/256,"
+        "same_window_nominal_data_ratio=1/256,"
         "private_final_equivalent_4KiB_pages=90",
         "C545D_COMBO256_METRIC_INFERENCE,nominal_ratio_is_not_attribution=1,"
         "full_HeapWalk_busy_size_classes_unattributed=1,"
         "allocator_metadata_and_nonheap_commit_unattributed=1,"
-        "final_global_quiescence_proven=0,permanent_leak_rate_proven=0,"
+        "final_global_quiescence_proven=0,cohort_identity_preserved_proven=0,"\n        "permanent_leak_rate_proven=0,"
         "exact_360B_owner_proven=0",
         "C545D_COMBO256_METRIC_SCOPE_PASS,source_run=44918598339,"
         "old_windows_processes=4,new_windows_runs=0,host_modified=0,"
