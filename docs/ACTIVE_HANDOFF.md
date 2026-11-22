@@ -3,16 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `75936f362d0a1f713749ba8699ab1154570aaecb`
-- **PR updated at (UTC):** `2026-11-22T11:44:55Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/75936f362d0a1f713749ba8699ab1154570aaecb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6a2fcf18334369f78b7cd3dc2a0275d979bdc938`
+- **PR updated at (UTC):** `2026-11-22T11:48:35Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6a2fcf18334369f78b7cd3dc2a0275d979bdc938/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45018826608](https://github.com/taku077/c545d-recorder/actions/runs/45018826608) |
-| C545D offline live360 safety and count-conservation gate | success | [#45018825084](https://github.com/taku077/c545d-recorder/actions/runs/45018825084) |
+| C545D active development handoff auto-refresh | in_progress | [#45019127219](https://github.com/taku077/c545d-recorder/actions/runs/45019127219) |
 
 ## Current development findings from the active PR
 
