@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3deb2cc2383a86aa3003ff49b1a410e82143b9a9`
-- **PR updated at (UTC):** `2026-11-22T10:08:13Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3deb2cc2383a86aa3003ff49b1a410e82143b9a9/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9043212d78e79ee627a70096136de94ce4b61d8c`
+- **PR updated at (UTC):** `2026-11-22T10:09:38Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9043212d78e79ee627a70096136de94ce4b61d8c/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45010938598](https://github.com/taku077/c545d-recorder/actions/runs/45010938598) |
-| C545D isolated existing-PID ETW heap tracing synthetic capability CI | in_progress | [#45010935876](https://github.com/taku077/c545d-recorder/actions/runs/45010935876) |
+| C545D active development handoff auto-refresh | in_progress | [#45011051295](https://github.com/taku077/c545d-recorder/actions/runs/45011051295) |
+| C545D isolated existing-PID ETW heap tracing synthetic capability CI | in_progress | [#45011048704](https://github.com/taku077/c545d-recorder/actions/runs/45011048704) |
 
 ## Current development findings from the active PR
 
