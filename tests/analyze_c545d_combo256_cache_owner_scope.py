@@ -28,7 +28,8 @@ def source_guard(source: str) -> None:
         "g_print (\"C545D_DISPLAY_CACHE,hits=%u,misses=%u,entries=%u",
     )
     for marker in required:
-        if source.count(marker) != 1:
+        expected = 2 if marker == "g_hash_table_new_full (g_str_hash, g_str_equal," else 1
+        if source.count(marker) != expected:
             raise ValueError(f"unpinned diagnostic cache ownership: {marker}")
     if ("Locale/resource updates and re-installation while running are NOT handled."
             not in source or "NEVER ship as a fix" not in source):
