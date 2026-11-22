@@ -3,17 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6fe494f21f3560ffe06c0b19da796dbb802d7fce`
-- **PR updated at (UTC):** `2026-11-22T07:29:36Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6fe494f21f3560ffe06c0b19da796dbb802d7fce/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `76d96c811fec6276cf4681405092e07e495a039e`
+- **PR updated at (UTC):** `2026-11-22T07:33:18Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/76d96c811fec6276cf4681405092e07e495a039e/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#44998468672](https://github.com/taku077/c545d-recorder/actions/runs/44998468672) |
-| C545D archived 256-cycle private high-water and churn audit (offline) | success | [#44998466907](https://github.com/taku077/c545d-recorder/actions/runs/44998466907) |
-| C545D archived Windows memory residual late-epoch audit (no rerun) | in_progress | [#44998466891](https://github.com/taku077/c545d-recorder/actions/runs/44998466891) |
+| C545D active development handoff auto-refresh | in_progress | [#44998766697](https://github.com/taku077/c545d-recorder/actions/runs/44998766697) |
+| C545D archived Windows memory residual late-epoch audit (no rerun) | in_progress | [#44998764273](https://github.com/taku077/c545d-recorder/actions/runs/44998764273) |
+| C545D archived 256-cycle private high-water and churn audit (offline) | success | [#44998764262](https://github.com/taku077/c545d-recorder/actions/runs/44998764262) |
 
 ## Current development findings from the active PR
 
