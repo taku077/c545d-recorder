@@ -16,7 +16,7 @@ from analyze_c545d_gio_etw_stack_cohorts_ci import (
     DASH, GLOBAL, TOP, METRICS, CAP, MAX_REPORT, num, GROUPS, cohort
 )
 
-def evaluate(raw: str, arm: str) -> str:
+def evaluate(raw: str, arm: str, *, requested_top: int | None = None) -> str:
     if arm not in {"registry", "nochange"}:
         raise ValueError("arm_not_allowed")
     if not isinstance(raw, str) or not (100 <= len(raw) <= MAX_REPORT):
@@ -31,7 +31,16 @@ def evaluate(raw: str, arm: str) -> str:
     global_alloc, _, global_out, _, _ = num(globals_[0])
     top_n = int(TOP.findall(raw)[0])
     if not 1 <= top_n <= 10000:
-        raise ValueError("unexpected_top_limit")
+        raise ValueError("unexpected_reported_top_rows")
+    if requested_top is not None and (
+            not 1 <= requested_top <= 10000 or top_n > requested_top):
+        raise ValueError("inconsistent_requested_vs_reported_top")
+    # Xperf's TOP header may display the number of groups actually emitted,
+    # not the requested -top argument: -top 8192 emitted TOP 1164 on the
+    # actual 2026-11-23 disposable Windows GIO report. An equality between
+    # TOP header and row count alone DOES NOT prove truncation.
+    requested_known = int(requested_top is not None)
+    cap_reached = int(top_n == requested_top) if requested_known else -1
     metrics = [p for p in blocks if not GLOBAL.search(p)
                and not TOP.search(p)
                and any(rx.search(p) for rx in METRICS.values())]
@@ -77,16 +86,22 @@ def evaluate(raw: str, arm: str) -> str:
         relation = "rejected_raw_equals_residual"
     else:
         relation = "rejected_raw_exceeds_residual"
-    truncated = int(len(metrics) >= top_n)
+    grouped_raw_alloc = accepted_alloc + rejected_alloc
+    grouped_raw_out = accepted_out + rejected_out
+    raw_group_totals_reconcile = int(
+        not malformed and grouped_raw_alloc == global_alloc and
+        grouped_raw_out == global_out and requested_known and not cap_reached
+    )
     validated_complete = int(
-        not malformed and not complete_numeric_rejected
-        and accepted_out == global_out and accepted_alloc == global_alloc
-        and not truncated
+        raw_group_totals_reconcile and not complete_numeric_rejected
     )
     return (
         "C545D_GIO_ETW_STACK_COVERAGE_BOUNDS,"
         f"arm={arm},global_alloc={global_alloc},global_out={global_out},"
-        f"top_limit={top_n},metric_rows={len(metrics)},top_saturated={truncated},"
+        f"top_header_rows={top_n},requested_top={requested_top or 0},"
+        f"requested_top_known={requested_known},"
+        f"metric_rows={len(metrics)},requested_cap_reached={cap_reached},"
+        "top_header_equal_metric_rows_not_truncation_proof=1,"
         f"accepted_rows={accepted_count},rejected_numeric_rows={complete_numeric_rejected},"
         f"rejected_malformed_rows={malformed},rejected_out_exceeds_alloc_rows={rejected_exceeds},"
         f"accepted_alloc_sum={accepted_alloc},accepted_out_sum={accepted_out},"
@@ -94,6 +109,7 @@ def evaluate(raw: str, arm: str) -> str:
         f"global_minus_accepted_out={residual},"
         f"raw_rows_minus_global_out={raw_row_out-global_out},"
         f"rejected_relation={relation},"
+        f"raw_group_totals_numeric_reconcile={raw_group_totals_reconcile},"
         f"validated_full_count_coverage={validated_complete},"
         "residual_is_not_proven_disjoint_objects=1,"
         "stack_member_not_causal_owner=1,"
@@ -122,7 +138,15 @@ def selftest() -> None:
     assert "rejected_raw_less_than_residual" in evaluate(sample(rej_out=2), "registry")
     assert "rejected_raw_exceeds_residual" in evaluate(sample(rej_out=7), "registry")
     nochange = sample(rej_out=4).replace("GLOBAL ALLOCATIONS:", "GLOBAL ALLOCATIONS:")
-    assert "top_saturated=1" in evaluate(nochange, "nochange")
+    assert "requested_cap_reached=1" in evaluate(nochange, "nochange", requested_top=2)
+    assert "requested_cap_reached=0" in evaluate(nochange, "nochange", requested_top=8192)
+    assert "requested_cap_reached=-1" in evaluate(nochange, "nochange")
+    fullcount = sample(rej_out=4).replace("Alloc : 40, 4.0 KB",
+                                           "Alloc : 26, 4.0 KB")
+    assert "raw_group_totals_numeric_reconcile=1" in evaluate(
+        fullcount, "registry", requested_top=8192)
+    assert "validated_full_count_coverage=0" in evaluate(
+        fullcount, "registry", requested_top=8192)
     malformed = sample(rej_out=4).replace("Outstanding : 4, 0.4 KB", "Outstanding : unknown")
     assert "rejected_malformed_rows=1" in evaluate(malformed, "registry")
     negatives = [
@@ -142,13 +166,19 @@ def selftest() -> None:
             continue
         raise AssertionError(f"unsafe_xperf_stack_coverage_sample_accepted:{i}")
     try:
+        evaluate(sample(rej_out=4), "registry", requested_top=1)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("reported_top_exceeds_requested_cap_accepted")
+    try:
         evaluate(sample(rej_out=4), "invalid")
     except ValueError:
         pass
     else:
         raise AssertionError("unapproved_arm_accepted")
     print("C545D_GIO_ETW_STACK_BOUNDS_SELFTEST_PASS,"
-          "positive=6,negative=9,residual_not_proven_owner=1,"
+          "positive=10,negative=10,residual_not_proven_owner=1,"
           "unsafe_row_coercion=0,new_windows_runs=0,host_untouched=1")
 
 def main() -> None:
@@ -156,6 +186,7 @@ def main() -> None:
     p.add_argument("--selftest", action="store_true")
     p.add_argument("--report", type=Path)
     p.add_argument("--arm", choices=("nochange", "registry"))
+    p.add_argument("--requested-top", type=int)
     args = p.parse_args()
     if args.selftest:
         selftest()
@@ -165,7 +196,7 @@ def main() -> None:
     if args.report.stat().st_size > MAX_REPORT:
         raise ValueError("bounded_runner_only")
     print(evaluate(args.report.read_text(encoding="utf-8-sig", errors="replace"),
-                   args.arm))
+                   args.arm, requested_top=args.requested_top))
 
 if __name__ == "__main__":
     main()
