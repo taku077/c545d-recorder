@@ -162,7 +162,7 @@ try {
   })
   if($identityStatus -ne 0 -or $safeIdentity.Count -ne 1){
     $gap=@($identities | Where-Object {
-      $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+,raw_uploaded=0,release_HOLD=1$'
+      $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
     })
     if($gap.Count -eq 1){Write-Host $gap[0]}
     else{Write-Host 'C545D_ETW_REALLOC_IDENTITY_GAP,reason=unverified_adapter_output,raw_uploaded=0,release_HOLD=1'}
