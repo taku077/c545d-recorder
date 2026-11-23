@@ -1,0 +1,39 @@
+name: C545D GIO active two-epoch source-only preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_c545d_gio_active_two_epoch_ci.py'
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - '.github/workflows/c545d-gio-active-two-epoch-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-only:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the two-cycle source contract without host or GLib build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          py tests/patch_c545d_gio_active_two_epoch_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Bounded active epoch overlay negative cases failed'}
+          $dest=Join-Path $env:RUNNER_TEMP 'c545d_gio_preinit_probe.c'
+          if(Test-Path $dest){throw 'Stale source output'}
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $dest
+          py tests/patch_c545d_gio_active_two_epoch_ci.py $dest
+          if($LASTEXITCODE -ne 0){throw 'Native fixture source contract changed'}
+          $code=Get-Content $dest -Raw
+          if($code -notmatch '--cycles=2' -or
+             $code -notmatch 'C545D_CI_ACTIVE_EPOCH' -or
+             $code -notmatch 'QueryPerformanceCounter' -or
+             $code -notmatch 'GetProcessTimes' -or
+             @([regex]::Matches($code,'c545d_ci_active_epoch_checkpoint\(')).Count -ne 3){
+            throw 'Two-cycle phase/cpu/QPC source contract broken'
+          }
+          py tests/patch_c545d_gio_active_two_epoch_ci.py $dest 2>&1 | Out-Null
+          if($LASTEXITCODE -eq 0){throw 'Overlay was not rejected on second application'}
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_OFFLINE_GATE_PASS,source_only=1,cycle2=1,monotonic_qpc_cpu_field=1,host_untouched=1,release_HOLD=1'
