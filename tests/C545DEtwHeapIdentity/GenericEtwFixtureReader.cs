@@ -10,6 +10,41 @@ using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 
 internal static class GenericEtwFixtureReader
 {
+    private static GenericHeapLifetime? lastModel;
+    private static int[] countsDiagnostic=new int[3];
+    private static int lastPidEvents;
+    private static int lastEarlyMarker;
+    private static readonly HashSet<string> SafeReasons = new()
+    {
+        "invalid_generic_fixture_cli","disposable_windows_ci_only",
+        "private_runner_missing","nonprivate_trace_path","missing_or_unbounded_trace",
+        "invalid_owned_native_fixture_pid","too_many_fixture_heap_events",
+        "nonunique_fixture_size_source","mixed_realloc_source_size_wrong",
+        "mixed_fixture_counts_or_precleanup_marker_missing",
+        "mixed_fixture_not_fully_freed_or_unpaired",
+        "unbounded_heap_event_stream","invalid_heap_event_identity_or_size",
+        "unverified_original_stack_source","overlapping_live_allocation",
+        "orphan_realloc_prior_alloc_not_observed",
+        "stale_provisional_free_cannot_match_realloc",
+        "realloc_old_size_does_not_match","realloc_new_address_collision",
+        "invalid_free_identity","duplicate_provisional_free",
+        "orphan_free_or_stale_realloc_address","trace_scope_or_loss_unverified",
+        "expected_model_event_types_missing"
+    };
+    private static string Diagnostic()
+    {
+        var m=lastModel;
+        var p=m?.Snapshot();
+        return $",events_from_selected_pid={lastPidEvents},"+
+               $"count192={countsDiagnostic[0]},count448={countsDiagnostic[1]},"+
+               $"count832={countsDiagnostic[2]},precleanup_held6={lastEarlyMarker},"+
+               $"observed_original_alloc={m?.AllocCount ?? 0},"+
+               $"observed_linked_realloc={m?.ReallocCount ?? 0},"+
+               $"observed_realloc_old_free_pair={m?.ReallocOldFreeMatched ?? 0},"+
+               $"observed_pending_free={m?.PendingFreeCount ?? 0},"+
+               $"observed_live_count={p?.Count ?? 0},"+
+               $"observed_live_bytes={p?.Bytes ?? 0}";
+    }
     private static readonly HashSet<long> InitialSizes = new(){192,448,832};
     private static readonly Dictionary<long,long> ReallocSizes =
         new(){{192,544},{448,1216},{832,1800}};
@@ -35,6 +70,7 @@ internal static class GenericEtwFixtureReader
             throw new ArgumentException("invalid_owned_native_fixture_pid");
 
         var model=new GenericHeapLifetime();
+        lastModel=model;countsDiagnostic=new int[3];lastPidEvents=0;lastEarlyMarker=0;
         var counts=new Dictionary<long,int>{{192,0},{448,0},{832,0}};
         int original=0,heapEvents=0,unrelatedAlloc=0,unrelatedRealloc=0,unrelatedFree=0;
         int matched=0,earlyMarker=0;
@@ -48,16 +84,19 @@ internal static class GenericEtwFixtureReader
                    snapshot.Count==6 && model.PendingFreeCount==18 &&
                    snapshot.Bytes==7120)
                     earlyMarker=1;
+                lastEarlyMarker=earlyMarker;
             }
             heap.HeapTraceAlloc+=evt =>
             {
                 if(evt.ProcessID!=pid)return;
-                if(++heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
+                lastPidEvents=++heapEvents;
+                if(heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
                 long size=evt.AllocSize;
                 if(!InitialSizes.Contains(size)){unrelatedAlloc++;return;}
                 // The shape (3 sizes * 8 allocations) is only used to
                 // test our generic parser, NOT to attribute real GIO origin.
                 counts[size]++;
+                countsDiagnostic[size==192?0:size==448?1:2]=counts[size];
                 if(counts[size]>8)throw new ArgumentException("nonunique_fixture_size_source");
                 model.Alloc(evt.HeapHandle,evt.AllocAddress,size,
                             GenericHeapLifetime.OriginProof.Unresolved);
@@ -67,7 +106,8 @@ internal static class GenericEtwFixtureReader
             heap.HeapTraceReAlloc+=evt =>
             {
                 if(evt.ProcessID!=pid)return;
-                if(++heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
+                lastPidEvents=++heapEvents;
+                if(heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
                 if(!model.IsTracked(evt.HeapHandle,evt.OldAllocAddress))
                 {
                     unrelatedRealloc++;return;
@@ -83,7 +123,8 @@ internal static class GenericEtwFixtureReader
             heap.HeapTraceFree+=evt =>
             {
                 if(evt.ProcessID!=pid)return;
-                if(++heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
+                lastPidEvents=++heapEvents;
+                if(heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
                 if(model.IsTracked(evt.HeapHandle,evt.FreeAddress))
                 {
                     model.Free(evt.HeapHandle,evt.FreeAddress);
@@ -120,16 +161,19 @@ internal static class GenericEtwFixtureReader
     internal static int MainMode(string[] args)
     {
         try{return Run(args);}
-        catch(ArgumentException)
+        catch(ArgumentException ex)
         {
-            Console.WriteLine("C545D_ETW_GENERIC_HEAP_GAP,reason=source_or_lifetime_unverified,"+
-                              "raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1");
+            string reason=SafeReasons.Contains(ex.Message)?ex.Message:"source_or_lifetime_unverified";
+            Console.WriteLine("C545D_ETW_GENERIC_HEAP_GAP,reason="+reason+
+                              Diagnostic()+
+                              ",raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1");
             return 2;
         }
         catch(Exception)
         {
-            Console.WriteLine("C545D_ETW_GENERIC_HEAP_GAP,reason=etw_decode_unverified,"+
-                              "raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1");
+            Console.WriteLine("C545D_ETW_GENERIC_HEAP_GAP,reason=etw_decode_unverified"+
+                              Diagnostic()+
+                              ",raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1");
             return 3;
         }
     }
