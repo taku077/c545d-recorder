@@ -345,6 +345,25 @@ internal static class Program
         reused.FinalizePending();
         Expect(reused.Counts(Cohort.KeysUpdated).Freed==1&&
                reused.Counts(Cohort.NoGioFrame).Live==1);
+        // Regression: nearest report MUST use distinct prefix; otherwise the
+        // controller sees 20 strict lines and zero nearest lines.
+        using(var captureOutput=new StringWriter())
+        {
+            var prior=Console.Out;
+            try
+            {
+                Console.SetOut(captureOutput);
+                var display=new MethodLedger();
+                display.Alloc(7,1,11,Cohort.KeysUpdated);
+                display.Report("synthetic",nearest:true);
+            }
+            finally{Console.SetOut(prior);}
+            var lines=captureOutput.ToString().Split('\n',
+                StringSplitOptions.RemoveEmptyEntries);
+            Expect(lines.Length==10 &&
+                   lines.All(x=>x.StartsWith(
+                       "C545D_GIO_NEAREST_METHOD_COHORT,arm=synthetic,")));
+        }
         var lifetime=new GenericHeapLifetime();
         lifetime.Alloc(12,100,168,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
         lifetime.Free(12,100);
@@ -357,7 +376,7 @@ internal static class Program
                lifetime.ProvenOriginalAllocations==0 &&
                lifetime.Snapshot().Count==0);
         Console.WriteLine("C545D_GIO_ETLX_SOURCE_CLASSIFIER_SELFTEST_PASS,"+
-            "positive=11,negative=12,method_cohort_ledger=1,"+
+            "positive=12,negative=12,method_cohort_ledger=1,"+
             "multiple_distinct_methods_ambiguous=1,realloc_target_owner_preserved=1,"+
             "LFH_not_owner=1,original_stack_survives_realloc_free=1,"+
             "real_GIO_stacks_not_yet_examined=1,release_HOLD=1");
@@ -514,7 +533,7 @@ internal static class Program
         nearestLedger.CheckAgainst(model);
         var snapshot=model.Snapshot();
         methodLedger.Report(arm);
-        nearestLedger.Report(arm);
+        nearestLedger.Report(arm,nearest:true);
         Console.WriteLine($"C545D_GIO_NEAREST_FRAME_SCOPE,arm={arm},"+
             $"raw_first_gio_exact_method={nearestFirstGioRaw},"+
             "raw_not_logical_owner_count=1,release_HOLD=1");
