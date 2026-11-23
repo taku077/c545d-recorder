@@ -5,6 +5,7 @@ on:
     paths:
       - 'tests/patch_c545d_gio_etw_preinit_source_ci.py'
       - 'tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py'
+      - 'tests/audit_c545d_private_pdb_guid_age_ci.py'
       - '.github/workflows/c545d-gio-preinit-stack-source-preflight-ci.yml'
   workflow_dispatch:
 permissions:
@@ -19,6 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py --selftest
+          python3 tests/audit_c545d_private_pdb_guid_age_ci.py --selftest
           python3 tests/patch_c545d_gio_etw_preinit_source_ci.py --selftest
           python3 tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py \
             --probe tests/gio_appinfo_key_handle_probe.c \
