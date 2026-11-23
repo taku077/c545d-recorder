@@ -166,55 +166,7 @@ try {
   $pattern='^C545D_GIO_METHOD_COHORT,arm='+[regex]::Escape($Arm)+
     ',category=([A-Za-z]+),original=(\d+),realloc=(\d+),logical_free=(\d+),'+
     'live=(\d+),request_bytes_live=(\d+),'+
-    'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1
-  # but positive deltas do NOT imply a leak and cannot be subtracted from
-  # selected heap request bytes without accounting for other memory paths.
-  $lines=@(Get-Content $out -ErrorAction Stop)
-  $private=@{}
-  $region=@{}
-  $handles=@{}
-  foreach($phase in @('preappinfo','baseline','cycle','settled_cleanup')){
-    $rows=@($lines | Where-Object {
-      $_ -match ('^GIO_PROBE,'+$phase+',\d+,\d+,\d+,\d+$')
-    })
-    $vm=@($lines | Where-Object {
-      $_ -match ('^GIO_VM,'+$phase+',\d+,\d+,\d+,\d+,\d+,0$')
-    })
-    if($rows.Count -ne 1 -or $vm.Count -ne 1){
-      Write-Host "C545D_GIO_PREINIT_RESOURCE_GAP,arm=$Arm,reason=PHASE_METRICS_INCOMPLETE,phase=$phase,raw_uploaded=0"
-      throw 'Incomplete phase measurements; release HOLD'
-    }
-    $r=$rows[0].Split(',')
-    $v=$vm[0].Split(',')
-    $private[$phase]=[long]$r[5]
-    $handles[$phase]=[long]$r[4]
-    $region[$phase]=[long]$v[3]
-  }
-  $pd=$private['settled_cleanup']-$private['preappinfo']
-  $rd=$region['settled_cleanup']-$region['preappinfo']
-  $hd=$handles['settled_cleanup']-$handles['preappinfo']
-  Write-Host "C545D_GIO_PREINIT_RESOURCE_SCOPE,arm=$Arm,private_delta=$pd,region_private_delta=$rd,handles_delta=$hd,scope=preappinfo_to_settled_cleanup,persistent_watches_allowed=1,global_idle_proven=0,leak_proven=0,raw_uploaded=0"
-  $success=$true
-} finally {
-  if($heapOn){& $xperf -stop HeapSession *> $rawLocal}
-  if($kernelOn){& $xperf -stop *> $rawLocal}
-  if((Test-Path $local) -and -not(Test-Path (Join-Path $local 'trace_stopped.signal'))){
-    try{Signal 'trace_stopped.signal'}catch{}
-  }
-  if($proc){
-    try{$proc.Refresh();if(-not $proc.WaitForExit(4000)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}}catch{}
-  }
-  if($null -eq $oldFence){Remove-Item Env:C545D_CI_ETW_PHASE_ROOT -ErrorAction SilentlyContinue}
-  else{$env:C545D_CI_ETW_PHASE_ROOT=$oldFence}
-  if($null -eq $oldSymbols){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
-  else{$env:_NT_SYMBOL_PATH=$oldSymbols}
-  if((Test-Path $local) -and (Test-Path (Join-Path $local 'ci_owned.signal')) -and
-     $local.StartsWith($env:RUNNER_TEMP,[StringComparison]::OrdinalIgnoreCase)){
-    Remove-Item $local -Force -Recurse -ErrorAction SilentlyContinue
-  }
-}
-if($success){$global:LASTEXITCODE=0}
-
+    'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1$'
   foreach($row in $rows){
     $m=[regex]::Match($row,$pattern)
     if(-not $m.Success){throw 'invalid_cohort_shape'}
