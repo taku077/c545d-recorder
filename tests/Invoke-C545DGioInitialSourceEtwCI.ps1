@@ -155,19 +155,21 @@ try {
     else{Write-Host "C545D_GIO_PREINIT_SOURCE_GAP,arm=$Arm,reason=ETLX_ORIGIN_UNVERIFIED,raw_uploaded=0"}
     throw 'Actual original GIO source attribution not demonstrated'
   }
-  # Explicit, bounded source-method cohorts from the ORIGINAL HeapAlloc
-  # stack must be emitted and independently reconciled, rather than quietly
-  # dropped by the numeric-only privacy filter. Fail closed on missing rows.
-  $expectedCohorts=@(
-    'MissingStack','NoGioFrame','GioMethodUnmatched',
-    'UpdateRegistryData','KeysUpdated','WatchKeys','AppinfoWorker',
-    'RegistryKeyWatch','PackageEnum','AmbiguousMultipleMethods'
-  )
-  $cohortRows=@($source | Where-Object {
-    $_ -match ('^C545D_GIO_METHOD_COHORT,arm='+$Arm+
-      ',category=[A-Za-z]+,original=\d+,realloc=\d+,logical_free=\d+,'+
-      'live=\d+,request_bytes_live=\d+,'+
-      'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1
+  # Publish all exact source cohorts. A missing/malformed/duplicate row fails closed.
+  $names=@('MissingStack','NoGioFrame','GioMethodUnmatched','UpdateRegistryData',
+    'KeysUpdated','WatchKeys','AppinfoWorker','RegistryKeyWatch','PackageEnum',
+    'AmbiguousMultipleMethods')
+  $rows=@($source | Where-Object {$_ -like "C545D_GIO_METHOD_COHORT,arm=$Arm,*"})
+  if($rows.Count -ne 10 -or $safeCensus.Count -ne 1){
+    throw 'Missing source cohorts or aggregate census'
+  }
+  $seen=@{}
+  $totals=@{ original=0L;realloc=0L;logical_free=0L;live=0L;request_bytes_live=0L }
+  $trusted=@{ original=0L;realloc=0L;logical_free=0L }
+  $regex='^C545D_GIO_METHOD_COHORT,arm='+[regex]::Escape($Arm)+
+    ',category=([A-Za-z]+),original=(\d+),realloc=(\d+),logical_free=(\d+),'+
+    'live=(\d+),request_bytes_live=(\d+),'+
+    'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1
   # but positive deltas do NOT imply a leak and cannot be subtracted from
   # selected heap request bytes without accounting for other memory paths.
   $lines=@(Get-Content $out -ErrorAction Stop)
@@ -215,63 +217,44 @@ try {
   }
 }
 if($success){$global:LASTEXITCODE=0}
-)
-  })
-  $seen=@{}
-  $summed=@{original=0L;realloc=0L;logical_free=0L;live=0L;request_bytes_live=0L}
-  $trusted=@{original=0L;realloc=0L;logical_free=0L}
-  foreach($line in $cohortRows){
-    $row=@{}
-    foreach($entry in $line.Split(',') | Select-Object -Skip 1){
-      $kv=$entry.Split('=',2)
-      if($kv.Count -ne 2 -or $row.ContainsKey($kv[0])){
-        throw 'Malformed method cohort row'
-      }
-      $row[$kv[0]]=$kv[1]
+
+  foreach($row in $rows){
+    $m=[regex]::Match($row,$regex)
+    if(-not $m.Success){throw 'Malformed source cohort row'}
+    $name=$m.Groups[1].Value
+    if($names -notcontains $name -or $seen.ContainsKey($name)){
+      throw 'Duplicate or unexpected cohort'
     }
-    $category=[string]$row['category']
-    if($expectedCohorts -notcontains $category -or $seen.ContainsKey($category)){
-      throw 'Unexpected or duplicate method cohort category'
-    }
-    $seen[$category]=1
-    foreach($field in @('original','realloc','logical_free','live','request_bytes_live')){
-      $value=[long]::Parse([string]$row[$field],
-        [Globalization.NumberStyles]::None,
-        [Globalization.CultureInfo]::InvariantCulture)
-      $summed[$field]=[long]$summed[$field]+$value
-      if($category -notin @('MissingStack','NoGioFrame','GioMethodUnmatched') -and
-         $field -in @('original','realloc','logical_free')){
-        $trusted[$field]=[long]$trusted[$field]+$value
-      }
-    }
-    if(([long]$row['original']-[long]$row['logical_free']) -ne [long]$row['live']){
-      throw 'Individual source method cohort balance mismatch'
+    $seen[$name]=1
+    $v=@(
+      [long]::Parse($m.Groups[2].Value),
+      [long]::Parse($m.Groups[3].Value),
+      [long]::Parse($m.Groups[4].Value),
+      [long]::Parse($m.Groups[5].Value),
+      [long]::Parse($m.Groups[6].Value)
+    )
+    if($v[0]-$v[2] -ne $v[3]){throw 'Unbalanced cohort'}
+    $fields=@('original','realloc','logical_free','live','request_bytes_live')
+    for($i=0;$i -lt 5;$i++){$totals[$fields[$i]]+=$v[$i]}
+    if($name -notin @('MissingStack','NoGioFrame','GioMethodUnmatched')){
+      for($i=0;$i -lt 3;$i++){$trusted[$fields[$i]]+=$v[$i]}
     }
   }
-  if($cohortRows.Count -ne 10 -or $seen.Count -ne 10 -or $safeCensus.Count -ne 1){
-    Write-Host "C545D_GIO_METHOD_COHORT_GAP,arm=$Arm,reason=MISSING_OR_DUPLICATE_COHORT,release_HOLD=1"
-    throw 'Original source-method cohort evidence incomplete'
-  }
+  if($seen.Count -ne 10){throw 'Missing named cohort'}
   $census=@{}
   foreach($entry in $safeCensus[0].Split(',') | Select-Object -Skip 1){
     $kv=$entry.Split('=',2)
     if($kv.Count -eq 2){$census[$kv[0]]=$kv[1]}
   }
-  $checks=@(
-    @($summed['live'],$census['original_allocation_live']),
-    @($summed['request_bytes_live'],$census['request_bytes_live']),
-    @($trusted['original'],$census['gio_source_origin_alloc']),
-    @($trusted['realloc'],$census['gio_source_origin_realloc']),
-    @($trusted['logical_free'],$census['gio_source_origin_logical_free'])
-  )
-  foreach($check in $checks){
-    if([long]$check[0] -ne [long]$check[1]){
-      Write-Host "C545D_GIO_METHOD_COHORT_GAP,arm=$Arm,reason=INDEPENDENT_BALANCE_MISMATCH,release_HOLD=1"
-      throw 'Per-method totals disagree with independent generic owner census'
-    }
+  if($totals['live'] -ne [long]$census['original_allocation_live'] -or
+     $totals['request_bytes_live'] -ne [long]$census['request_bytes_live'] -or
+     $trusted['original'] -ne [long]$census['gio_source_origin_alloc'] -or
+     $trusted['realloc'] -ne [long]$census['gio_source_origin_realloc'] -or
+     $trusted['logical_free'] -ne [long]$census['gio_source_origin_logical_free']){
+    throw 'Source cohorts disagree with independent census'
   }
-  foreach($row in $cohortRows){Write-Host $row}
-  Write-Host "C545D_GIO_METHOD_COHORT_ACCOUNTING_PASS,arm=$Arm,cohorts=10,independent_total_checks=5,release_HOLD=1,raw_uploaded=0"
+  foreach($row in $rows){Write-Host $row}
+  Write-Host "C545D_GIO_METHOD_COHORT_ACCOUNTING_PASS,arm=$Arm,cohorts=10,checks=5,release_HOLD=1"
   Write-Host $safePass[0]
   # The disposable probe performs equivalent PSAPI+VirtualQuery phases,
   # but positive deltas do NOT imply a leak and cannot be subtracted from
