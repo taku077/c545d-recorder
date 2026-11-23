@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/patch_c545d_gio_active_two_epoch_ci.py'
+      - 'tests/audit_c545d_gio_active_two_epoch_ci.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - '.github/workflows/c545d-gio-active-two-epoch-preflight.yml'
   workflow_dispatch:
@@ -19,6 +20,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          py tests/audit_c545d_gio_active_two_epoch_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Two-epoch resource phase analysis selftest failed'}
           py tests/patch_c545d_gio_active_two_epoch_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Bounded active epoch overlay negative cases failed'}
           $dest=Join-Path $env:RUNNER_TEMP 'c545d_gio_preinit_probe.c'
