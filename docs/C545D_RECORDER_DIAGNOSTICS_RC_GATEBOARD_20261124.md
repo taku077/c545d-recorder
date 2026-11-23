@@ -1,0 +1,34 @@
+# C545D — first limited recorder + weekly diagnostic companion release gateboard
+
+As of 2026-11-24 JST. Current active PR [#62](https://github.com/taku077/c545d-recorder/pull/62). **NOT released or approved on recorder Windows10.** This board is evidence-based and must be updated against actual future CI jobs rather than treating a commit or a synthetic selftest as full production proof.
+
+## Baseline inventory: reuse, do not rewrite
+
+- Existing Windows 10 x64 **native WinForms EXE** in `src/C545D.Launcher`, .NET Framework 4.8, retains PowerShell/GStreamer backend `Record.ps1`/`RecordGUIWorker.ps1`; safety guards preserve existing avdec_h264, 2 RTSP left stream1/right stream6, 2560×720/15fps, AAC mono48kHz target192kbps, x264 medium Q24, hourly MP4 split, EOS and recover/reconnect paths.
+- Existing `.github/workflows/build-exe.yml` packages EXE, backend scripts, private H264 SEI plugin and run-time entry files; gates 16 real GStreamer production graph variants, native WinForms smoke/SEI opt-out, media/EOS/DPAPI, and safe existing log exporter. Last prior integrated [#45231804824 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45231804824) verified bundle inclusion of new companion at code SHA `b411a471`. More recent [#45231894437 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45231894437) includes the revised export concurrency support. The latest newly extended 72h/weekly missing-data synthetic test runs independently and must be paired with fresh packaged-build evidence.
+- Existing `diagnostics/Monitor-C545DMemory.ps1` is bounded 240-minute-by-default snapshot collector; **do not** repurpose as perpetual unattended monitor. Existing `Export-SafeDiagnostics.ps1` is a sanitized *GStreamer log* exporter for short explicit debugging, not weekly process metrics.
+
+## Initial detached weekly companion v0.1.0: implemented
+
+Files:
+- `diagnostics/C545D-WeeklyObserver.ps1`: Windows PowerShell 5.1, separate process, 60s read-only `gst-launch-1.0` CPU ticks, PrivateMemorySize64, WorkingSet64, handles, threads, PID/start identity, own PrivateBytes, explicit missing/error/ambiguous process statuses. No command-line arguments or camera credentials read. Never kills/controls GStreamer, touches DLL/registry or triggers ETW.
+- `START_WEEKLY_OBSERVER.cmd`: separate minimized process, Windows process-local single-instance mutex; `EXPORT_WEEKLY_REPORT.cmd`: one-click manual safe last-seven-days ZIP while monitor runs. No network upload.
+- Daily CSV `process_YYYYMMDD.csv` in `%LOCALAPPDATA%\C545D_GStreamer\WeeklyObserver\metrics`, persistent `observer_state.json` with safe atomic backup; 72h one-time due then successive seven-day due dates; schema-only `C545D_SAFE_WEEKLY_*.zip` in `reports`. ZIP includes `process_metrics.csv`, `manifest.json`, `summary.json` only, never raw GST logs, host paths, passwords, RTSP URLs or media.
+- Independent diagnostics schema version **1**, companion version **0.1.0**, explicit `not_collected` for recorder version, RTSP/MP4/EOS integrity and heap allocations. Rejects malformed fields/extra source data from daily CSV; missing observations are NOT counted as healthy recording. Local retention goal 30 days and metrics cap 200MiB; empirically not yet proved for sustained production workload.
+- `.github/workflows/c545d-weekly-observer-ci.yml`: Windows2022 PowerShell5.1 parser, synthetic ZIP/secret rejection, 72h state across restart, seven-day subsequent period and empty-week gap, one real synthetic-runner process sample, simultaneous ZIP while monitor mutex is held, malformed stored CSV rejection. [#45232319643 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45232319643) and [#45231979925 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45231979925). Some earlier failure runs were **fixed CI/control bugs**: null backup path in .NET Framework `File.Replace`, then expected negative child-stderr being treated as an unhandled PowerShell exception. Both fixed and retested. Do not repeat.
+
+## Required gates before a real-user limited monitored release
+
+| Gate | Present state and next actionable work |
+|---|---|
+| Reproducible Win10-compatible EXE+weekly bundle | Existing build passed CI #45231804824; newer commits require their own latest integrated build confirmation, SHA/version manifest and candidate artifact review |
+| Recorder AV/MP4/EOS graph + safety | 16 graph variant and native UI/EOS/DPAPI/SEI synthetic CI checks exist; check latest combined build and compare with former RC32/RC35 host findings; do not claim real-camera coverage from CI |
+| Companion no-interference and privacy | PowerShell5.1 short CI PASS; **continuous resource overhead, process restarts, 72h and seven-day real elapsed Windows10 operation NOT measured** |
+| MP4 / two-camera / AAC / EOS closed-segment status | **NOT_COLLECTED** by v0.1; next most valuable diagnostic upgrade. Design low-overhead post-close metadata from existing recorder events, not frame-level continuous decode; provide redacted IDs and quality/time-bucket counts |
+| Process build identity and diagnostic update continuity | Recorder version/build hash currently `not_collected`, companion version/schema present. Add build fingerprint, persisted version-boundaries and rollback/migration tests in v0.2 before making cross-version leak percentage claims |
+| One minimal approved host acceptance & rollback | **NOT AUTHORIZED**, `install_approved=0`, `live_test_authorized=0`. Requires user-approved package install *only after* all feasible offline validation; demonstrate first completed 1h MP4, two video streams plus audio, EOS stop/restart, observer overhead and safe rollback. No repeated 4h WPR/UMDH experiments |
+| Patched GLib/GIO WinRT memory growth | Separate research track continues in PR #62: exact PDB DisplayName wrapper +64 retained tagged blocks /5632 requested B, package outside wrapper +32 /5554 B in second equivalent isolated registry epoch [#45220933192 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45220933192). This is NOT yet an unbounded leak verdict; current experimental DLL is **NOT** an approved recorder installation |
+
+## Policy for the next loop
+
+Approved release -> user records while detached lightweight monitor runs -> one-off ZIP at 72h, every seven days thereafter -> chat examines validated samples, missing classifications and recorder health -> AI continues isolated CI/root-cause work without awaiting ZIP -> versioned standalone diagnostic update and independently verified recorder correction -> next safe release as evidence warrants. Software release interval is **not** fixed to one week. Diagnostic-only upgrades must not stop recorder or alter the approved GStreamer runtime. No automatic external upload or public private data. Maintain prior working package and a reversible stop/EOS/offline-change process.
