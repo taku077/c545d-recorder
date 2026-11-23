@@ -48,6 +48,9 @@ def evaluate(raw: str, arm: str, *, requested_top: int | None = None) -> str:
         raise ValueError("inconsistent_metric_rows")
     accepted_alloc = accepted_out = rejected_alloc = rejected_out = 0
     complete_numeric_rejected = malformed = rejected_exceeds = 0
+    rejected_realloc_sum = 0
+    realloc_compatible_rows = realloc_incompatible_rows = 0
+    realloc_compatible_out_sum = realloc_incompatible_out_sum = 0
     accepted_count = 0
     for item in metrics:
         matches = {key: rx.findall(item) for key, rx in METRICS.items()}
@@ -67,8 +70,15 @@ def evaluate(raw: str, arm: str, *, requested_top: int | None = None) -> str:
             complete_numeric_rejected += 1
             rejected_alloc += a
             rejected_out += o
+            rejected_realloc_sum += r
             if o > a:
                 rejected_exceeds += 1
+                if a + r >= o:
+                    realloc_compatible_rows += 1
+                    realloc_compatible_out_sum += o
+                else:
+                    realloc_incompatible_rows += 1
+                    realloc_incompatible_out_sum += o
         else:
             accepted_count += 1
             accepted_alloc += aa
@@ -106,6 +116,12 @@ def evaluate(raw: str, arm: str, *, requested_top: int | None = None) -> str:
         f"rejected_malformed_rows={malformed},rejected_out_exceeds_alloc_rows={rejected_exceeds},"
         f"accepted_alloc_sum={accepted_alloc},accepted_out_sum={accepted_out},"
         f"rejected_raw_alloc_sum={rejected_alloc},rejected_raw_out_sum={rejected_out},"
+        f"rejected_raw_realloc_sum={rejected_realloc_sum},"
+        f"out_exceeds_alloc_realloc_compatible_rows={realloc_compatible_rows},"
+        f"out_exceeds_alloc_realloc_incompatible_rows={realloc_incompatible_rows},"
+        f"out_exceeds_alloc_realloc_compatible_out={realloc_compatible_out_sum},"
+        f"out_exceeds_alloc_realloc_incompatible_out={realloc_incompatible_out_sum},"
+        f"all_out_exceeds_alloc_rows_realloc_compatible={int(rejected_exceeds>0 and realloc_incompatible_rows==0)},"
         f"global_minus_accepted_out={residual},"
         f"raw_rows_minus_global_out={raw_row_out-global_out},"
         f"rejected_relation={relation},"
@@ -116,19 +132,20 @@ def evaluate(raw: str, arm: str, *, requested_top: int | None = None) -> str:
         "allocation_lifetime_unproven=1,host_untouched=1,raw_uploaded=0"
     )
 
-def sample(*, rej_out: int, global_out: int = 10, top: int = 2) -> str:
+def sample(*, rej_out: int, global_out: int = 10, top: int = 2,
+           rej_realloc: int = 0) -> str:
     return (
-        f"GLOBAL ALLOCATIONS:\nAlloc : 40, 4.0 KB\nRealloc : 0\n"
+        f"GLOBAL ALLOCATIONS:\nAlloc : 40, 4.0 KB\nRealloc : {rej_realloc}\n"
         f"Outstanding : {global_out}, 1.0 KB\n"
         "-------------------------------------------\n"
-        f"TOP {top}:\nAlloc : 40, 4.0 KB\nRealloc : 0\n"
+        f"TOP {top}:\nAlloc : 40, 4.0 KB\nRealloc : {rej_realloc}\n"
         f"Outstanding : {global_out}, 1.0 KB\n"
         "-------------------------------------------\n"
         "ntdll.dll!RtlAllocateHeap\ngio-2.0-0.dll!f\n"
         "Alloc : 25, 2.5 KB\nRealloc : 0\nOutstanding : 6, 0.6 KB\n"
         "-------------------------------------------\n"
         "ntdll.dll!RtlAllocateHeap\nglib-2.0-0.dll!f\n"
-        f"Alloc : 1, 0.2 KB\nRealloc : 0\nOutstanding : {rej_out}, 0.4 KB\n"
+        f"Alloc : 1, 0.2 KB\nRealloc : {rej_realloc}\nOutstanding : {rej_out}, 0.4 KB\n"
     )
 
 def selftest() -> None:
@@ -137,6 +154,13 @@ def selftest() -> None:
     assert "validated_full_count_coverage=0" in evaluate(sample(rej_out=4), "registry")
     assert "rejected_raw_less_than_residual" in evaluate(sample(rej_out=2), "registry")
     assert "rejected_raw_exceeds_residual" in evaluate(sample(rej_out=7), "registry")
+    compatible = evaluate(sample(rej_out=4, rej_realloc=3), "registry", requested_top=8192)
+    assert "rejected_raw_realloc_sum=3" in compatible
+    assert "out_exceeds_alloc_realloc_compatible_rows=1" in compatible
+    assert "all_out_exceeds_alloc_rows_realloc_compatible=1" in compatible
+    incompatible = evaluate(sample(rej_out=4, rej_realloc=2), "registry", requested_top=8192)
+    assert "out_exceeds_alloc_realloc_incompatible_rows=1" in incompatible
+    assert "all_out_exceeds_alloc_rows_realloc_compatible=0" in incompatible
     nochange = sample(rej_out=4).replace("GLOBAL ALLOCATIONS:", "GLOBAL ALLOCATIONS:")
     assert "requested_cap_reached=1" in evaluate(nochange, "nochange", requested_top=2)
     assert "requested_cap_reached=0" in evaluate(nochange, "nochange", requested_top=8192)
@@ -178,7 +202,7 @@ def selftest() -> None:
     else:
         raise AssertionError("unapproved_arm_accepted")
     print("C545D_GIO_ETW_STACK_BOUNDS_SELFTEST_PASS,"
-          "positive=10,negative=10,residual_not_proven_owner=1,"
+          "positive=12,negative=10,residual_not_proven_owner=1,"
           "unsafe_row_coercion=0,new_windows_runs=0,host_untouched=1")
 
 def main() -> None:

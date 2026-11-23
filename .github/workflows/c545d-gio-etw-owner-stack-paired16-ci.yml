@@ -38,6 +38,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Source stack owner parser selftest failed'}
           py tests/analyze_c545d_gio_etw_image_aggregate_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Heap image aggregation incompleteness detector selftest failed'}
+          py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Heap realloc group coverage metrics source fixtures failed'}
           py tests/patch_c545d_gio_etw_stop_qpc_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'QPC source guard invalid'}
           py tests/analyze_c545d_gio_etw_worker_stop_qpc_ci.py --selftest
@@ -297,6 +299,7 @@ jobs:
           name: c545d-gio-etw-source-cohort-numeric-only
           path: |
             artifacts/numeric/etw-*-summary-only.txt
+            artifacts/numeric/etw-*-bounds-only.txt
             artifacts/numeric/same-run-resource-only.txt
             artifacts/numeric/etw-worker-stop-qpc-only.txt
             artifacts/numeric/gio-etw-source-cohorts-only.txt

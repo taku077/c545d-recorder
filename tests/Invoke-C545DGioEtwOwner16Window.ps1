@@ -176,7 +176,7 @@ try {
         Write-Host "C545D_GIO_ETW_STACK_BOUNDS_GAP,arm=$Arm,top=$topLabel,reason=PRIVATE_REPORT_MISSING_OR_OVERSIZED,raw_uploaded=0"
         return
       }
-      $boundsSafe=@(& py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --report $privateReport --arm $Arm 2> $rawLocal)
+      $boundsSafe=@(& py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --report $privateReport --arm $Arm --requested-top ([int]$topLabel) 2> $rawLocal)
       $status=$LASTEXITCODE
       $match=@($boundsSafe | Where-Object {
         $_ -match ('^C545D_GIO_ETW_STACK_COVERAGE_BOUNDS,arm='+$Arm+',[A-Za-z0-9_,=.-]+$')
