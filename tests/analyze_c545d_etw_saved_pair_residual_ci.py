@@ -50,8 +50,8 @@ def read_numeric(directory: Path, expect: set[str]) -> list[tuple[str, dict[str,
     return rows
 
 
-def unique(rows: list[tuple[str, dict[str, str]]], kind: str, **filter: str) -> dict[str, str]:
-    match = [f for k, f in rows if k == kind and all(f.get(n) == v for n, v in filter.items())]
+def unique(rows: list[tuple[str, dict[str, str]]], record_type: str, **filter: str) -> dict[str, str]:
+    match = [f for k, f in rows if k == record_type and all(f.get(n) == v for n, v in filter.items())]
     if len(match) != 1:
         raise ValueError("numeric_identity_not_unique")
     return match[0]
