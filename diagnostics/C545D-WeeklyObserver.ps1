@@ -267,17 +267,20 @@ if($SelfTest){Test-Observer;exit 0}
 if(-not(Test-Path -LiteralPath $RootDirectory)){
  New-Item -ItemType Directory -Path $RootDirectory -Force|Out-Null
 }
+# ZIP export must work WHILE the detached observer owns its sampling mutex.
+# It is read-only against the local CSV history and must never block recording.
+if($ExportNow){
+ $end=[datetime]::UtcNow
+ $zip=New-SafeBundle $RootDirectory $end.AddDays(-7) $end 'manual'
+ Write-Output ('C545D_SAFE_WEEKLY_READY: '+$zip)
+ exit 0
+}
 $mutex=New-Object System.Threading.Mutex($false,'Local\C545D_WeeklyObserver')
 if(-not $mutex.WaitOne(0)){$mutex.Dispose();throw 'OBSERVER_ALREADY_RUNNING'}
 try{
  $state=Load-ObserverState $RootDirectory ([datetime]::UtcNow)
  Save-ObserverState $state $RootDirectory
- if($ExportNow){
-   $end=[datetime]::UtcNow
-   $zip=New-SafeBundle $RootDirectory $end.AddDays(-7) $end 'manual'
-   Write-Output ('C545D_SAFE_WEEKLY_READY: '+$zip)
- }else{
-   do{
+ do{
      $row=Get-ObserverRow
      Save-ObserverRow $row $RootDirectory
      try{
@@ -292,7 +295,6 @@ try{
      }
      if(-not $Once){Start-Sleep -Seconds $IntervalSeconds}
    }while(-not $Once)
- }
 }finally{
  $mutex.ReleaseMutex()
  $mutex.Dispose()
