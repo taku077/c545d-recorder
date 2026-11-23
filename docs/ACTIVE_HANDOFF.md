@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9ba806079c50d44b30db25d6297f2cb30039b922`
-- **PR updated at (UTC):** `2026-11-23T15:04:12Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9ba806079c50d44b30db25d6297f2cb30039b922/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f9f1eacd0d58a5c5680fb00d4e8fc3f0b970bd26`
+- **PR updated at (UTC):** `2026-11-23T15:05:53Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f9f1eacd0d58a5c5680fb00d4e8fc3f0b970bd26/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45201053496](https://github.com/taku077/c545d-recorder/actions/runs/45201053496) |
-| C545D first AppInfo live GIO original method ETLX (single bounded paired run) | in_progress | [#45201042016](https://github.com/taku077/c545d-recorder/actions/runs/45201042016) |
+| C545D active development handoff auto-refresh | in_progress | [#45201367032](https://github.com/taku077/c545d-recorder/actions/runs/45201367032) |
+| C545D first AppInfo live GIO original method ETLX (single bounded paired run) | in_progress | [#45201355796](https://github.com/taku077/c545d-recorder/actions/runs/45201355796) |
 
 ## Current development findings from the active PR
 
