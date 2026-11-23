@@ -59,3 +59,29 @@ Only after the above archive and source preflights passed, [commit `bfac95f`](ht
 ## Safety / release
 
 All four `docs/MEMORY_CLASSIFICATION_CASES.json` cases stay `EVIDENCE_GAP`, production `HOLD`. No user work, actual Tapo camera, Windows10 recorder process, DLL swap or host registry change. Keep stream1 left/stream6 right, 2560x720@15, x264 medium QP24, AAC mono48kHz/192kbps target, hourly MP4, synchronized video/audio, avdec_h264 and safe EOS unchanged.
+
+## Verified result of the one bounded GIO Windows trial
+
+[Windows CI #45131569995](https://github.com/taku077/c545d-recorder/actions/runs/45131569995), job `137548033424` at tested source [`bfac95f`](https://github.com/taku077/c545d-recorder/commit/bfac95f8b3ab9406c6163fd724bb54e5e11c3729), **overall workflow FAILURE due intentionally strict complete source-owner gate**. The Windows GIO MSVC build and **2047 official SDK exports PASS**, zero-loss nochange ETW late4 Out#0 (Alloc8048), registry ETW late4 **Alloc619936, Out16061, rounded OutKB890.8**. The two new local Xperf reports from the SAME original ETL did produce safe numeric results:
+
+| Measurement | Requested `-top 1024` | Requested `-top 8192` |
+|---|---:|---:|
+| Xperf actual `TOP` header and metric stack rows | 1024 | **1164** |
+| Well-formed rows | 994 | **1134** |
+| Rows with `Out# > Alloc#` | **30** | **30** |
+| Well-formed rows Alloc sum | 584552 | **619936** |
+| Well-formed rows Out sum | 15595 | **15595** |
+| 30 rejected rows raw Alloc sum | **0** | **0** |
+| 30 rejected rows raw Out sum | **466** | **466** |
+| All rows raw Out sum | **16061** | **16061** |
+| Independently observed GLOBAL.Alloc / GLOBAL.Out | 619936 / 16061 | 619936 / 16061 |
+
+**New finding:** the 466 arithmetic residual is *entirely numerically accounted for by 30 zero-Alloc, positive-Out Xperf stack groups* in this trial. Widening the requested cap from1024 to8192 added 140 stack groups, raising valid Alloc counts by **35384** to equal GLOBAL.Alloc, but did not add outstanding blocks. The wider report emitted only **1164 groups**, below the requested 8192, so for this trace it is not top-N truncated. This is a **complete aggregate count reconciliation** (Alloc and Out sums), but **not** verified owner-lifetime attribution for these 30 groups. Source-frame membership, heap realloc grouping semantics and historical untraced allocation states remain unverified, and an Out#>Alloc# row does not by itself prove a leak.
+
+**Parser assumption corrected without another Windows run:** the original `tests/analyze_c545d_etw_stack_coverage_bounds_ci.py` used equality of `TOP N` header and row count as evidence of saturation. Actual Xperf prints `TOP 1164` even though **the invocation requested `-top 8192`**, so that inference was invalid. [`61cd029`](https://github.com/taku077/c545d-recorder/commit/61cd0295e27062b90f36a16cfb2801846b7479ea) separates `top_header_rows` from explicitly supplied `requested_top`; without the requested bound, truncation remains unknown and cannot be silently asserted. A broad-count reconciliation cannot by itself mark 466 addresses as leaked.
+
+Additional same-run 0→16 GIO resource comparisons (different interval from ETW's cycles13→16): PrivateUsage controlled **+385024 B**, Heap REGION controlled **+389120 B**, HeapWalk BUSY controlled **-3610 B**; registry callbacks17, workers18, QPC stop worker overlap0, one worker returned after stop-ack. These values do not establish cause or new cross-run improvement. No Tapo device/host changed.
+
+### Technical next discriminator, no user measurements
+
+Examine the actual pinned Xperf `Realloc` metric treatment and whether zero-Alloc/positive-Out groups can represent a **reallocation attribution or missing-allocation-stack group**, then construct a *small deterministic HeapReAlloc source fixture and fail-closed group classifier* in isolated Windows CI, not another GIO 16-cycle trace. Prove/deny that mechanism before another candidate-GIO measurement. Only after source-backed mapping can the 30 groups receive a valid owner label; a row with nonzero Out and zero Alloc is not automatically a malformed heap or source leak. Keep the four global classification cases OPEN and recorder release HOLD.
