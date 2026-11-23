@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `c8483db84d64a54c9147d22a79f227819e0496ce`
-- **PR updated at (UTC):** `2026-11-23T12:06:33Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c8483db84d64a54c9147d22a79f227819e0496ce/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9b88b0be512599e70425ab2d3537f4add880d30f`
+- **PR updated at (UTC):** `2026-11-23T12:08:57Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9b88b0be512599e70425ab2d3537f4add880d30f/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45171179534](https://github.com/taku077/c545d-recorder/actions/runs/45171179534) |
-| C545D original HeapAlloc callstack identity from private ETLX | in_progress | [#45171175038](https://github.com/taku077/c545d-recorder/actions/runs/45171175038) |
+| C545D active development handoff auto-refresh | in_progress | [#45171550820](https://github.com/taku077/c545d-recorder/actions/runs/45171550820) |
+| C545D mixed-size real ETW heap lifetime calibration | in_progress | [#45171545615](https://github.com/taku077/c545d-recorder/actions/runs/45171545615) |
 
 ## Current development findings from the active PR
 
