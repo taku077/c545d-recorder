@@ -210,13 +210,15 @@ def main()->None:
     p=argparse.ArgumentParser()
     p.add_argument("--selftest",action="store_true")
     p.add_argument("--dll",type=Path)
-    p.add_argument("--pdb",type=Path)
+    group=p.add_mutually_exclusive_group()
+    group.add_argument("--pdb",type=Path)
+    group.add_argument("--pdb-root",type=Path)
     a=p.parse_args()
     if a.selftest:
         selftest()
         return
-    if a.dll is None or a.pdb is None:
-        p.error("--dll and --pdb required")
+    if a.dll is None or (a.pdb is None and a.pdb_root is None):
+        p.error("--dll and (--pdb or --pdb-root) required")
     if os.environ.get("GITHUB_ACTIONS")!="true" or os.environ.get("RUNNER_OS")!="Windows":
         raise SystemExit("C545D_GIO_PE_PDB_GAP,reason=NOT_DISPOSABLE_WINDOWS_CI,release_HOLD=1")
     temp=os.environ.get("RUNNER_TEMP")
@@ -225,12 +227,27 @@ def main()->None:
     root=Path(temp).resolve()
     try:
         dll=a.dll.resolve(strict=True)
-        pdb=a.pdb.resolve(strict=True)
-        if root not in dll.parents or root not in pdb.parents:
-            raise ValueError("nonprivate_file")
-        if dll.stat().st_size>MAX_DLL or pdb.stat().st_size>MAX_PDB:
-            raise ValueError("file_too_large")
-        print(verify(dll.read_bytes(),pdb.read_bytes(),"gio-2.0-0.pdb"))
+        if root not in dll.parents or dll.stat().st_size>MAX_DLL:
+            raise ValueError("nonprivate_DLL")
+        dllbytes=dll.read_bytes()
+        expected=pe_codeview(dllbytes)[2]
+        if a.pdb_root is not None:
+            base=a.pdb_root.resolve(strict=True)
+            if root not in base.parents:
+                raise ValueError("nonprivate_PDB_search_path")
+            # GitHub runner-local build only, not an external symbol server.
+            candidates=list(base.rglob("*.pdb"))
+            if len(candidates)>1000:
+                raise ValueError("unbounded_PDB_inventory")
+            possible=[c for c in candidates if c.name.lower()==expected]
+            if len(possible)!=1:
+                raise ValueError("PDB_not_unique_or_missing")
+            pdb=possible[0].resolve(strict=True)
+        else:
+            pdb=a.pdb.resolve(strict=True)
+        if root not in pdb.parents or pdb.stat().st_size>MAX_PDB:
+            raise ValueError("nonprivate_PDB")
+        print(verify(dllbytes,pdb.read_bytes(),expected))
     except (ValueError,OSError) as ex:
         # Never show the filename or even exception text on public CI logs.
         print("C545D_GIO_PE_PDB_GAP,reason=SOURCE_FILE_OR_GUID_AGE_UNVERIFIED,"
