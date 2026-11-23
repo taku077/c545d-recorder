@@ -1,0 +1,25 @@
+name: C545D GLib 2.82.4 Win32 watcher epoch source audit
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_glib_2824_producer_epoch_ci.py'
+      - '.github/workflows/c545d-glib-2824-producer-epoch-audit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject false closure flags and unverifiable callbacks
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_glib_2824_producer_epoch_ci.py --selftest
+      - name: Verify exact GNOME 2.82.4 Git blobs and real watch worker APC source contract
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_glib_2824_producer_epoch_ci.py --verify-pinned
+          echo 'C545D_GLIB_2824_SOURCE_SCOPE_PASS,no_recorder_changed=1,real_GIO_closed_epoch_proven=0,release_HOLD=1'
