@@ -1,4 +1,4 @@
-# C545D diagnostic companion v0.1.0: Windows 10 / PowerShell 5.1.
+# C545D diagnostic companion v0.3.0: Windows 10 / PowerShell 5.1.
 # Separate, read-only and low-frequency. No recorder injection or restart.
 [CmdletBinding()]
 param(
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference='Stop'
 $culture=[Globalization.CultureInfo]::InvariantCulture
 $utf8=New-Object Text.UTF8Encoding($false)
-$version='0.2.0'
+$version='0.3.0'
 $schema='1'
 $columns=@('schema_version','utc_time','status','pid','start_utc',
  'private_bytes','working_set_bytes','handle_count','thread_count',
@@ -197,10 +197,118 @@ function Read-NamerEvents([string]$directory,[datetime]$begin,[datetime]$end){
  }
  return $result
 }
+# Existing RecordGUIWorker.ps1 transcribes stdout into Recording_*.txt.
+# Every line is NOT timestamped: ONLY source-file LastWriteTimeUtc is used to
+# select a recording SESSION, never to timestamp an exit/reconnect/EOS event.
+# A log which did not reach "Windows PowerShell transcript end" cannot prove
+# a fully completed session: it remains incomplete_or_active.
+# This parser returns only fixed numeric/count/enum fields; no raw lines,
+# PIDs, filenames, local paths, RTSP addresses or exception messages.
+function Read-WorkerSessions([string]$directory,[datetime]$begin,[datetime]$end){
+ $sessions=New-Object 'System.Collections.Generic.List[object]'
+ $result=[pscustomobject]@{
+   status='not_found'; sessions=$sessions; files_seen=0
+   completed_sessions=0; incomplete_sessions=0
+   eos_reported=0; policy_reconnect=0; unexpected_exit=0
+   nonzero_exit=0
+ }
+ if(-not(Test-Path -LiteralPath $directory -PathType Container)){
+   return $result
+ }
+ try{
+   $files=@(Get-ChildItem -LiteralPath $directory -Filter 'Recording_*.txt' -File -ErrorAction Stop)
+ }catch{$result.status='source_enumeration_error';return $result}
+ if($files.Count -gt 100){$result.status='source_count_limit';return $result}
+ $result.status='complete'
+ foreach($file in $files){
+   if($file.Name -cnotmatch '^Recording_\d{8}_\d{6}_\d{1,10}\.txt$'){continue}
+   # Snapshot selection uses file mtime only; session events have no clock.
+   if($file.LastWriteTimeUtc -lt $begin -or $file.LastWriteTimeUtc -ge $end){continue}
+   if($sessions.Count -ge 80){$result.status='session_count_limit';break}
+   $result.files_seen++
+   $state='incomplete_or_active'
+   $launch=0;$returned=0;$policyReconnect=0;$unexpected=0;$nonzero=0
+   $eos=0;$stopMarkerRc0=$false;$stopPolicy=$false;$transcriptEnd=$false
+   $scan=0;$stream=$null;$reader=$null
+   if($file.Length -gt 8MB){$state='source_too_large'}
+   elseif(($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+     $state='source_reparse_rejected'
+   }else{
+     try{
+       $stream=[IO.File]::Open($file.FullName,[IO.FileMode]::Open,
+         [IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+       $reader=New-Object IO.StreamReader($stream,[Text.Encoding]::UTF8,$true)
+       while(($line=$reader.ReadLine()) -ne $null){
+         $scan++
+         if($scan -gt 100000){$state='line_limit';break}
+         if($line.Length -gt 8192){continue}
+         # Source markers defined in Record.ps1, not arbitrary stderr text.
+         if($line -cmatch '^GStreamer launching \(EOS enabled\); attempt=([1-9]\d{0,5})\s*$'){
+           $launch++;$stopMarkerRc0=$false;$stopPolicy=$false
+         }elseif($line -cmatch '^GStreamer returned; exitCode=(-?\d{1,10}); stopMarker=(True|False); consoleCtrlCEvents=(\d{1,8})\s*$'){
+           $value=0
+           if(-not [int]::TryParse($matches[1],[ref]$value)){
+             $state='invalid_exit_code';break
+           }
+           $returned++;$stopMarkerRc0=($value -eq 0 -and $matches[2] -ceq 'True')
+           $stopPolicy=$false
+           if($value -ne 0){$nonzero++}
+           if($matches[2] -ceq 'False'){$unexpected++}
+         }elseif($line -cmatch '^Recorder exit policy: (stop|reconnect)\s*$'){
+           if($matches[1] -ceq 'reconnect'){$policyReconnect++}
+           $stopPolicy=$matches[1] -ceq 'stop'
+         }elseif($line -ceq 'Recording stopped by GUI; GStreamer EOS completed.'){
+           # Require BOTH an explicitly authorized stop with rc0, and
+           # a source policy=stop in the same session. Never count alone.
+           if($stopMarkerRc0 -and $stopPolicy){
+             $eos++;$stopMarkerRc0=$false;$stopPolicy=$false
+           }
+         }elseif($line -ceq 'Windows PowerShell transcript end'){
+           $transcriptEnd=$true
+         }
+       }
+       if($state -eq 'incomplete_or_active' -and $transcriptEnd){
+         $state='complete'
+       }
+     }catch{$state='source_unreadable'}
+     finally{
+       if($reader){$reader.Dispose()}
+       elseif($stream){$stream.Dispose()}
+     }
+   }
+   # A partial or failed source is NOT proof of any outcome; hide counters
+   # rather than silently classify the absent events as zero.
+   if($state -ne 'complete'){
+     $launch=0;$returned=0;$policyReconnect=0
+     $unexpected=0;$nonzero=0;$eos=0
+     $result.incomplete_sessions++
+   }else{
+     $result.completed_sessions++
+     $result.eos_reported+=$eos
+     $result.policy_reconnect+=$policyReconnect
+     $result.unexpected_exit+=$unexpected
+     $result.nonzero_exit+=$nonzero
+   }
+   $sessions.Add([pscustomobject][ordered]@{
+     source_last_write_utc=UtcText $file.LastWriteTimeUtc
+     session_index=$sessions.Count+1
+     source_status=$state
+     launch_count=$launch
+     gst_return_count=$returned
+     authorized_eos_reported_count=$eos
+     reconnect_policy_count=$policyReconnect
+     exit_without_stop_marker_count=$unexpected
+     nonzero_exit_count=$nonzero
+     event_time_resolution='session_only'
+   })
+ }
+ return $result
+}
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
  $rows=Read-ValidRows $root $begin $end
  $media=Read-NamerEvents $RecorderLogDirectory $begin $end
+ $worker=Read-WorkerSessions $RecorderLogDirectory $begin $end
  $dir=Join-Path $root 'reports'
  New-Item -ItemType Directory -Path $dir -Force|Out-Null
  $work=Join-Path $dir ('work_'+[guid]::NewGuid().ToString('N'))
@@ -226,7 +334,12 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      video_stream_count='not_collected'
      aac_audio_integrity='not_collected'
      mp4_duration='not_collected'
-     eos_confirmation='not_collected'
+     eos_confirmation='recorder_log_reported_only_not_mp4_proven'
+     recorder_session_event_source_status=$worker.status
+     recorder_completed_transcripts=$worker.completed_sessions
+     recorder_incomplete_transcripts=$worker.incomplete_sessions
+     recorder_reported_authorized_eos_count=$worker.eos_reported
+     precise_recorder_event_timestamps='not_collected'
      rtsp_reconnects='not_collected'
      gstreamer_heap_attribution='not_collected'
      heavy_etw='disabled';automatic_upload=$false
@@ -241,7 +354,13 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      watcher_lost_event_count=$media.watcher_losses
      watcher_error_count=$media.watcher_errors
      namer_source_status=$media.status
-     next_instrumentation_gap='2_stream_AAC_duration_EOS_not_proven_by_rename_log'
+     worker_session_log_source_status=$worker.status
+     worker_session_reported_eos_count=$worker.eos_reported
+     worker_session_reconnect_policy_count=$worker.policy_reconnect
+     worker_session_unexpected_exit_count=$worker.unexpected_exit
+     worker_session_nonzero_exit_count=$worker.nonzero_exit
+     worker_session_incomplete_count=$worker.incomplete_sessions
+     next_instrumentation_gap='actual_mp4_AV_duration_and_precise_EOS_times_not_proven_by_session_log'
    }
    $metric=Join-Path $work 'process_metrics.csv'
    if($samples.Count){
@@ -258,11 +377,26 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
    }else{
      [IO.File]::WriteAllText($mediaFile,'utc_time,event,count'+[Environment]::NewLine,$utf8)
    }
+   $sessionFile=Join-Path $work 'recorder_sessions.csv'
+   if($worker.sessions.Count -gt 0){
+     $worker.sessions | Select-Object source_last_write_utc,session_index,
+       source_status,launch_count,gst_return_count,authorized_eos_reported_count,
+       reconnect_policy_count,exit_without_stop_marker_count,nonzero_exit_count,
+       event_time_resolution |
+       Export-Csv -LiteralPath $sessionFile -NoTypeInformation -Encoding UTF8
+   }else{
+     $sessionHeader=@('source_last_write_utc','session_index','source_status',
+       'launch_count','gst_return_count','authorized_eos_reported_count',
+       'reconnect_policy_count','exit_without_stop_marker_count',
+       'nonzero_exit_count','event_time_resolution')
+     [IO.File]::WriteAllText($sessionFile,
+       ($sessionHeader -join ',')+[Environment]::NewLine,$utf8)
+   }
    [IO.File]::WriteAllText((Join-Path $work 'manifest.json'),
       (ConvertTo-Json $manifest -Depth 4 -Compress),$utf8)
    [IO.File]::WriteAllText((Join-Path $work 'summary.json'),
       (ConvertTo-Json $summary -Depth 4 -Compress),$utf8)
-   Compress-Archive -LiteralPath @($metric,$mediaFile,(Join-Path $work 'manifest.json'),
+   Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,(Join-Path $work 'manifest.json'),
      (Join-Path $work 'summary.json')) -DestinationPath $partial -CompressionLevel Optimal -ErrorAction Stop
    if(-not(Test-Path $partial)){throw 'ZIP_NOT_CREATED'}
    Move-Item -LiteralPath $partial -Destination $output -ErrorAction Stop
