@@ -1,0 +1,40 @@
+name: C545D archived paired 466 arithmetic residual accountability
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_etw_saved_pair_residual_ci.py'
+      - '.github/workflows/c545d-etw-saved-pair-residual-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archive-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source fixtures reject false identity and false leak claims
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_etw_saved_pair_residual_ci.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-gio-etw-source-cohort-numeric-only
+          repository: taku077/c545d-recorder
+          run-id: 45059995357
+          github-token: ${{ github.token }}
+          path: saved/old
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-gio-etw-source-cohort-numeric-only
+          repository: taku077/c545d-recorder
+          run-id: 45062227506
+          github-token: ${{ github.token }}
+          path: saved/new
+      - name: Validate exact original Windows numeric artifact shapes and arithmetic
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_etw_saved_pair_residual_ci.py --old saved/old --new saved/new
+          echo 'C545D_GIO_ETW_SAVED_PAIR_ONLY_PASS,original_runs=2,new_windows_runs=0,host_untouched=1,raw_uploads=0,release=HOLD'
