@@ -150,50 +150,37 @@ jobs:
           $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
           "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host 'C545D_GIO_ETW_SOURCE_MSVC_BUILD_PASS,pinned_source=1,exports2047=1,debug_symbols=1,CI_only=1,host_untouched=1'
-      - name: Run exactly two active epochs per arm with numeric resource and worker QPC gates
+      - name: Capture continuous first-AppInfo to two active QPC source epochs per arm
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
           $sdk=$env:C545D_SDK_ROOT
           $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
-          $root=Join-Path $env:RUNNER_TEMP 'c545d-active-twoepoch-candidate'
+          $root=Join-Path $env:RUNNER_TEMP 'c545d-active-twoepoch-etlx'
           New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
           $source=Join-Path $root 'c545d_gio_preinit_probe.c'
           Copy-Item tests/gio_appinfo_key_handle_probe.c $source
+          py tests/patch_c545d_gio_etw_preinit_source_ci.py $source --until-settled
+          if($LASTEXITCODE -ne 0){throw 'source pre-first AppInfo ETW fence not proven'}
           py tests/patch_c545d_gio_active_two_epoch_ci.py $source
-          if($LASTEXITCODE -ne 0){throw 'two epoch native source contract not verified'}
-          $exe=Join-Path $root 'c545d_gio_twoepoch_candidate_probe.exe'
+          if($LASTEXITCODE -ne 0){throw 'two-epoch source patch not proven'}
+          $exe=Join-Path $root 'c545d_gio_active_epoch_probe.exe'
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
-          & cl.exe @(@('/nologo','/W4','/MD','/O2','/Zi','/TC')+$include+@($source,"/Fe:$exe",'/link','/DEBUG',"/PDB:$root/c545d_gio_twoepoch_candidate_probe.pdb","/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
-          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'candidate twoepoch C probe compile failed'}
-          $origPath=$env:PATH
-          $oldTrace=$env:C545D_CI_APPINFO_PHASE_TRACE
-          $oldExpected=$env:C545D_EXPECTED_GIO_DLL
-          try{
-            $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$origPath"
-            $env:C545D_CI_APPINFO_PHASE_TRACE='1'
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/Zi','/TC')+$include+@($source,"/Fe:$exe",'/link','/DEBUG',"/PDB:$root/c545d_gio_active_epoch_probe.pdb","/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'active ETLX twoepoch native probe compile failed'}
+          $originalPath=$env:PATH
+          $originalDll=$env:C545D_EXPECTED_GIO_DLL
+          try {
+            $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$originalPath"
             $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
             foreach($arm in @('nochange','registry')){
-              $out=Join-Path $root "$arm-private.out"
-              $err=Join-Path $root "$arm-private.err"
-              $arglist=@('--cycles=2','--vm-summary')
-              if($arm -eq 'nochange'){$arglist+='--no-registry-change'}
-              $p=Start-Process -FilePath $exe -WorkingDirectory $root -ArgumentList $arglist -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
-              if($p.ExitCode -ne 0){throw 'isolated candidate twoepoch process failed'}
-              $numeric=Get-Content $out -Raw
-              if($numeric -notmatch 'GIO_PROBE_DONE,cycles=2,'){throw 'candidate epoch completion missing'}
-              py tests/audit_c545d_gio_active_two_epoch_ci.py --input $out
-              if($LASTEXITCODE -ne 0){throw 'candidate private CPU memory handle phase data invalid'}
-              py tests/audit_c545d_gio_active_worker_epochs_ci.py --input $out --arm $arm
-              if($LASTEXITCODE -ne 0){throw 'candidate active worker epochs not comparable'}
-              Write-Host "C545D_GIO_ACTIVE_TWO_EPOCH_CANDIDATE_SCOPE,arm=$arm,completed=2,worker_parity_gate=1,strict_original_owner_ETLX_not_collected=1,leak_slope_not_proven=1,release_HOLD=1"
+              & ./tests/Invoke-C545DGioActiveEpochEtwCI.ps1 -Probe $exe -Root $root -Build $build -Arm $arm
+              if(-not $? -or $LASTEXITCODE -ne 0){throw 'Bounded active GIO per-phase source/worker evidence failed'}
             }
           } finally {
-            $env:PATH=$origPath
-            if($null -eq $oldTrace){Remove-Item Env:C545D_CI_APPINFO_PHASE_TRACE -ErrorAction SilentlyContinue}
-            else{$env:C545D_CI_APPINFO_PHASE_TRACE=$oldTrace}
-            if($null -eq $oldExpected){Remove-Item Env:C545D_EXPECTED_GIO_DLL -ErrorAction SilentlyContinue}
-            else{$env:C545D_EXPECTED_GIO_DLL=$oldExpected}
+            $env:PATH=$originalPath
+            if($null -eq $originalDll){Remove-Item Env:C545D_EXPECTED_GIO_DLL -ErrorAction SilentlyContinue}
+            else{$env:C545D_EXPECTED_GIO_DLL=$originalDll}
           }
-          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_CANDIDATE_CI_PASS,arms=2,cycles_each=2,pinned_GIO_2824=1,host_untouched=1,release_HOLD=1'
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_ETLX_CI_PASS,arms=2,cycles_each=2,three_QPC_cuts=1,original_source_owner=1,raw_uploaded=0,real_recorder_untouched=1,release_HOLD=1'
