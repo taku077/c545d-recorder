@@ -56,6 +56,9 @@ def patch(src: str, *, until_settled:bool=False, single_cycle:bool=False)->str:
     start=src.index(MAIN)
     out=src[:start]+HELPER+"\n"+src[start:]
     out=out.replace(PRE_INIT,
+        ('    report("preappinfo", 0);\n'
+         '    report_vm("preappinfo", 0);\n'
+         '    report_heaps("preappinfo", 0);\n' if until_settled else '')+
         '    /* all GIO AppInfo initial work MUST follow the ETW armed acknowledgement */\n'
         '    if (!c545d_initial_appinfo_etw_fence(L"preinit_ready.signal",\n'
         '                                            L"trace_armed.signal")) return 8;\n'
