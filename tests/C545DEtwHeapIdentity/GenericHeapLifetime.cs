@@ -25,6 +25,7 @@ internal sealed class GenericHeapLifetime
     internal int ReallocMoved { get; private set; }
     internal int ReallocInplace { get; private set; }
     internal int AddressReuse { get; private set; }
+    internal int ReuseByUntrackedSource { get; private set; }
     internal int MaxFreeReallocGap { get; private set; }
     private const long MaxSize = 1L << 36;
     private const long MaxEvents = 400_000;
@@ -119,6 +120,53 @@ internal sealed class GenericHeapLifetime
         pending.Clear();
     }
 
+    // An event from a size class not included in a controlled fixture may
+    // reuse the address of a formerly freed *selected* block. Consume
+    // its retired identity; NEVER attribute the new allocation to the
+    // previous owner. Full GIO census must instead track all sizes.
+    internal void ObserveUntrackedAlloc(ulong heap,ulong address,long size)
+    {
+        Tick();
+        Check(heap,address,size);
+        var key=new Key(heap,address);
+        if (live.ContainsKey(key))
+            throw new ArgumentException("foreign_allocation_overlaps_selected_live");
+        if (pending.Remove(key))
+        {
+            FreeCount++;
+            AddressReuse++;
+            ReuseByUntrackedSource++;
+        }
+    }
+
+    internal void ObserveUntrackedRealloc(ulong heap,ulong oldAddress,
+                                          ulong newAddress,long oldSize,long newSize)
+    {
+        Tick();
+        Check(heap,oldAddress,oldSize);
+        Check(heap,newAddress,newSize);
+        var oldKey=new Key(heap,oldAddress);
+        var newKey=new Key(heap,newAddress);
+        if (live.ContainsKey(oldKey) || pending.ContainsKey(oldKey) ||
+            live.ContainsKey(newKey))
+            throw new ArgumentException("untracked_realloc_overlaps_selected_identity");
+        if (pending.Remove(newKey))
+        {
+            FreeCount++;
+            AddressReuse++;
+            ReuseByUntrackedSource++;
+        }
+    }
+
+    internal void ObserveUntrackedFree(ulong heap,ulong address)
+    {
+        Tick();
+        if(heap==0 || address==0)
+            throw new ArgumentException("invalid_untracked_free");
+        if(IsTracked(heap,address))
+            throw new ArgumentException("free_of_selected_address_not_accounted");
+    }
+
     internal bool IsTracked(ulong heap, ulong address)
     {
         return live.ContainsKey(new Key(heap,address)) ||
@@ -160,6 +208,7 @@ internal sealed class GenericHeapLifetime
             $"realloc_moved={ReallocMoved},realloc_inplace={ReallocInplace},"+
             $"max_free_realloc_event_gap={MaxFreeReallocGap},"+
             $"address_reuse_after_free={AddressReuse},"+
+            $"reuse_from_untracked_size={ReuseByUntrackedSource},"+
             $"fixture_source_epoch_ack={Convert.ToInt32(sourceEpochAcknowledged)},"+
             "real_GIO_source_owner_proven=0,global_appinfo_quiet_proven=0,"+
             "real_device_tested=0,release_HOLD=1,raw_addresses_uploaded=0";
@@ -197,6 +246,17 @@ internal sealed class GenericHeapLifetime
         reused.Free(7,1);
         reused.Alloc(7,1,900,OriginProof.Unresolved);
         Expect(reused.AddressReuse==1);
+        // Address reuse by a different-sized native allocation must
+        // not invent a new owner or report a false double free.
+        var reusedOther=new GenericHeapLifetime();
+        reusedOther.Alloc(7,33,192,OriginProof.SyntheticFixture);
+        reusedOther.Free(7,33);
+        reusedOther.ObserveUntrackedAlloc(7,33,2000);
+        reusedOther.ObserveUntrackedFree(7,33);
+        reusedOther.FinalizePending();
+        Expect(reusedOther.FreeCount==1 &&
+               reusedOther.ReuseByUntrackedSource==1 &&
+               reusedOther.Snapshot().Count==0);
         Action[] bad={
             () => new GenericHeapLifetime().Alloc(0,1,100,OriginProof.Unresolved),
             () => new GenericHeapLifetime().Alloc(1,0,100,OriginProof.Unresolved),
@@ -213,6 +273,9 @@ internal sealed class GenericHeapLifetime
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.Realloc(1,1,2,100,200);t.Summary(false,true,true);},
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.Realloc(1,1,2,100,200);t.Summary(true,false,true);},
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.Free(1,1);t.FinalizePending();t.Realloc(1,1,2,100,200);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedAlloc(1,1,200);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedRealloc(1,2,1,80,200);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedFree(1,1);},
         };
         for (int i=0;i<bad.Length;i++)
         {
@@ -221,7 +284,7 @@ internal sealed class GenericHeapLifetime
             catch (ArgumentException) {denied=true;}
             Expect(denied);
         }
-        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=2,negative=15,"+
+        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=3,negative=18,"+
             "arbitrary_sizes=1,source_class_no_size_guess=1,orphan_realloc_denied=1,"+
             "source_gio_untested=1,release_HOLD=1,raw_addresses_uploaded=0");
     }
