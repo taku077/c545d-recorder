@@ -3,17 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1b92fcd9c01e66e97cf4d7b2a131c12fb345eddb`
-- **PR updated at (UTC):** `2026-11-23T17:18:44Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1b92fcd9c01e66e97cf4d7b2a131c12fb345eddb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1c1f0c2265dd2e040810ee0d24aea2d656d39394`
+- **PR updated at (UTC):** `2026-11-23T17:19:15Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1c1f0c2265dd2e040810ee0d24aea2d656d39394/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45226285872](https://github.com/taku077/c545d-recorder/actions/runs/45226285872) |
+| C545D active development handoff auto-refresh | in_progress | [#45226378135](https://github.com/taku077/c545d-recorder/actions/runs/45226378135) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-24 JST — **continuous evidence-to-release loop ADOPTED; diagnostics are themselves iteratively upgraded**
+
+- **LATEST AGREED POLICY:** the user and assistant explicitly selected a rolling, **evidence-driven two-track loop**. Start from one safely validated limited recorder + **independent low-overhead diagnostics** release; user records and submits sanitized diagnostic ZIP (first 72h, then every 7 days); assistant analyses alongside historical 16/256-cycle and ETW data; AI keeps source work/CI/recorder tests moving between ZIP submissions; the ZIP may expose *missing* measurements and must produce a prioritized next diagnostics feature backlog; implement and CI-validate the next diagnostic version **plus recorder correction when safe/ready**; distribute a versioned update and repeat. A software release is NOT forced every 7 days. A diagnostics-only upgrade is allowed, without stopping recorder.
+- **Source of truth UPDATED:** [docs/C545D_PARALLEL_RELEASE_DIAGNOSTICS_POLICY_20261124.md](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/docs/C545D_PARALLEL_RELEASE_DIAGNOSTICS_POLICY_20261124.md), section `Feedback-driven rolling release and diagnostic evolution`. Added mandatory per-ZIP outcomes: validated measurements and provenance, missing metric/why not classifiable, exact new counter and discriminating hypothesis, impact/collection budget and privacy, prioritized next diagnostic change, independently gated recorder candidate, GitHub commits/CI and handoff. Missing data are not waved away as "unexplained"; neither is broad/expensive instrumentation reflexively added.
+- **Observability versioning mandatory:** independent recorder/diagnostics/schema versions + build fingerprint in every ZIP; backward-compatible additive schema and missing-field markers, atomic backup/rollback, persisted local trends and recorded `diagnostics_upgrade` boundaries; compare compatible time windows across upgrades; test output correctness/performance/privacy on isolated Windows runner first. Diagnostic-only upgrade must be safe for active recording and cannot inject/stop/swap DLLs. Recorder upgrade uses separately authorized stop/EOS/offline DLL install/rollback. No automatic user upload to GitHub/ChatGPT.
+- **Safety/verification STILL unchanged:** policy adoption does not approve a release or actual Windows10 recorder testing. `install_approved=0`, `live_test_authorized=0`, release HOLD until recorder/diagnostic safety and minimal real-camera acceptance criteria pass. First 72h/weekly cadence starts ONLY after that approved installation. No requirement for user to perform any action now. Continue current PR #62 source-owner WinRT investigation, using saved evidence rather than repeating completed experiments. **Immediate next AI task:** audit existing packaging/recorder/monitor assets and CI before implementing missing components; only request necessary host acceptance after all offline work.
 
 ### UPDATE 2026-11-24 JST — **AGREED DEVELOPMENT POLICY: limited recorder + detached diagnostic prerelease; reports at 72h then weekly; AI never waits**
 
