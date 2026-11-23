@@ -6,6 +6,8 @@ on:
       - 'tests/patch_c545d_gio_etw_preinit_source_ci.py'
       - 'tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py'
       - 'tests/audit_c545d_private_pdb_guid_age_ci.py'
+      - 'tests/C545DGioEtlxOwnerCensus/**'
+      - 'tests/C545DEtwHeapIdentity/GenericHeapLifetime.cs'
       - '.github/workflows/c545d-gio-preinit-stack-source-preflight-ci.yml'
   workflow_dispatch:
 permissions:
@@ -25,6 +27,11 @@ jobs:
           python3 tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py \
             --probe tests/gio_appinfo_key_handle_probe.c \
             --workflow .github/workflows/c545d-gio-etw-owner-stack-paired16-ci.yml
+      - name: Compile first-source ETLX census and reject spoofed GIO function owners
+        run: |
+          set -euo pipefail
+          dotnet build tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release --nologo
+          dotnet run --no-build --project tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release -- --selftest
       - name: Patch disposable C probe and assert first AppInfo call is behind ETW start acknowledgement
         run: |
           set -euo pipefail
