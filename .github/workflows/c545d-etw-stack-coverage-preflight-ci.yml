@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/analyze_c545d_etw_stack_coverage_bounds_ci.py'
+      - 'tests/analyze_c545d_xperf_action_layout_ci.py'
       - '.github/workflows/c545d-etw-stack-coverage-preflight-ci.yml'
   workflow_dispatch:
 permissions:
@@ -18,6 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --selftest
+          python3 tests/analyze_c545d_xperf_action_layout_ci.py --selftest
           python3 tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --selftest
           python3 tests/analyze_c545d_gio_etw_image_aggregate_ci.py --selftest
           python3 tests/validate_c545d_memory_classification_cases.py --source docs/MEMORY_CLASSIFICATION_CASES.json
