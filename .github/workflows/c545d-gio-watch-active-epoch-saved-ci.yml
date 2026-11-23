@@ -1,0 +1,31 @@
+name: C545D archived GIO watcher active-epoch accounting
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_watch_active_epoch_saved_ci.py'
+      - '.github/workflows/c545d-gio-watch-active-epoch-saved-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-watch-counts-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject false idle/source-owned memory claims
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_watch_active_epoch_saved_ci.py --selftest
+      - name: Check exact Windows original job, no new recording/ETW
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          private_log="$(mktemp "$RUNNER_TEMP/c545d-watch-original.XXXXXX")"
+          trap 'rm -f "$private_log"' EXIT
+          gh api repos/taku077/c545d-recorder/actions/jobs/137554982677/logs > "$private_log"
+          python3 tests/analyze_c545d_gio_watch_active_epoch_saved_ci.py --log "$private_log"
+          echo 'C545D_WATCH_ACTIVE_ARCHIVE_CI_PASS,source_run=45133754345,windows_runs_added=0,real_host_untouched=1,release_HOLD=1'
