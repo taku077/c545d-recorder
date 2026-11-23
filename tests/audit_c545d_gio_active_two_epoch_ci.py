@@ -99,7 +99,7 @@ def selftest() -> None:
         good.replace("C545D_CI_ACTIVE_EPOCH,cycle,2,", "C545D_CI_ACTIVE_EPOCH,cycle,5,"),
         good + pieces[1],
         good.replace("cycle,2,1200", "cycle,2,999"),
-        good.replace("cycle,2,50,60", "cycle,2,1,1"),
+        good.replace("cycle,2,1200,50,60", "cycle,2,1200,1,1"),
         good.replace("GIO_VM,cycle,2,", "GIO_VM,cycle,2,x"),
         good.replace("GIO_PROBE,cycle,1,", "GIO_PROBE,cycle,3,"),
         good.replace("GIO_PROBE,baseline,0,0,200", "GIO_PROBE,baseline,0,0,0"),
