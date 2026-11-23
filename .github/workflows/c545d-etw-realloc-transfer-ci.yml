@@ -5,6 +5,8 @@ on:
     paths:
       - 'tests/c545d_etw_realloc_transfer_ci.c'
       - 'tests/analyze_c545d_etw_realloc_transfer_ci.py'
+      - 'tests/C545DEtwHeapIdentity/Program.cs'
+      - 'tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj'
       - 'tests/Invoke-C545DEtwReallocCalibration.ps1'
       - '.github/workflows/c545d-etw-realloc-transfer-ci.yml'
   workflow_dispatch:
@@ -25,6 +27,10 @@ jobs:
           $ErrorActionPreference='Stop'
           py tests/analyze_c545d_etw_realloc_transfer_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'HeapReAlloc source fixture parser failed'}
+          dotnet build tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Real ETW reader preflight build failed'}
+          dotnet run --no-build --project tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release -- --selftest
+          if($LASTEXITCODE -ne 0){throw 'Real ETW identity tracker negative fixtures failed'}
           py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Xperf coverage-bounds source fixtures failed'}
           $tokens=$null;$errors=$null
