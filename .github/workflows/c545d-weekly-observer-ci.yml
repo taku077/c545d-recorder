@@ -66,6 +66,21 @@ jobs:
           if($csv.Count -ne 1 -or $csv[0].status -notin @('OK','NOT_RUNNING','MULTIPLE_PROCESSES','PROCESS_ACCESS_ERROR','PROCESS_LOOKUP_ERROR')){
             throw 'One-shot process collector not properly represented'
           }
+          # Manual ZIP generation must succeed while the actual monitor's
+          # single-instance sampling mutex is held by ANOTHER process.
+          $gate=New-Object System.Threading.Mutex($true,'Local\C545D_WeeklyObserver')
+          try{
+            $parallelOut=Join-Path $env:RUNNER_TEMP 'weekly-parallel-export.txt'
+            $parallelErr=Join-Path $env:RUNNER_TEMP 'weekly-parallel-error.txt'
+            $parallel=Start-Process -FilePath powershell.exe -ArgumentList @(
+              '-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+              '-File',$file,'-RootDirectory',$dir,'-ExportNow'
+            ) -Wait -PassThru -RedirectStandardOutput $parallelOut -RedirectStandardError $parallelErr
+            if($parallel.ExitCode -ne 0){throw 'Safe ZIP export blocked by running observer'}
+          }finally{
+            $gate.ReleaseMutex()
+            $gate.Dispose()
+          }
           # Synthetic malicious values in a stored CSV are rejected on ZIP export.
           $daily=@(Get-ChildItem (Join-Path $dir 'metrics') -File|Select-Object -First 1)[0].FullName
           $unsafeRows=@(Import-Csv -LiteralPath $daily)
