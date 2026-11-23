@@ -198,8 +198,7 @@ try {
   if($identityStatus -ne 0 -or $safeIdentity.Count -ne 1){
     $gap=@($identities | Where-Object {
       if($GenericMixed){
-        $_ -match '^C545D_ETW_GENERIC_HEAP_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1
-      }else{
+        $_ -match '^C545D_ETW_GENERIC_HEAP_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1      }else{
         $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
       }
     })
