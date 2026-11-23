@@ -14,7 +14,12 @@ using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 
 internal static class Program
 {
-    private const int EventCap=390000;
+    // The one-cycle real GIO registry arm already reached 390000 typed events
+    // (196874 alloc +1476 realloc +191650 free), while the nochange arm
+    // completed at 168450. This is an event-count ceiling, not a source
+    // owner or allocation leak. Bound the private ETL file at 256 MiB and
+    // replay at most two million typed events to cover the new discriminator.
+    private const int EventCap=2_000_000;
     private static string diagnosticStage="not_started";
     private static int countZeroAlloc,countZeroRealloc,countZeroOldSize,
         countZeroNewSize, countAlloc,countRealloc,countFree,missingStacks,

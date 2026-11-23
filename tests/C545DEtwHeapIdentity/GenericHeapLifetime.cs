@@ -38,7 +38,7 @@ internal sealed class GenericHeapLifetime
     internal int ReuseByUntrackedSource { get; private set; }
     internal int MaxFreeReallocGap { get; private set; }
     private const long MaxSize = 1L << 36;
-    private const long MaxEvents = 400_000;
+    private const long MaxEvents = 2_000_000;
     private const long MaxReallocGap = 32;
 
     private void Tick()
