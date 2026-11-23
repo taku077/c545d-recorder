@@ -13,6 +13,8 @@ from pathlib import Path
 MAIN = "int main(int argc, char **argv)\n{"
 PRE_INIT = "    monitor = g_app_info_monitor_get();\n"
 PRE_CLEANUP = '    report_key_handles("before_cleanup", cycle_count);\n'
+POST_SETTLED = '    report_vm("settled_cleanup", cycle_count + 2);\n'
+DEFAULT_CYCLES = '        else if (strcmp(argv[arg], "--cycles=64") == 0) cycle_count = 64;\n'
 HELPER = r'''
 /* CI-only initial AppInfo ETW fence; only the disposable probe uses this. */
 static int c545d_initial_appinfo_etw_fence(const wchar_t *ready,
@@ -39,12 +41,15 @@ static int c545d_initial_appinfo_etw_fence(const wchar_t *ready,
 }
 '''
 
-def patch(src: str)->str:
+def patch(src: str, *, until_settled:bool=False, single_cycle:bool=False)->str:
     for word in ("c545d_initial_appinfo_etw_fence", "late_window_ready.signal",
                  "baseline_ready.signal", "C545D_CI_ETW_PROBE_FENCE_PATCH_PASS"):
         if word in src:
             raise ValueError("existing_or_conflicting_old_etw_window")
-    if any(src.count(anchor)!=1 for anchor in (MAIN,PRE_INIT,PRE_CLEANUP)):
+    checks=(MAIN,PRE_INIT,PRE_CLEANUP)
+    if until_settled:checks+=(POST_SETTLED,)
+    if single_cycle:checks+=(DEFAULT_CYCLES,)
+    if any(src.count(anchor)!=1 for anchor in checks):
         raise ValueError("missing_or_ambiguous_probe_window_anchor")
     if not(src.index(MAIN)<src.index(PRE_INIT)<src.index(PRE_CLEANUP)):
         raise ValueError("original_source_workload_order_wrong")
@@ -55,15 +60,25 @@ def patch(src: str)->str:
         '    if (!c545d_initial_appinfo_etw_fence(L"preinit_ready.signal",\n'
         '                                            L"trace_armed.signal")) return 8;\n'
         +PRE_INIT,1)
-    out=out.replace(PRE_CLEANUP,PRE_CLEANUP+
-        '    if (!c545d_initial_appinfo_etw_fence(L"precleanup_ready.signal",\n'
-        '                                            L"trace_stopped.signal")) return 9;\n',1)
+    if until_settled:
+        out=out.replace(POST_SETTLED,POST_SETTLED+
+          '    if (!c545d_initial_appinfo_etw_fence(L"postsettle_ready.signal",\n'
+          '                                            L"trace_stopped.signal")) return 9;\n',1)
+    else:
+        out=out.replace(PRE_CLEANUP,PRE_CLEANUP+
+          '    if (!c545d_initial_appinfo_etw_fence(L"precleanup_ready.signal",\n'
+          '                                            L"trace_stopped.signal")) return 9;\n',1)
+    if single_cycle:
+        out=out.replace(DEFAULT_CYCLES,DEFAULT_CYCLES+
+          '        else if (strcmp(argv[arg], "--cycles=1") == 0) cycle_count = 1;\n',1)
     if out.count("c545d_initial_appinfo_etw_fence(")!=3:
         raise ValueError("incorrect_etw_phase_gate_count")
     if not(out.index('L"preinit_ready.signal"') <
            out.index(PRE_INIT) <
-           out.index(PRE_CLEANUP) <
-           out.index('L"precleanup_ready.signal"')):
+           out.index(PRE_CLEANUP)):
+        raise ValueError("source_start_not_before_first_appinfo_call")
+    expectedEnd='L"postsettle_ready.signal"' if until_settled else 'L"precleanup_ready.signal"'
+    if out.index(expectedEnd)<=out.index(PRE_CLEANUP):
         raise ValueError("source_start_not_before_first_appinfo_call")
     return out
 
@@ -78,6 +93,11 @@ def selftest()->None:
     good=patch(sample)
     assert good.index('L"preinit_ready.signal"')<good.index(PRE_INIT)
     assert good.index('L"precleanup_ready.signal"')>good.index(PRE_CLEANUP)
+    rich=sample.replace(MAIN,MAIN+'\n'+DEFAULT_CYCLES)
+    full=rich.replace(PRE_CLEANUP,PRE_CLEANUP+POST_SETTLED)
+    after=patch(full,until_settled=True,single_cycle=True)
+    assert after.index('L"postsettle_ready.signal"')>after.index(POST_SETTLED)
+    assert '"--cycles=1"' in after and 'precleanup_ready.signal' not in after
     negatives=[
         sample.replace(PRE_INIT,"",1),
         sample.replace(PRE_CLEANUP,"",1),
@@ -95,7 +115,7 @@ def selftest()->None:
         try:patch(bad)
         except ValueError:continue
         raise AssertionError(f"invalid_initial_appinfo_capture_accepted:{i}")
-    print("C545D_APPINFO_PREINIT_ETW_FENCE_SELFTEST_PASS,positive=1,"
+    print("C545D_APPINFO_PREINIT_ETW_FENCE_SELFTEST_PASS,positive=2,"
           "negative=9,start_before_first_appinfo=1,"
           "cannot_prove_before_process_main=1,global_idle_not_assumed=1,host_untouched=1")
 
@@ -103,6 +123,8 @@ def main()->None:
     p=argparse.ArgumentParser()
     p.add_argument("source",nargs="?",type=Path)
     p.add_argument("--selftest",action="store_true")
+    p.add_argument("--until-settled",action="store_true")
+    p.add_argument("--single-cycle",action="store_true")
     a=p.parse_args()
     if a.selftest:
         selftest()
@@ -111,10 +133,13 @@ def main()->None:
         p.error("isolated probe source required")
     raw=a.source.read_bytes()
     ending="\r\n" if b"\r\n" in raw else "\n"
-    updated=patch(raw.decode("utf-8").replace("\r\n","\n"))
+    updated=patch(raw.decode("utf-8").replace("\r\n","\n"),
+                  until_settled=a.until_settled,single_cycle=a.single_cycle)
     a.source.write_bytes(updated.replace("\n",ending).encode("utf-8"))
     print("C545D_APPINFO_PREINIT_ETW_FENCE_SOURCE_PASS,"
           "before_first_GIO_AppInfo_call=1,not_before_process_main=1,"
+          f"after_settled_cleanup={int(a.until_settled)},"
+          f"single_cycle={int(a.single_cycle)},"
           "private_disposable_source_only=1,host_untouched=1")
 
 if __name__=="__main__":
