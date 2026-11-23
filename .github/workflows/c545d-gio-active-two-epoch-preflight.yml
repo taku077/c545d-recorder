@@ -5,6 +5,7 @@ on:
     paths:
       - 'tests/patch_c545d_gio_active_two_epoch_ci.py'
       - 'tests/audit_c545d_gio_active_two_epoch_ci.py'
+      - 'tests/audit_c545d_gio_active_worker_epochs_ci.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - '.github/workflows/c545d-gio-active-two-epoch-preflight.yml'
   workflow_dispatch:
@@ -21,6 +22,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           py tests/audit_c545d_gio_active_two_epoch_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Three-phase CPU and memory audit selftest failed'}
+          py tests/audit_c545d_gio_active_worker_epochs_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Two-epoch resource phase analysis selftest failed'}
           py tests/patch_c545d_gio_active_two_epoch_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Bounded active epoch overlay negative cases failed'}
