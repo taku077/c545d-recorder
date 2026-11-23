@@ -28,6 +28,8 @@ internal sealed class GenericHeapLifetime
     internal int ReallocCount { get; private set; }
     internal int FreeCount { get; private set; }
     internal int ReallocOldFreeMatched { get; private set; }
+    internal int ReallocTargetPreallocated { get; private set; }
+    internal int MaxPreallocTargetEventGap { get; private set; }
     internal int ReallocMoved { get; private set; }
     internal int ReallocInplace { get; private set; }
     internal int AddressReuse { get; private set; }
@@ -94,8 +96,38 @@ internal sealed class GenericHeapLifetime
         }
         if (original.Bytes!=oldSize)
             throw new ArgumentException("realloc_old_size_does_not_match");
-        if (after!=before && (live.ContainsKey(after) || pending.ContainsKey(after)))
-            throw new ArgumentException("realloc_new_address_collision");
+        // A real Windows heap may expose HeapAlloc(newAddress) BEFORE
+        // HeapReAlloc(oldAddress,newAddress) for the very same move.
+        // Do not discard arbitrary collisions: only pair the exact heap,
+        // exact new size, fresh destination, no previous realloc/free,
+        // and bounded preceding-event distance.
+        bool preallocated=false;
+        Block target=default!;
+        if(after!=before)
+        {
+            if(pending.ContainsKey(after))
+                throw new ArgumentException("realloc_target_was_already_freed");
+            if(live.TryGetValue(after,out target))
+            {
+                long targetAge=seq-target.Birth;
+                if(target.Bytes!=newSize || target.Reallocations!=0 ||
+                   targetAge<1 || targetAge>MaxReallocGap)
+                    throw new ArgumentException("preallocated_realloc_target_unverified");
+                preallocated=true;
+            }
+        }
+        if(preallocated)
+        {
+            if(!live.Remove(after))
+                throw new ArgumentException("realloc_new_address_disappeared");
+            ReallocTargetPreallocated++;
+            MaxPreallocTargetEventGap=Math.Max(MaxPreallocTargetEventGap,
+                (int)(seq-target.Birth));
+            // The internal target HeapAlloc is not a SECOND original
+            // logical owner; the old address's proven original origin wins.
+            if(target.Proof==OriginProof.SyntheticFixture)ProvenOriginalAllocations--;
+            if(target.Proof==OriginProof.VerifiedGioMethod)GioMethodOriginalAllocations--;
+        }
         if (wasLive) live.Remove(before);
         else
         {
@@ -233,6 +265,9 @@ internal sealed class GenericHeapLifetime
             $"pending_free_unfinalized={pending.Count},"+
             $"old_free_before_realloc_matched={ReallocOldFreeMatched},"+
             $"realloc_moved={ReallocMoved},realloc_inplace={ReallocInplace},"+
+            $"internal_preallocated_realloc_targets={ReallocTargetPreallocated},"+
+            $"max_target_alloc_to_realloc_event_gap={MaxPreallocTargetEventGap},"+
+            $"logical_original_alloc_estimate={AllocCount-ReallocTargetPreallocated},"+
             $"max_free_realloc_event_gap={MaxFreeReallocGap},"+
             $"address_reuse_after_free={AddressReuse},"+
             $"reuse_from_untracked_size={ReuseByUntrackedSource},"+
@@ -297,6 +332,22 @@ internal sealed class GenericHeapLifetime
                gioOnly.GioMethodLinkedReallocations==1 &&
                gioOnly.GioMethodLogicalFrees==1 &&
                gioOnly.ProvenOriginalAllocations==0);
+        // Real ETW ordering candidate: Alloc(new) and Free(old) are
+        // seen BEFORE HeapReAlloc. Proven original owner must survive;
+        // internal Alloc(new) must not invent an extra original owner.
+        var targetFirst=new GenericHeapLifetime();
+        targetFirst.Alloc(99,10,350,OriginProof.VerifiedGioMethod);
+        targetFirst.Alloc(99,20,900,OriginProof.Unresolved);
+        targetFirst.Free(99,10);
+        targetFirst.Realloc(99,10,20,350,900);
+        targetFirst.Free(99,20);
+        targetFirst.FinalizePending();
+        Expect(targetFirst.GioMethodOriginalAllocations==1 &&
+               targetFirst.GioMethodLinkedReallocations==1 &&
+               targetFirst.GioMethodLogicalFrees==1 &&
+               targetFirst.ReallocTargetPreallocated==1 &&
+               targetFirst.FreeCount==1 &&
+               targetFirst.Snapshot().Count==0);
         Action[] bad={
             () => new GenericHeapLifetime().Alloc(0,1,100,OriginProof.Unresolved),
             () => new GenericHeapLifetime().Alloc(1,0,100,OriginProof.Unresolved),
@@ -316,6 +367,15 @@ internal sealed class GenericHeapLifetime
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedAlloc(1,1,200);},
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedRealloc(1,2,1,80,200);},
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.ObserveUntrackedFree(1,1);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);
+                  t.Alloc(1,2,210,OriginProof.Unresolved);t.Realloc(1,1,2,100,200);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);
+                  t.Alloc(1,2,200,OriginProof.Unresolved);t.Free(1,2);
+                  t.Realloc(1,1,2,100,200);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);
+                  t.Alloc(1,2,200,OriginProof.Unresolved);
+                  for(int z=0;z<33;z++)t.Alloc(1,(ulong)(100+z),50,OriginProof.Unresolved);
+                  t.Realloc(1,1,2,100,200);},
         };
         for (int i=0;i<bad.Length;i++)
         {
@@ -324,7 +384,7 @@ internal sealed class GenericHeapLifetime
             catch (ArgumentException) {denied=true;}
             Expect(denied);
         }
-        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=4,negative=18,"+
+        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=5,negative=21,"+
             "arbitrary_sizes=1,source_class_no_size_guess=1,orphan_realloc_denied=1,"+
             "source_gio_untested=1,release_HOLD=1,raw_addresses_uploaded=0");
     }
