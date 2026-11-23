@@ -130,8 +130,10 @@ internal sealed class GenericHeapLifetime
     {
         FreeCount=checked(FreeCount+pending.Count);
         foreach(var item in pending.Values)
+        {
             if(item.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
             if(item.Value.Proof==OriginProof.VerifiedGioMethod)GioMethodLogicalFrees++;
+        }
         pending.Clear();
     }
 
