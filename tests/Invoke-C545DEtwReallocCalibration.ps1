@@ -1,6 +1,6 @@
 # CI-only small synthetic ETW realloc-source grouping experiment.
 # No GIO, camera, recorder, host registry writes, IFEO, WPR, or raw ETL upload.
-param([switch]$SelfTest,[switch]$ThroughCleanup,[switch]$GenericMixed)
+param([switch]$SelfTest,[switch]$ThroughCleanup,[switch]$GenericMixed,[switch]$OriginStackAudit)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
@@ -29,6 +29,9 @@ if($SelfTest){
   }
   Write-Host 'C545D_REALLOC_SYNTHETIC_CONTROLLER_SELFTEST_PASS,positive=1,negative=4,CI_only=1,host_untouched=1'
   return
+}
+if($OriginStackAudit -and (-not $GenericMixed -or -not $ThroughCleanup)){
+  throw 'Origin stack audit requires one bounded generic mixed lifetime interval'
 }
 if($GenericMixed -and -not $ThroughCleanup){
   throw 'Mixed-size fixture requires explicit postcleanup producer signal'
@@ -98,6 +101,15 @@ try {
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $adapter -PathType Leaf)){
     Write-Host 'C545D_REALLOC_ETW_IDENTITY_GAP,stage=BUILD,reason=DOTNET_ADAPTER_BUILD_FAILED,raw_uploaded=0'
     throw 'Private source-event adapter compilation did not succeed'
+  }
+  $originProbe=$null
+  if($OriginStackAudit){
+    $originProbe=Join-Path $root 'C545DHeapOriginStackProbe.dll'
+    & dotnet build tests/C545DHeapOriginStackProbe/C545DHeapOriginStackProbe.csproj --configuration Release --output $root --nologo *> $raw
+    if($LASTEXITCODE -ne 0 -or -not(Test-Path $originProbe -PathType Leaf)){
+      Write-Host 'C545D_ETLX_ORIGINAL_ALLOC_SOURCE_GAP,reason=PROBE_BUILD_FAILED,real_GIO_owner_proven=0,raw_uploaded=0,release_HOLD=1'
+      throw 'Private ETLX source resolver build failed'
+    }
   }
   $env:C545D_REALLOC_CAL_ROOT=$root
   $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
@@ -211,6 +223,26 @@ try {
     throw 'Real ETW old-new identity unverified: synthetic source still safe'
   }
   Write-Host $safeIdentity[0]
+  if($OriginStackAudit){
+    $stackOutput=@(& dotnet $originProbe --etl $etl --pid "$($proc.Id)" --preworkload-and-losszero-verified 2> $raw)
+    $stackExit=$LASTEXITCODE
+    $auditRows=@($stackOutput | Where-Object {
+      $_ -match '^C545D_ETLX_ORIGINAL_ALLOC_STACK_AUDIT,[A-Za-z0-9_,=.-]+$'
+    })
+    if($auditRows.Count -eq 1){Write-Host $auditRows[0]}
+    $proofRows=@($stackOutput | Where-Object {
+      $_ -match '^C545D_ETLX_ORIGINAL_ALLOC_SOURCE_PASS,[A-Za-z0-9_,=.-]+$'
+    })
+    if($stackExit -ne 0 -or $proofRows.Count -ne 1){
+      $gap=@($stackOutput | Where-Object {
+        $_ -match '^C545D_ETLX_ORIGINAL_ALLOC_SOURCE_GAP,reason=[A-Za-z0-9_]+,real_GIO_owner_proven=0,raw_uploaded=0,release_HOLD=1$'
+      })
+      if($gap.Count -eq 1){Write-Host $gap[0]}
+      else{Write-Host 'C545D_ETLX_ORIGINAL_ALLOC_SOURCE_GAP,reason=unknown_ETLX_verdict,real_GIO_owner_proven=0,raw_uploaded=0,release_HOLD=1'}
+      throw 'Original allocation stack identity not yet proven'
+    }
+    Write-Host $proofRows[0]
+  }
   if($GenericMixed){
     Signal 'terminate.signal'
     if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
