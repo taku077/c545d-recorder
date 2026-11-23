@@ -15,6 +15,40 @@ using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 internal static class Program
 {
     private const int EventCap=390000;
+    private static string diagnosticStage="not_started";
+    private static int countAlloc,countRealloc,countFree,missingStacks,
+        hasGioFrameCount,exactMethodCount,loadedGioModules,lookupModules;
+    private static GenericHeapLifetime? currentLifetime;
+    private static readonly HashSet<string> SafeArgumentReasons=new(StringComparer.Ordinal)
+    {
+        "invalid_census_parameters","not_isolated_windows_runner",
+        "private_runner_not_verified","untrusted_etl_or_build_dir",
+        "etlx_trace_missing_or_unbounded","invalid_owned_pid",
+        "unknown_disposable_arm","selected_process_metadata_absent",
+        "stack_depth_limit","heap_event_capture_limit",
+        "allocation_zero_size_unmodeled","stack_depth_exceeded",
+        "invalid_heap_event_identity_or_size","overlapping_live_allocation",
+        "orphan_realloc_prior_alloc_not_observed",
+        "stale_provisional_free_cannot_match_realloc",
+        "realloc_old_size_does_not_match","realloc_new_address_collision",
+        "invalid_free_identity","duplicate_provisional_free",
+        "orphan_free_or_stale_realloc_address",
+        "actual_GIO_source_function_not_proven"
+    };
+    private static string Diagnostic()
+    {
+        var p=currentLifetime?.Snapshot();
+        return $",stage={diagnosticStage},"+
+            $"alloc_observed={countAlloc},realloc_observed={countRealloc},"+
+            $"free_observed={countFree},stack_missing={missingStacks},"+
+            $"gio_module_in_original_stack={hasGioFrameCount},"+
+            $"exact_gio_method={exactMethodCount},"+
+            $"gio_modules_loaded={loadedGioModules},gio_module_symbol_lookup={lookupModules},"+
+            $"tracked_live_count={p?.Count ?? 0},"+
+            $"gio_origin_alloc={currentLifetime?.GioMethodOriginalAllocations ?? 0},"+
+            $"gio_origin_realloc={currentLifetime?.GioMethodLinkedReallocations ?? 0},"+
+            $"gio_origin_freed={currentLifetime?.GioMethodLogicalFrees ?? 0}";
+    }
     private const string GioModule="gio-2.0-0";
     private readonly record struct Frame(string? Module,string? Function);
     private readonly record struct Owner(bool HasStack,bool HasGioFrame,bool ExactGioMethod);
@@ -123,15 +157,20 @@ internal static class Program
         string arm=a[7];
         if(arm!="registry" && arm!="nochange")
             throw new ArgumentException("unknown_disposable_arm");
+        diagnosticStage="etlx_open";
         var model=new GenericHeapLifetime();
+        currentLifetime=model;
+        countAlloc=countRealloc=countFree=missingStacks=hasGioFrameCount=exactMethodCount=loadedGioModules=lookupModules=0;
         int heapAlloc=0,heapEvents=0,heapRealloc=0,heapFree=0;
         int missingStack=0,hasGioModule=0,exactMethod=0,unknownOrigin=0;
         int orphanRealloc=0,orphanFree=0;
         int moduleCandidates=0,exactModulePdbLookups=0;
         using(var log=TraceLog.OpenOrConvert(etl,new TraceLogOptions{ConversionLog=TextWriter.Null}))
         {
+            diagnosticStage="process_lookup";
             var process=log.Processes.LastProcessWithID(pid);
             if(process is null)throw new ArgumentException("selected_process_metadata_absent");
+            diagnosticStage="native_module_symbol_lookup";
             using(var reader=new SymbolReader(TextWriter.Null,build))
             {
                 reader.Options=SymbolReaderOptions.CacheOnly;
@@ -146,10 +185,13 @@ internal static class Program
                     if(!string.Equals(m.Name,GioModule,StringComparison.OrdinalIgnoreCase))
                         continue;
                     moduleCandidates++;
+                    loadedGioModules=moduleCandidates;
                     log.CodeAddresses.LookupSymbolsForModule(reader,m.ModuleFile);
                     exactModulePdbLookups++;
+                    lookupModules=exactModulePdbLookups;
                 }
             }
+            diagnosticStage="heap_event_replay";
             using(var src=log.Events.GetSource())
             {
                 var heap=new HeapTraceProviderTraceEventParser(src);
@@ -161,7 +203,7 @@ internal static class Program
                 heap.HeapTraceAlloc+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapAlloc++;
+                    Tick();heapAlloc++;countAlloc=heapAlloc;
                     if(ev.AllocSize<=0)throw new ArgumentException("allocation_zero_size_unmodeled");
                     var frames=new List<Frame>();
                     var stack=ev.CallStack();
@@ -179,6 +221,9 @@ internal static class Program
                     if(!result.HasStack)missingStack++;
                     if(result.HasGioFrame)hasGioModule++;
                     if(result.ExactGioMethod)exactMethod++; else unknownOrigin++;
+                    missingStacks=missingStack;
+                    hasGioFrameCount=hasGioModule;
+                    exactMethodCount=exactMethod;
                     model.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
                         result.ExactGioMethod
                         ? GenericHeapLifetime.OriginProof.VerifiedGioMethod
@@ -187,7 +232,7 @@ internal static class Program
                 heap.HeapTraceReAlloc+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapRealloc++;
+                    Tick();heapRealloc++;countRealloc=heapRealloc;
                     if(model.IsTracked(ev.HeapHandle,ev.OldAllocAddress))
                         model.Realloc(ev.HeapHandle,ev.OldAllocAddress,
                             ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
@@ -196,7 +241,7 @@ internal static class Program
                 heap.HeapTraceFree+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapFree++;
+                    Tick();heapFree++;countFree=heapFree;
                     if(model.IsTracked(ev.HeapHandle,ev.FreeAddress))
                         model.Free(ev.HeapHandle,ev.FreeAddress);
                     else orphanFree++;
@@ -204,8 +249,10 @@ internal static class Program
                 src.Process();
             }
         }
+        diagnosticStage="finalize_owner_lifetime";
         model.FinalizePending();
         var snapshot=model.Snapshot();
+        diagnosticStage="safe_numeric_census";
         Console.WriteLine($"C545D_GIO_ETLX_FIRST_SOURCE_CENSUS,arm={arm},"+
             $"pid_heap_events={heapEvents},original_alloc_events={heapAlloc},"+
             $"realloc_events={heapRealloc},free_events={heapFree},"+
@@ -241,18 +288,19 @@ internal static class Program
             if(args.Length==1 && args[0]=="--selftest"){SelfTest();return 0;}
             return Capture(args);
         }
-        catch(ArgumentException)
+        catch(ArgumentException ex)
         {
+            string reason=SafeArgumentReasons.Contains(ex.Message)
+                ?ex.Message:"source_history_or_symbol_scope_unverified";
             Console.WriteLine("C545D_GIO_ETLX_FIRST_SOURCE_GAP,"+
-                "reason=source_history_or_symbol_scope_unverified,"+
-                "raw_uploaded=0,release_HOLD=1");
+                "reason="+reason+Diagnostic()+",raw_uploaded=0,release_HOLD=1");
             return 2;
         }
         catch(Exception)
         {
             Console.WriteLine("C545D_GIO_ETLX_FIRST_SOURCE_GAP,"+
-                "reason=ETLX_decode_or_symbol_resolution_unverified,"+
-                "raw_uploaded=0,release_HOLD=1");
+                "reason=ETLX_decode_or_symbol_resolution_unverified"+
+                Diagnostic()+",raw_uploaded=0,release_HOLD=1");
             return 3;
         }
     }
