@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using Microsoft.Diagnostics.Symbols;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Etlx;
@@ -45,6 +46,11 @@ internal static class Program
         "cohort_unproven_new_target","cohort_free_not_owned",
         "cohort_pending_not_finalized","cohort_lifetime_not_balanced",
         "cohort_generic_reconciliation_failed",
+        "cohort_realloc_crosses_epoch_cut",
+        "active_epoch_qpc_parameters_invalid",
+        "active_epoch_event_qpc_order_unverified",
+        "active_epoch_first_cut_not_inside_trace",
+        "active_epoch_snapshot_totals_mismatch",
         "actual_GIO_source_function_not_proven"
     };
     private static string Diagnostic()
@@ -143,13 +149,15 @@ internal static class Program
         private const int MaxReallocGap=32;
         private readonly record struct Key(ulong Heap,ulong Address);
         private readonly record struct Entry(long Bytes,Cohort Cohort,long Birth,int Reallocs);
-        private readonly record struct Held(Entry Entry,long Event);
+        private readonly record struct Held(Entry Entry,long Event,int Generation);
         private readonly Dictionary<Key,Entry> live=new();
         private readonly Dictionary<Key,Held> pending=new();
         private readonly long[] original=new long[Count];
         private readonly long[] reallocated=new long[Count];
         private readonly long[] freed=new long[Count];
         private long sequence;
+        private int generation;
+        internal void MarkEpochCut(){generation++;}
 
         internal void Alloc(ulong heap,ulong address,long size,Cohort source)
         {
@@ -180,6 +188,8 @@ internal static class Program
                 if(!pending.TryGetValue(before,out var saved)||
                    sequence-saved.Event<1||sequence-saved.Event>MaxReallocGap)
                     throw new ArgumentException("cohort_unproven_old_realloc");
+                if(saved.Generation!=generation)
+                    throw new ArgumentException("cohort_realloc_crosses_epoch_cut");
                 parent=saved.Entry;
             }
             if(parent.Bytes!=oldSize)
@@ -210,7 +220,7 @@ internal static class Program
             var key=new Key(heap,address);
             if(!live.Remove(key,out var value)||pending.ContainsKey(key))
                 throw new ArgumentException("cohort_free_not_owned");
-            pending.Add(key,new Held(value,sequence));
+            pending.Add(key,new Held(value,sequence,generation));
         }
         internal void FinalizePending()
         {
@@ -269,6 +279,109 @@ internal static class Program
                     $"logical_free={x.Freed},live={x.Live},"+
                     $"request_bytes_live={x.Bytes},"+proof);
             }
+        }
+    }
+
+    // Snapshot the SAME continuous original-allocation ledgers at each
+    // process-local QPC cut. The strict multi-GIO ambiguity remains intact;
+    // the nearest-allowlisted ledger is ONLY a deterministic stack proxy.
+    // A Free-before-ReAlloc spanning a cut is rejected, not silently
+    // converted into proof of a live/leaked original allocation.
+    private sealed class ActiveEpochCuts
+    {
+        private static readonly string[] Names={"baseline","cycle1","cycle2"};
+        private readonly long[] cutoffs;
+        private readonly List<(long Count,long Bytes,(long Live,long Bytes)[] Strict,
+            (long Live,long Bytes)[] Nearest)> samples=new();
+        private int next;
+        private long lastQpc;
+        private bool sawEventBeforeBaseline,sawEventAfterBaseline;
+        internal ActiveEpochCuts(long b,long c1,long c2)
+        {
+            if(b<=0||b>=c1||c1>=c2)
+                throw new ArgumentException("active_epoch_qpc_parameters_invalid");
+            cutoffs=new[]{b,c1,c2};
+        }
+        internal void OnHeapEvent(long qpc,GenericHeapLifetime generic,
+            MethodLedger strict,MethodLedger nearest)
+        {
+            if(qpc<=0||qpc<lastQpc)
+                throw new ArgumentException("active_epoch_event_qpc_order_unverified");
+            if(qpc<cutoffs[0])sawEventBeforeBaseline=true;
+            if(qpc>cutoffs[0])sawEventAfterBaseline=true;
+            lastQpc=qpc;
+            while(next<cutoffs.Length && qpc>=cutoffs[next])
+                Cut(generic,strict,nearest);
+        }
+        private void Cut(GenericHeapLifetime generic,MethodLedger strict,
+            MethodLedger nearest)
+        {
+            var all=generic.Snapshot();
+            var a=new (long Live,long Bytes)[10];
+            var b=new (long Live,long Bytes)[10];
+            long al=0,ab=0,bl=0,bb=0;
+            foreach(Cohort cohort in Enum.GetValues<Cohort>())
+            {
+                var x=strict.Counts(cohort);
+                var y=nearest.Counts(cohort);
+                a[(int)cohort]=(x.Live,x.Bytes);
+                b[(int)cohort]=(y.Live,y.Bytes);
+                al+=x.Live;ab=checked(ab+x.Bytes);
+                bl+=y.Live;bb=checked(bb+y.Bytes);
+            }
+            if(al!=all.Count||bl!=all.Count||
+               ab!=all.Bytes||bb!=all.Bytes)
+                throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
+            samples.Add((all.Count,all.Bytes,a,b));
+            strict.MarkEpochCut();
+            nearest.MarkEpochCut();
+            next++;
+        }
+        internal void Finish(GenericHeapLifetime generic,MethodLedger strict,
+            MethodLedger nearest)
+        {
+            if(!sawEventBeforeBaseline||!sawEventAfterBaseline)
+                throw new ArgumentException("active_epoch_first_cut_not_inside_trace");
+            // The controller must independently attest the ETW logger remained
+            // armed until after cycle2's marker (postsettle fence). If no heap
+            // events occurred after a cut, the state at the end is unchanged.
+            while(next<cutoffs.Length)Cut(generic,strict,nearest);
+            if(samples.Count!=3)
+                throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
+        }
+        internal (long Live,long Bytes) Read(int phase,Cohort cohort,bool nearest)
+        {
+            if(phase<0||phase>=samples.Count)
+                throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
+            return nearest?samples[phase].Nearest[(int)cohort]:
+                samples[phase].Strict[(int)cohort];
+        }
+        internal void Report(string arm)
+        {
+            for(int p=0;p<samples.Count;p++)
+            {
+                foreach(bool isNearest in new[]{false,true})
+                {
+                    foreach(Cohort cohort in Enum.GetValues<Cohort>())
+                    {
+                        var value=Read(p,cohort,isNearest);
+                        Console.WriteLine("C545D_GIO_ACTIVE_SOURCE_EPOCH_COHORT,"+
+                            $"arm={arm},phase={Names[p]},"+
+                            $"model={(isNearest?"nearest":"strict")},category={cohort},"+
+                            $"live={value.Live},request_bytes_live={value.Bytes},"+
+                            "source_heap_only=1,direct_allocator_not_proven=1,release_HOLD=1");
+                    }
+                }
+                Console.WriteLine("C545D_GIO_ACTIVE_SOURCE_EPOCH_SCOPE,"+
+                    $"arm={arm},phase={Names[p]},"+
+                    $"tracked_source_live={samples[p].Count},"+
+                    $"tracked_request_bytes_live={samples[p].Bytes},"+
+                    "comparable_worker_epoch_not_proven_by_etlx=1,release_HOLD=1");
+            }
+            Console.WriteLine("C545D_GIO_ACTIVE_SOURCE_EPOCH_ACCOUNTING_PASS,"+
+                $"arm={arm},phases=3,models=2,categories=10,"+
+                "crosschecked_generic_live_and_bytes=1,"+
+                "crosscut_realloc_guard=1,global_leak_not_proven=1,release_HOLD=1");
         }
     }
 
@@ -364,6 +477,57 @@ internal static class Program
                    lines.All(x=>x.StartsWith(
                        "C545D_GIO_NEAREST_METHOD_COHORT,arm=synthetic,")));
         }
+        // Source owner must be inherited through ReAlloc and disappear
+        // after logical Free at the third QPC cut, including the nearest
+        // stack proxy while preserving strict multi-method ambiguity.
+        var sourceCutGeneric=new GenericHeapLifetime();
+        var sourceCutStrict=new MethodLedger();
+        var sourceCutNearest=new MethodLedger();
+        var sourceCuts=new ActiveEpochCuts(100,200,300);
+        sourceCuts.OnHeapEvent(50,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        sourceCutGeneric.Alloc(9,1,25,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
+        sourceCutStrict.Alloc(9,1,25,Cohort.AmbiguousMultipleMethods);
+        sourceCutNearest.Alloc(9,1,25,Cohort.UpdateRegistryData);
+        sourceCuts.OnHeapEvent(150,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        Expect(sourceCuts.Read(0,Cohort.AmbiguousMultipleMethods,false).Live==1 &&
+               sourceCuts.Read(0,Cohort.UpdateRegistryData,true).Bytes==25);
+        sourceCuts.OnHeapEvent(175,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        sourceCutGeneric.Realloc(9,1,2,25,40);
+        sourceCutStrict.Realloc(9,1,2,25,40);
+        sourceCutNearest.Realloc(9,1,2,25,40);
+        sourceCuts.OnHeapEvent(250,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        Expect(sourceCuts.Read(1,Cohort.UpdateRegistryData,true).Bytes==40);
+        sourceCuts.OnHeapEvent(260,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        sourceCutGeneric.Free(9,2);
+        sourceCutStrict.Free(9,2);
+        sourceCutNearest.Free(9,2);
+        sourceCuts.OnHeapEvent(350,sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        sourceCuts.Finish(sourceCutGeneric,sourceCutStrict,sourceCutNearest);
+        Expect(sourceCuts.Read(2,Cohort.UpdateRegistryData,true).Live==0);
+        sourceCutGeneric.FinalizePending();
+        sourceCutStrict.FinalizePending();
+        sourceCutNearest.FinalizePending();
+        sourceCutStrict.CheckAgainst(sourceCutGeneric);
+        sourceCutNearest.CheckAgainst(sourceCutGeneric);
+        bool crosscutRejected=false,missingTraceRejected=false;
+        var crossing=new MethodLedger();
+        crossing.Alloc(5,10,25,Cohort.KeysUpdated);
+        crossing.Free(5,10);
+        crossing.MarkEpochCut();
+        try{crossing.Realloc(5,10,11,25,40);}
+        catch(ArgumentException ex) when(ex.Message=="cohort_realloc_crosses_epoch_cut")
+        {crosscutRejected=true;}
+        try
+        {
+            var missing=new ActiveEpochCuts(100,200,300);
+            missing.OnHeapEvent(150,new GenericHeapLifetime(),
+                new MethodLedger(),new MethodLedger());
+            missing.Finish(new GenericHeapLifetime(),
+                new MethodLedger(),new MethodLedger());
+        }
+        catch(ArgumentException ex) when(ex.Message=="active_epoch_first_cut_not_inside_trace")
+        {missingTraceRejected=true;}
+        Expect(crosscutRejected&&missingTraceRejected);
         var lifetime=new GenericHeapLifetime();
         lifetime.Alloc(12,100,168,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
         lifetime.Free(12,100);
@@ -378,16 +542,29 @@ internal static class Program
         Console.WriteLine("C545D_GIO_ETLX_SOURCE_CLASSIFIER_SELFTEST_PASS,"+
             "positive=12,negative=12,method_cohort_ledger=1,"+
             "multiple_distinct_methods_ambiguous=1,realloc_target_owner_preserved=1,"+
+            "active_epoch_source_cut_model=1,cutoff_crossing_rejected=1,"+
             "LFH_not_owner=1,original_stack_survives_realloc_free=1,"+
             "real_GIO_stacks_not_yet_examined=1,release_HOLD=1");
     }
 
     private static int Capture(string[] a)
     {
-        if(a.Length!=9||a[0]!="--etl"||a[2]!="--pid"||
+        bool activeMode=a.Length==15;
+        if((a.Length!=9&&!activeMode)||a[0]!="--etl"||a[2]!="--pid"||
            a[4]!="--build"||a[6]!="--arm"||
            a[8]!="--preinit-losszero-and-pdb-match-verified")
             throw new ArgumentException("invalid_census_parameters");
+        ActiveEpochCuts? cuts=null;
+        if(activeMode)
+        {
+            if(a[9]!="--qpc-baseline"||a[11]!="--qpc-cycle1"||
+               a[13]!="--qpc-cycle2"||
+               !long.TryParse(a[10],NumberStyles.None,CultureInfo.InvariantCulture,out long q0)||
+               !long.TryParse(a[12],NumberStyles.None,CultureInfo.InvariantCulture,out long q1)||
+               !long.TryParse(a[14],NumberStyles.None,CultureInfo.InvariantCulture,out long q2))
+                throw new ArgumentException("active_epoch_qpc_parameters_invalid");
+            cuts=new ActiveEpochCuts(q0,q1,q2);
+        }
         if(Environment.GetEnvironmentVariable("GITHUB_ACTIONS")!="true" ||
            Environment.GetEnvironmentVariable("RUNNER_OS")!="Windows")
             throw new ArgumentException("not_isolated_windows_runner");
@@ -450,15 +627,16 @@ internal static class Program
             using(var src=log.Events.GetSource())
             {
                 var heap=new HeapTraceProviderTraceEventParser(src);
-                void Tick()
+                void Tick(long eventQpc)
                 {
                     if(++heapEvents>EventCap)
                         throw new ArgumentException("heap_event_capture_limit");
+                    cuts?.OnHeapEvent(eventQpc,model,methodLedger,nearestLedger);
                 }
                 heap.HeapTraceAlloc+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapAlloc++;countAlloc=heapAlloc;
+                    Tick(ev.TimeStampQPC);heapAlloc++;countAlloc=heapAlloc;
                     if(ev.AllocSize==0)countZeroAlloc++;
                     // Valid non-null HeapAlloc(0) can still own an allocated
                     // heap block. The shared lifetime model validates heap
@@ -495,7 +673,7 @@ internal static class Program
                 heap.HeapTraceReAlloc+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapRealloc++;countRealloc=heapRealloc;
+                    Tick(ev.TimeStampQPC);heapRealloc++;countRealloc=heapRealloc;
                     if(ev.OldAllocSize==0)countZeroOldSize++;
                     if(ev.NewAllocSize==0)countZeroNewSize++;
                     if(ev.OldAllocSize==0 || ev.NewAllocSize==0)countZeroRealloc++;
@@ -513,7 +691,7 @@ internal static class Program
                 heap.HeapTraceFree+=ev=>
                 {
                     if(ev.ProcessID!=pid)return;
-                    Tick();heapFree++;countFree=heapFree;
+                    Tick(ev.TimeStampQPC);heapFree++;countFree=heapFree;
                     if(model.IsTracked(ev.HeapHandle,ev.FreeAddress))
                     {
                         model.Free(ev.HeapHandle,ev.FreeAddress);
@@ -526,6 +704,9 @@ internal static class Program
             }
         }
         diagnosticStage="finalize_owner_lifetime";
+        // In the gated active mode the capture fence is required to stop
+        // ETW after the second process QPC checkpoint.
+        cuts?.Finish(model,methodLedger,nearestLedger);
         model.FinalizePending();
         methodLedger.FinalizePending();
         nearestLedger.FinalizePending();
@@ -534,6 +715,7 @@ internal static class Program
         var snapshot=model.Snapshot();
         methodLedger.Report(arm);
         nearestLedger.Report(arm,nearest:true);
+        cuts?.Report(arm);
         Console.WriteLine($"C545D_GIO_NEAREST_FRAME_SCOPE,arm={arm},"+
             $"raw_first_gio_exact_method={nearestFirstGioRaw},"+
             "raw_not_logical_owner_count=1,release_HOLD=1");
