@@ -101,3 +101,35 @@ A separate **synthetic**, non-GIO, isolated Windows 2022 test uses `tests/c545d_
 - **Pass/fail interpretation**: if the same 30 rows have `realloc>=out-alloc` per row, this shows the GIO group shape is *compatible* with observed realloc events, not that memory is permanently retained or the original allocation owner is proven. Any failed row or source mismatch remains an explicit case with next missing evidence. Global WinRT/APC closure, later freeing, and PrivateUsage/committed heap cause still need a justified lifetime boundary. Do not rerun original user four-hour captures or force production restarts.
 
 Classification ledger remains four `EVIDENCE_GAP` and release `HOLD`. No host/registry/DLL deployment and no user action.
+
+## 2026-11-23 JST — actual GIO Realloc counts fully reconcile 466, and source-only original-owner lifetime model is now tested
+
+**Actual original Windows 2022 GIO [CI #45133754345](https://github.com/taku077/c545d-recorder/actions/runs/45133754345), source [`64f1b27`](https://github.com/taku077/c545d-recorder/commit/64f1b274be236f27296010c35775cfe6f858e0e2).** Overall workflow `FAILURE` from *existing strict origin-owner proof gate*, NOT a new DLL/recording failure. MSVC GLib/GIO 2.82.4 build and **2047 exported SDK names PASS**, both paired process ETW captures completed with zero checked lost buffers/events, same-run QPC and resource postmortem succeeded; synthetic source parser preflight [#45133754193 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45133754193).
+
+| Xperf scoped late-four numeric, registry arm | Measured |
+|---|---:|
+| GLOBAL.Alloc / GLOBAL.Out | 619937 / 16062 |
+| Nochange global Out | 0 |
+| Validated (old strict condition) stack Out | 15596 |
+| Requested `-top8192`: actual number of groups | 1166 |
+| Zero-Alloc, Out-positive stack groups | **31** |
+| Their raw Realloc / raw Out counts | **3604 / 466** |
+| Groups satisfying `Alloc+Realloc >= Out` | **31 of 31** |
+| Incompatible groups under this necessary condition | **0** |
+| Complete raw Alloc and Out numeric reconciliation | **yes** |
+| Causal original HeapAlloc owner / matched later HeapFree | **not proven** |
+
+The independently calibrated **64 original allocation /16 realloc /48 free** fixture [#45133407278 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45133407278) demonstrated a real positive case `realloc_source Alloc0/Realloc16/Out16`; this is why per-group `Out<=Alloc` **must not be required without considering Realloc semantics**. Microsoft [ETW_HEAP_EVENT_REALLOC](https://learn.microsoft.com/en-us/windows/win32/memory/etw-heap-event-realloc) exposes `OldAddress/NewAddress/OldSize/NewSize`, and Microsoft's [Xperf process-heap analysis](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/xperf/using-actions-to-analyze-process-heap-data) explicitly distinguishes `Realloc` from `Alloc`. The 466 group-accounting anomaly is now **numerically explained as reallocation-compatible stack grouping**, **not** demonstrated as an actual memory leak or as the identity of 466 source allocations.
+
+Source-only [`tests/analyze_c545d_gio_etw_realloc_saved_ci.py`](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/analyze_c545d_gio_etw_realloc_saved_ci.py) strictly downloads original *sanitized-only* Windows artifact **14799580784** from #45133754345, checks full group counts plus same-run PrivateUsage `+331776 B` / heap REGION `+303104 B` / BUSY `-7734 B` (cycle0→16, distinct from ETW cycles13→16), worker callbacks17/instances18 and QPC no overlapping GIO rebuild at ETW stop. **[Archive CI #45134515275 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45134515275)**, eleven corrupt cases rejected. No extra Windows runner for replay and no raw ETL/addresses/stack source rows uploaded. The status remains `real_GIO_expected_lifetime_unproven`.
+
+**New source-only lifetime model** [`tests/analyze_c545d_realloc_origin_lifetime_ci.py`](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/analyze_c545d_realloc_origin_lifetime_ci.py) transfers original allocation identity through `old_address→new_address`, including inplace resize, and tests before/after source-specific free. It rejects orphan reallocs, stale frees, wrong size, collisions, lost events and unverified producer epoch. [CI #45134991894 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45134991894). **This is a synthetic state-machine test only**; the actual Windows ETW event decoder and real producer-closed callback/WinRT/APC acknowledgment are still missing.
+
+### Correct next AI-only engineering work
+
+1. **Do not repeat** original 16-cycle GIO top1024/top8192 tests, old four-hour Windows10 UMDH/WPR, or synthetic realloc group calibration. They answered their targeted format questions.
+2. Inspect available official ETW payload reader implementations and develop a validated disposable Windows event adapter for the raw `ETW_HEAP_EVENT_ALLOC/REALLOC/FREE` events with the original-address identity chain. Source and negative fixtures first; upload only numeric owner/lifetime summaries. An orphan realloc of a previously untraced allocation must be rejected explicitly; previous late4 traces began after 12 GIO cycles, so they cannot by themselves identify earlier original allocations.
+3. Create a source-backed closed-producer epoch that differentiates watcher APC completion, queued AppInfo workers and WinRT callbacks. QPC no-work-at-Xperf-stop and 2.5s passive wait are not proof of globally completed asynchronous sources.
+4. Only if both new observables are available, run **one** bounded disposable Windows GIO lifetime comparison with same-PID PrivateUsage/heap region and explicit phase windows. A true real Windows10 Tapo recording release test still needs explicit approval, and must be consolidated; no user action now.
+
+**State:** numeric 466 report classification subproblem **explained**, all four broader `docs/MEMORY_CLASSIFICATION_CASES.json` cases remain **OPEN/EVIDENCE_GAP**, recorder release **HOLD**, `install_approved=0,live_test_authorized=0,real_device_untested=1`. No real host DLL/registry/camera/media changes.
