@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45147403196](https://github.com/taku077/c545d-recorder/actions/runs/45147403196) |
+| C545D isolated HeapReAlloc zero-Alloc outstanding stack semantics | in_progress | [#45147399229](https://github.com/taku077/c545d-recorder/actions/runs/45147399229) |
 
 ## Current development findings from the active PR
 
