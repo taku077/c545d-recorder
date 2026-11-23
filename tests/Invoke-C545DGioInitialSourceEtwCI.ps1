@@ -155,18 +155,15 @@ try {
     else{Write-Host "C545D_GIO_PREINIT_SOURCE_GAP,arm=$Arm,reason=ETLX_ORIGIN_UNVERIFIED,raw_uploaded=0"}
     throw 'Actual original GIO source attribution not demonstrated'
   }
-  # Publish all exact source cohorts. A missing/malformed/duplicate row fails closed.
   $names=@('MissingStack','NoGioFrame','GioMethodUnmatched','UpdateRegistryData',
     'KeysUpdated','WatchKeys','AppinfoWorker','RegistryKeyWatch','PackageEnum',
     'AmbiguousMultipleMethods')
-  $rows=@($source | Where-Object {$_ -like "C545D_GIO_METHOD_COHORT,arm=$Arm,*"})
-  if($rows.Count -ne 10 -or $safeCensus.Count -ne 1){
-    throw 'Missing source cohorts or aggregate census'
-  }
+  $rows=@($source | Where-Object { $_ -like "C545D_GIO_METHOD_COHORT,arm=$Arm,*" })
+  if($rows.Count -ne 10 -or $safeCensus.Count -ne 1){throw 'cohort_row_count_gap'}
   $seen=@{}
-  $totals=@{ original=0L;realloc=0L;logical_free=0L;live=0L;request_bytes_live=0L }
-  $trusted=@{ original=0L;realloc=0L;logical_free=0L }
-  $regex='^C545D_GIO_METHOD_COHORT,arm='+[regex]::Escape($Arm)+
+  $totalLive=0L;$totalBytes=0L
+  $gioAlloc=0L;$gioRealloc=0L;$gioFree=0L
+  $pattern='^C545D_GIO_METHOD_COHORT,arm='+[regex]::Escape($Arm)+
     ',category=([A-Za-z]+),original=(\d+),realloc=(\d+),logical_free=(\d+),'+
     'live=(\d+),request_bytes_live=(\d+),'+
     'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1
@@ -219,39 +216,36 @@ try {
 if($success){$global:LASTEXITCODE=0}
 
   foreach($row in $rows){
-    $m=[regex]::Match($row,$regex)
-    if(-not $m.Success){throw 'Malformed source cohort row'}
+    $m=[regex]::Match($row,$pattern)
+    if(-not $m.Success){throw 'invalid_cohort_shape'}
     $name=$m.Groups[1].Value
     if($names -notcontains $name -or $seen.ContainsKey($name)){
-      throw 'Duplicate or unexpected cohort'
+      throw 'duplicate_or_unknown_cohort'
     }
     $seen[$name]=1
-    $v=@(
-      [long]::Parse($m.Groups[2].Value),
-      [long]::Parse($m.Groups[3].Value),
-      [long]::Parse($m.Groups[4].Value),
-      [long]::Parse($m.Groups[5].Value),
-      [long]::Parse($m.Groups[6].Value)
-    )
-    if($v[0]-$v[2] -ne $v[3]){throw 'Unbalanced cohort'}
-    $fields=@('original','realloc','logical_free','live','request_bytes_live')
-    for($i=0;$i -lt 5;$i++){$totals[$fields[$i]]+=$v[$i]}
+    $a=[long]$m.Groups[2].Value
+    $r=[long]$m.Groups[3].Value
+    $f=[long]$m.Groups[4].Value
+    $l=[long]$m.Groups[5].Value
+    $b=[long]$m.Groups[6].Value
+    if($a-$f -ne $l){throw 'cohort_balance_mismatch'}
+    $totalLive+=$l;$totalBytes+=$b
     if($name -notin @('MissingStack','NoGioFrame','GioMethodUnmatched')){
-      for($i=0;$i -lt 3;$i++){$trusted[$fields[$i]]+=$v[$i]}
+      $gioAlloc+=$a;$gioRealloc+=$r;$gioFree+=$f
     }
   }
-  if($seen.Count -ne 10){throw 'Missing named cohort'}
-  $census=@{}
-  foreach($entry in $safeCensus[0].Split(',') | Select-Object -Skip 1){
-    $kv=$entry.Split('=',2)
-    if($kv.Count -eq 2){$census[$kv[0]]=$kv[1]}
+  if($seen.Count -ne 10){throw 'missing_named_cohort'}
+  $summary=@{}
+  foreach($item in $safeCensus[0].Split(',') | Select-Object -Skip 1){
+    $pair=$item.Split('=',2)
+    if($pair.Count -eq 2){$summary[$pair[0]]=$pair[1]}
   }
-  if($totals['live'] -ne [long]$census['original_allocation_live'] -or
-     $totals['request_bytes_live'] -ne [long]$census['request_bytes_live'] -or
-     $trusted['original'] -ne [long]$census['gio_source_origin_alloc'] -or
-     $trusted['realloc'] -ne [long]$census['gio_source_origin_realloc'] -or
-     $trusted['logical_free'] -ne [long]$census['gio_source_origin_logical_free']){
-    throw 'Source cohorts disagree with independent census'
+  if($totalLive -ne [long]$summary['original_allocation_live'] -or
+     $totalBytes -ne [long]$summary['request_bytes_live'] -or
+     $gioAlloc -ne [long]$summary['gio_source_origin_alloc'] -or
+     $gioRealloc -ne [long]$summary['gio_source_origin_realloc'] -or
+     $gioFree -ne [long]$summary['gio_source_origin_logical_free']){
+    throw 'cohort_census_reconciliation_failed'
   }
   foreach($row in $rows){Write-Host $row}
   Write-Host "C545D_GIO_METHOD_COHORT_ACCOUNTING_PASS,arm=$Arm,cohorts=10,checks=5,release_HOLD=1"
