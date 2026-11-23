@@ -276,6 +276,32 @@ try {
     elseif($privateMessage -match '(?i)insufficient|memory|buffer'){$filterReason='FILTER_RESOURCE_ERROR'}
     Write-Host "C545D_OWNER_CAL_FILTER_CAPABILITY,available=0,reason=$filterReason,not_memleak_result=1,raw_uploaded=0"
   }
+  # Discriminating capability test: legacy Learn docs say -image while
+  # Windows WPT heap reference says -images. The earlier GIO -images report
+  # emitted no GLOBAL/TOP/Alloc metrics even with exit 0. Verify actual
+  # action layout with a short synthetic 64/48 fixture before rerunning GIO.
+  # Only fixed sanitized numeric / schema enum lines leave this runner.
+  $actionOldSymbols=$env:_NT_SYMBOL_PATH
+  try {
+    $env:_NT_SYMBOL_PATH="$root;srv*$(Join-Path $root 'ms_symbols_local_only')*https://msdl.microsoft.com/download/symbols"
+    foreach($mode in @('frames','images','image')){
+      $report=Join-Path $root ("heap_action_"+$mode+"_private.txt")
+      & $tool -i $etl -o $report -symbols -a heap ("-"+$mode) -top 64 *> $raw
+      $actionReturn=if($LASTEXITCODE -eq 0){0}else{1}
+      if(-not(Test-Path $report -PathType Leaf)){
+        [IO.File]::WriteAllText($report,'')
+      }
+      $safe=@(& py tests/analyze_c545d_xperf_action_layout_ci.py --mode $mode --report $report --exit $actionReturn 2> $raw)
+      $allowed=@($safe | Where-Object {$_ -match ('^C545D_XPERF_HEAP_ACTION_LAYOUT,mode='+$mode+',[A-Za-z0-9_,=]+$')})
+      if($LASTEXITCODE -ne 0 -or $allowed.Count -ne 1){
+        throw 'Xperf heap action local schema guard did not return valid numeric-only evidence'
+      }
+      Write-Host $allowed[0]
+    }
+  } finally {
+    if($null -eq $actionOldSymbols){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+    else{$env:_NT_SYMBOL_PATH=$actionOldSymbols}
+  }
   # The ETL and raw outputs never leave the runner. The first verified
   # capability is a complete controlled WORKLOAD window and heap totals
   # report, NOT a verified exact-16 ETW outstanding count. Missing stack
