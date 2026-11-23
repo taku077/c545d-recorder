@@ -28,3 +28,52 @@ The modified candidate registry second epoch is associated with a **+356352B Pri
 4. The code and Windows2022 automated measurement are NOT a real Windows10 2-RTSP recording or proof of 24/7 stability. Release HOLD; install_approved=0; live_test_authorized=0; no manual user measurement requested.
 
 References: [Microsoft GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes); [PerfView TraceEvent](https://github.com/microsoft/perfview/blob/main/src/TraceEvent/TraceEvent.cs).
+
+
+## NEWER: ONE continuous ETW with three same-process QPC cutoffs (2026-11-24 JST)
+
+**VERIFIED** [Windows2022 CI #45217120186 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45217120186), job `137841171782`, code HEAD [9eef364](https://github.com/taku077/c545d-recorder/commit/9eef364ca4a103487ab2bbfd615117f8dfa42f37): source-built patched GLib/GIO 2.82.4 and native PDB, 2047 GStreamer export parity, ZERO event/buffer loss gate, one continuous ETW trace before first AppInfo call, post-init baseline, two post-baseline registry/nochange cycles and settled cleanup; numeric QPC worker parity gate, safe original HeapAlloc/ReAlloc/Free strict and nearest-proxy cohort ledgers at each cutoff. Exactly 3 × 2 × 10 category counters per arm, 3 source scopes per arm and accounting PASS. Both traces confined to ephemeral Windows2022 runner, no ETL/PDB/raw pointers uploaded.
+
+| Same-process cutoff | Nochange live blocks | Nochange requested B | Registry live blocks | Registry requested B |
+|---|---:|---:|---:|---:|
+| post-init baseline | 10513 | 883655 | 12931 | 1020459 |
+| active cycle1 | 10513 | 883655 | 18349 | 1309212 |
+| active cycle2 | 10513 | 883655 | 18446 | 1320510 |
+| delta baseline→cycle1 | 0 | 0 | +5418 | +288753 |
+| **delta cycle1→cycle2** | **0** | **0** | **+97** | **+11298** |
+
+### Residual request-size allocation cohort detail
+
+| Nearest allowlisted GIO function / reason, registry | baseline live/request B | cycle1 live/request B | cycle2 live/request B | cycle2−cycle1 |
+|---|---|---|---|---|
+| `update_registry_data` (proxy) | 9871 / 584901 | 15192 / 863696 | 15192 / 863696 | **0 blocks / 0 B** |
+| `g_win32_package_parser_enum_packages` (proxy) | 2794 / 375420 | 2888 / 389498 | 2986 / 404968 | **+98 / +15470 B** |
+| `g_win32_registry_key_watch` (proxy) | 0 / 0 | 1 / 16 | 1 / 16 | 0 |
+| `keys_updated` (proxy) | 0 / 0 | 3 / 36 | 3 / 36 | 0 |
+| GIO module but none of six exact allowlisted frames | 43 / 2776 | 43 / 2776 | 43 / 2776 | 0 |
+| No GIO frame | 223 / 57362 | 222 / 53190 | 221 / 49018 | **−1 / −4172 B** |
+| Strict multi-method ambiguous original stack (NOT additional) | 12665 / 960321 | 18081 / 1253210 | 18179 / 1268680 | +98 / +15470 B |
+
+**Important:** the strict multi-method category and nearest allowlisted method are *different views of the same original allocations*, not additive; no double counting. The +15470 B nearest package enum and −4172 B no-GIO counterpart plus unchanged remaining categories reconcile to **+11298 B** total request size.
+
+The nearest `update_registry_data` request size plateaued by the second epoch, while the package enumeration proxy gained +98 blocks. This DOES NOT prove the package parser leaks 98 blocks per scan: one more equal observed step is needed to distinguish intentional cache warming, transient GIO ownership and persistent retention. Original request bytes are NOT process private committed bytes.
+
+### Phase-matched physical resource deltas from SAME continuous ETW CI
+
+| Metric | nochange cycle1 | nochange cycle2 | registry cycle1 | registry cycle2 |
+|---|---:|---:|---:|---:|
+| PSAPI PrivateUsage B | +45056 | 0 | +405504 | **+40960** |
+| VirtualQuery MEM_PRIVATE B | 0 | 0 | 0 | +16384 |
+| process handles | +3 | 0 | +3 | +1 |
+| CPU user+kernel units 100ns | 0 | 0 | 10000000 | 10000000 |
+| completed AppInfo workers | 0 | 0 | 1 | 1 |
+| changed callbacks | 0 | 0 | 0 | 0 |
+
+The prior separate **non-ETW** two-cycle candidate CI [#45213046661](https://github.com/taku077/c545d-recorder/actions/runs/45213046661) reported registry PrivateUsage +86016 then +356352 B. **Do not substitute or directly compare its resource deltas**: instrumented ETW is a different run and introduces overhead, but both are valid for their own scope.
+
+### Source review in progress
+
+The official upstream pinned source [GLib 2.82.4 gwin32packageparser.c](https://github.com/GNOME/glib/blob/2.82.4/gio/gwin32packageparser.c) explicitly releases per-package HSTRING, IPackage/IPackage2/IPackageId, and XML arrays at cleanup boundaries. The CI-only DisplayName memoization in [patch_glib_uwp_displayname_cache_diagnostic.py](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/tests/patch_glib_uwp_displayname_cache_diagnostic.py) is guarded by an opt-in diagnostic environment variable; presence of its code alone is NOT evidence of the cache being enabled, and its caches can change freshness semantics. Need distinguish actual parser callback/cache retention from resource initialization by additional source-level counters under one bounded isolated CI comparison; no change to production recorder.
+
+Verified release status: `install_approved=0`, `live_test_authorized=0`, release HOLD, real Windows10 camera recording UNTESTED, no user measurement required.
+
