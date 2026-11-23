@@ -1,0 +1,76 @@
+name: C545D detached weekly companion Windows 10 PowerShell 5.1
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - '.github/workflows/c545d-weekly-observer-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  detached-observer-safe:
+    runs-on: windows-2022
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse and self-test on Windows PowerShell 5.1 (no cameras)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file=(Resolve-Path diagnostics/C545D-WeeklyObserver.ps1).Path
+          $tokens=$null;$parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -gt 0){ throw ('Observer PowerShell syntax errors: '+$parseErrors[0].Message) }
+          $source=[IO.File]::ReadAllText($file)
+          if($source -match '(?i)\b(Stop-Process|Kill-Process|Remove-Process|Set-ItemProperty|New-ItemProperty|Start-Transcript|Start-Trace|wpr\.exe|Set-ExecutionPolicy|Invoke-WebRequest|Invoke-RestMethod|taskkill|RegWrite)\b'){
+            throw 'Observer includes forbidden host modification/network/ETW operations'
+          }
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'Observer synthetic secret and cadence selftest failed'}
+      - name: Run one real read-only process sample and sanitized manual ZIP export
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $file=(Resolve-Path diagnostics/C545D-WeeklyObserver.ps1).Path
+          $dir=Join-Path $env:RUNNER_TEMP 'safe-weekly-observer-test'
+          if(Test-Path $dir){throw 'unexpected temp dir'}
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -RootDirectory $dir -Once
+          if($LASTEXITCODE -ne 0){throw 'Read-only one-shot monitor failed'}
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -RootDirectory $dir -ExportNow
+          if($LASTEXITCODE -ne 0){throw 'Week-safe report exporter failed'}
+          $zip=@(Get-ChildItem (Join-Path $dir 'reports') -Filter 'C545D_SAFE_WEEKLY_*.zip' -File)
+          if($zip.Count -ne 1){throw 'Exactly one synthetic safe ZIP expected'}
+          $unpacked=Join-Path $env:RUNNER_TEMP 'weekly-check-expanded'
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $unpacked
+          $names=@(Get-ChildItem $unpacked -File|ForEach-Object Name|Sort-Object)
+          if((Compare-Object @('manifest.json','process_metrics.csv','summary.json') $names).Count -ne 0){
+            throw 'Unexpected/missing report files'
+          }
+          $blob=(Get-Content (Join-Path $unpacked 'manifest.json') -Raw)+
+            (Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw)+
+            (Get-Content (Join-Path $unpacked 'summary.json') -Raw)
+          foreach($forbidden in @('rtsp://','user-pw','authorization','password=','C:\Users\', '192.0.2.1', 'camerauser')){
+            if($blob.IndexOf($forbidden,[StringComparison]::OrdinalIgnoreCase) -ge 0){
+              throw 'Sensitive diagnostic contents in safe ZIP'
+            }
+          }
+          $manifest=Get-Content (Join-Path $unpacked 'manifest.json') -Raw|ConvertFrom-Json
+          if($manifest.schema_version -ne 1 -or $manifest.diagnostics_version -ne '0.1.0' -or
+             $manifest.actual_samples -ne 1 -or
+             $manifest.recording_integrity -ne 'not_collected' -or
+             $manifest.heavy_etw -ne 'disabled' -or $manifest.automatic_upload -ne $false){
+            throw 'Missing report version/actual sample/safety flags'
+          }
+          $csv=@(Import-Csv (Join-Path $unpacked 'process_metrics.csv'))
+          if($csv.Count -ne 1 -or $csv[0].status -notin @('OK','NOT_RUNNING','MULTIPLE_PROCESSES','PROCESS_ACCESS_ERROR','PROCESS_LOOKUP_ERROR')){
+            throw 'One-shot process collector not properly represented'
+          }
+          # Synthetic malicious values in a stored CSV are rejected on ZIP export.
+          $daily=@(Get-ChildItem (Join-Path $dir 'metrics') -File|Select-Object -First 1)[0].FullName
+          $raw=[IO.File]::ReadAllText($daily)
+          [IO.File]::WriteAllText($daily,$raw.Replace('NOT_RUNNING','rtsp://secret:p@host/stream6'))
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -RootDirectory $dir -ExportNow 2>&1 | Out-Null
+          if($LASTEXITCODE -eq 0){throw 'Unsafe report row was accepted'}
+          $global:LASTEXITCODE=0
+          Write-Host 'C545D_WEEKLY_OBSERVER_WIN51_CI_PASS,scope=detached,weekly_zip=1,synthetic_secret_denied=1,real_recorder_unmodified=1,release_HOLD=1'
