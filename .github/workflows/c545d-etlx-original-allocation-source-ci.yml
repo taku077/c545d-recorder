@@ -1,0 +1,42 @@
+name: C545D original HeapAlloc callstack identity from private ETLX
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545DHeapOriginStackProbe/**'
+      - 'tests/Invoke-C545DEtwReallocCalibration.ps1'
+      - '.github/workflows/c545d-etlx-original-allocation-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-event-stack-origin:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build ETLX source resolver and reject missing, substituted or untrusted original stack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet build tests/C545DHeapOriginStackProbe/C545DHeapOriginStackProbe.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Pinned ETLX source probe does not build'}
+          dotnet run --no-build --project tests/C545DHeapOriginStackProbe/C545DHeapOriginStackProbe.csproj --configuration Release -- --selftest
+          if($LASTEXITCODE -ne 0){throw 'Original stack source negative cases failed'}
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DEtwReallocCalibration.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if(@($errors).Count -ne 0){throw 'Private original stack controller PowerShell syntax failed'}
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -SelfTest
+          if(-not $?){throw 'CI only private WPT controller safety gate failed'}
+      - name: Prove original native HeapAlloc method on same short ETW capture, do not infer GIO owner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -GenericMixed -ThroughCleanup -OriginStackAudit
+          if(-not $? -or $LASTEXITCODE -ne 0){throw 'ETLX original source proof failed closed'}
+          Write-Host 'C545D_ETLX_SOURCE_WINDOWS_CI_PASS,fixture_only=1,original_alloc_stack_proof=1,real_GIO_owner=0,raw_uploaded=0,production_HOLD=1'
