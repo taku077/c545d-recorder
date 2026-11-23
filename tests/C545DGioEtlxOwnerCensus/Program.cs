@@ -39,6 +39,12 @@ internal static class Program
         "realloc_old_size_does_not_match","realloc_new_address_collision",
         "invalid_free_identity","duplicate_provisional_free",
         "orphan_free_or_stale_realloc_address",
+        "cohort_invalid_original","cohort_overlapping_live",
+        "cohort_invalid_realloc","cohort_unproven_old_realloc",
+        "cohort_old_size_mismatch","cohort_new_target_pending",
+        "cohort_unproven_new_target","cohort_free_not_owned",
+        "cohort_pending_not_finalized","cohort_lifetime_not_balanced",
+        "cohort_generic_reconciliation_failed",
         "actual_GIO_source_function_not_proven"
     };
     private static string Diagnostic()
@@ -59,15 +65,24 @@ internal static class Program
     }
     private const string GioModule="gio-2.0-0";
     private readonly record struct Frame(string? Module,string? Function);
-    private readonly record struct Owner(bool HasStack,bool HasGioFrame,bool ExactGioMethod);
-    private static readonly HashSet<string> TrustedGioMethods=new(StringComparer.Ordinal)
+    private enum Cohort
     {
-        "update_registry_data",
-        "keys_updated",
-        "watch_keys",
-        "gio_win32_appinfo_thread_func",
-        "g_win32_registry_key_watch",
-        "g_win32_package_parser_enum_packages"
+        MissingStack=0, NoGioFrame=1, GioMethodUnmatched=2,
+        UpdateRegistryData=3, KeysUpdated=4, WatchKeys=5,
+        AppinfoWorker=6, RegistryKeyWatch=7, PackageEnum=8,
+        AmbiguousMultipleMethods=9
+    }
+    private readonly record struct Owner(bool HasStack,bool HasGioFrame,
+        bool ExactGioMethod,Cohort Cohort);
+    private static readonly Dictionary<string,Cohort> TrustedGioMethods=
+        new(StringComparer.Ordinal)
+    {
+        ["update_registry_data"]=Cohort.UpdateRegistryData,
+        ["keys_updated"]=Cohort.KeysUpdated,
+        ["watch_keys"]=Cohort.WatchKeys,
+        ["gio_win32_appinfo_thread_func"]=Cohort.AppinfoWorker,
+        ["g_win32_registry_key_watch"]=Cohort.RegistryKeyWatch,
+        ["g_win32_package_parser_enum_packages"]=Cohort.PackageEnum
     };
 
     private static string? NormalizeFunction(string? symbol)
@@ -83,9 +98,11 @@ internal static class Program
 
     private static Owner Classify(IReadOnlyList<Frame>? frames)
     {
-        if(frames is null || frames.Count==0)return new(false,false,false);
+        if(frames is null || frames.Count==0)
+            return new(false,false,false,Cohort.MissingStack);
         if(frames.Count>256)throw new ArgumentException("stack_depth_exceeded");
-        bool gio=false,method=false;
+        bool gio=false;
+        var hits=new HashSet<Cohort>();
         foreach(var f in frames)
         {
             string? name=f.Module?.EndsWith(".dll",StringComparison.OrdinalIgnoreCase)==true
@@ -94,10 +111,149 @@ internal static class Program
                 continue;
             gio=true;
             var exact=NormalizeFunction(f.Function);
-            if(exact is not null && TrustedGioMethods.Contains(exact))
-                method=true;
+            if(exact is not null && TrustedGioMethods.TryGetValue(exact,out var method))
+                hits.Add(method);
         }
-        return new(true,gio,method);
+        // A stack containing multiple distinct allowlisted functions proves
+        // GIO participation, NOT one arbitrary original allocating method.
+        Cohort cohort=hits.Count>1?Cohort.AmbiguousMultipleMethods:
+            hits.Count==1?hits.First():
+            gio?Cohort.GioMethodUnmatched:Cohort.NoGioFrame;
+        return new(true,gio,hits.Count>0,cohort);
+    }
+
+    // Separately audited method-level ledger; the existing size/address
+    // generic lifetime model remains the independent total-count oracle.
+    // All 10 cohorts are mutually exclusive, including explicit gap reasons.
+    private sealed class MethodLedger
+    {
+        private const int Count=10;
+        private const int MaxReallocGap=32;
+        private readonly record struct Key(ulong Heap,ulong Address);
+        private readonly record struct Entry(long Bytes,Cohort Cohort,long Birth,int Reallocs);
+        private readonly record struct Held(Entry Entry,long Event);
+        private readonly Dictionary<Key,Entry> live=new();
+        private readonly Dictionary<Key,Held> pending=new();
+        private readonly long[] original=new long[Count];
+        private readonly long[] reallocated=new long[Count];
+        private readonly long[] freed=new long[Count];
+        private long sequence;
+
+        internal void Alloc(ulong heap,ulong address,long size,Cohort source)
+        {
+            sequence++;
+            if(heap==0||address==0||size<0||size>(1L<<36)||
+               (int)source<0||(int)source>=Count)
+                throw new ArgumentException("cohort_invalid_original");
+            var key=new Key(heap,address);
+            if(live.ContainsKey(key))
+                throw new ArgumentException("cohort_overlapping_live");
+            if(pending.Remove(key,out var old))
+                freed[(int)old.Entry.Cohort]++;
+            live.Add(key,new Entry(size,source,sequence,0));
+            original[(int)source]++;
+        }
+        internal void Realloc(ulong heap,ulong oldAddress,ulong newAddress,
+            long oldSize,long newSize)
+        {
+            sequence++;
+            var before=new Key(heap,oldAddress);
+            var after=new Key(heap,newAddress);
+            if(heap==0||oldAddress==0||newAddress==0||
+               oldSize<0||newSize<0||oldSize>(1L<<36)||newSize>(1L<<36))
+                throw new ArgumentException("cohort_invalid_realloc");
+            bool wasLive=live.TryGetValue(before,out var parent);
+            if(!wasLive)
+            {
+                if(!pending.TryGetValue(before,out var saved)||
+                   sequence-saved.Event<1||sequence-saved.Event>MaxReallocGap)
+                    throw new ArgumentException("cohort_unproven_old_realloc");
+                parent=saved.Entry;
+            }
+            if(parent.Bytes!=oldSize)
+                throw new ArgumentException("cohort_old_size_mismatch");
+            if(after!=before)
+            {
+                if(pending.ContainsKey(after))
+                    throw new ArgumentException("cohort_new_target_pending");
+                if(live.TryGetValue(after,out var target))
+                {
+                    long gap=sequence-target.Birth;
+                    if(target.Bytes!=newSize||target.Reallocs!=0||
+                       gap<1||gap>MaxReallocGap)
+                        throw new ArgumentException("cohort_unproven_new_target");
+                    live.Remove(after);
+                    original[(int)target.Cohort]--;
+                }
+            }
+            if(wasLive)live.Remove(before);
+            else pending.Remove(before);
+            live.Add(after,new Entry(newSize,parent.Cohort,parent.Birth,
+                parent.Reallocs+1));
+            reallocated[(int)parent.Cohort]++;
+        }
+        internal void Free(ulong heap,ulong address)
+        {
+            sequence++;
+            var key=new Key(heap,address);
+            if(!live.Remove(key,out var value)||pending.ContainsKey(key))
+                throw new ArgumentException("cohort_free_not_owned");
+            pending.Add(key,new Held(value,sequence));
+        }
+        internal void FinalizePending()
+        {
+            foreach(var held in pending.Values)
+                freed[(int)held.Entry.Cohort]++;
+            pending.Clear();
+        }
+        internal (long Original,long Reallocated,long Freed,long Live,long Bytes)
+            Counts(Cohort cohort)
+        {
+            var index=(int)cohort;
+            long count=0,bytes=0;
+            foreach(var entry in live.Values)
+                if(entry.Cohort==cohort){count++;bytes=checked(bytes+entry.Bytes);}
+            return (original[index],reallocated[index],freed[index],count,bytes);
+        }
+        internal void CheckAgainst(GenericHeapLifetime generic)
+        {
+            if(pending.Count!=0)
+                throw new ArgumentException("cohort_pending_not_finalized");
+            var all=generic.Snapshot();
+            long totalLive=0,totalBytes=0,knownOriginal=0,knownRealloc=0,
+                knownFree=0;
+            foreach(Cohort cohort in Enum.GetValues<Cohort>())
+            {
+                var x=Counts(cohort);
+                if(x.Original<0||x.Freed<0||x.Original-x.Freed!=x.Live)
+                    throw new ArgumentException("cohort_lifetime_not_balanced");
+                totalLive+=x.Live;totalBytes=checked(totalBytes+x.Bytes);
+                if(cohort>=Cohort.UpdateRegistryData)
+                {
+                    knownOriginal+=x.Original;
+                    knownRealloc+=x.Reallocated;
+                    knownFree+=x.Freed;
+                }
+            }
+            if(totalLive!=all.Count||totalBytes!=all.Bytes||
+               knownOriginal!=generic.GioMethodOriginalAllocations||
+               knownRealloc!=generic.GioMethodLinkedReallocations||
+               knownFree!=generic.GioMethodLogicalFrees)
+                throw new ArgumentException("cohort_generic_reconciliation_failed");
+        }
+        internal void Report(string arm)
+        {
+            foreach(Cohort cohort in Enum.GetValues<Cohort>())
+            {
+                var x=Counts(cohort);
+                Console.WriteLine("C545D_GIO_METHOD_COHORT,"+
+                    $"arm={arm},category={cohort},"+
+                    $"original={x.Original},realloc={x.Reallocated},"+
+                    $"logical_free={x.Freed},live={x.Live},"+
+                    $"request_bytes_live={x.Bytes},"+
+                    "source_original_stack_only=1,global_leak_proven=0,release_HOLD=1");
+            }
+        }
     }
 
     private static void SelfTest()
@@ -122,6 +278,48 @@ internal static class Program
         for(int i=0;i<bad.Length;i++)
             Expect(!Classify(bad[i]).ExactGioMethod);
         Expect(Classify(new Frame[]{new("gio-2.0-0",null)}).HasGioFrame);
+        Expect(Classify(new Frame[]{new("gio-2.0-0","update_registry_data"),
+            new("gio-2.0-0","keys_updated")}).Cohort==Cohort.AmbiguousMultipleMethods);
+        Expect(Classify(new Frame[]{new("gio-2.0-0","update_registry_data"),
+            new("gio-2.0-0","update_registry_data()")}).Cohort==Cohort.UpdateRegistryData);
+        Expect(Classify(new Frame[]{new("gio-2.0-0",null)}).Cohort==
+            Cohort.GioMethodUnmatched);
+        Expect(Classify(new Frame[]{new("ntdll","HeapAlloc")}).Cohort==
+            Cohort.NoGioFrame);
+        var cohortModel=new MethodLedger();
+        var cohortGeneric=new GenericHeapLifetime();
+        cohortModel.Alloc(1,10,100,Cohort.UpdateRegistryData);
+        cohortGeneric.Alloc(1,10,100,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
+        // Native move may expose Alloc(target) and Free(old) before ReAlloc.
+        cohortModel.Alloc(1,20,200,Cohort.GioMethodUnmatched);
+        cohortGeneric.Alloc(1,20,200,GenericHeapLifetime.OriginProof.Unresolved);
+        cohortModel.Free(1,10);cohortGeneric.Free(1,10);
+        cohortModel.Realloc(1,10,20,100,200);
+        cohortGeneric.Realloc(1,10,20,100,200);
+        var held=cohortModel.Counts(Cohort.UpdateRegistryData);
+        Expect(held.Live==1&&held.Bytes==200&&held.Original==1&&
+               cohortModel.Counts(Cohort.GioMethodUnmatched).Original==0);
+        cohortModel.Free(1,20);cohortGeneric.Free(1,20);
+        cohortModel.FinalizePending();cohortGeneric.FinalizePending();
+        cohortModel.CheckAgainst(cohortGeneric);
+        Expect(cohortModel.Counts(Cohort.UpdateRegistryData).Freed==1);
+        // Ambiguous function stacks remain ambiguous through a move.
+        var ambiguous=new MethodLedger();
+        ambiguous.Alloc(4,100,0,Cohort.AmbiguousMultipleMethods);
+        ambiguous.Free(4,100);
+        ambiguous.Realloc(4,100,101,0,17);
+        Expect(ambiguous.Counts(Cohort.AmbiguousMultipleMethods).Live==1&&
+               ambiguous.Counts(Cohort.AmbiguousMultipleMethods).Bytes==17);
+        ambiguous.Free(4,101);ambiguous.FinalizePending();
+        Expect(ambiguous.Counts(Cohort.AmbiguousMultipleMethods).Freed==1);
+        // Freed pointer reused for another method must not inherit owner.
+        var reused=new MethodLedger();
+        reused.Alloc(6,15,24,Cohort.KeysUpdated);
+        reused.Free(6,15);
+        reused.Alloc(6,15,0,Cohort.NoGioFrame);
+        reused.FinalizePending();
+        Expect(reused.Counts(Cohort.KeysUpdated).Freed==1&&
+               reused.Counts(Cohort.NoGioFrame).Live==1);
         var lifetime=new GenericHeapLifetime();
         lifetime.Alloc(12,100,168,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
         lifetime.Free(12,100);
@@ -134,7 +332,8 @@ internal static class Program
                lifetime.ProvenOriginalAllocations==0 &&
                lifetime.Snapshot().Count==0);
         Console.WriteLine("C545D_GIO_ETLX_SOURCE_CLASSIFIER_SELFTEST_PASS,"+
-            "positive=2,negative=12,module_only_rejected=1,"+
+            "positive=8,negative=12,method_cohort_ledger=1,"+
+            "multiple_distinct_methods_ambiguous=1,realloc_target_owner_preserved=1,"+
             "LFH_not_owner=1,original_stack_survives_realloc_free=1,"+
             "real_GIO_stacks_not_yet_examined=1,release_HOLD=1");
     }
@@ -167,6 +366,7 @@ internal static class Program
             throw new ArgumentException("unknown_disposable_arm");
         diagnosticStage="etlx_open";
         var model=new GenericHeapLifetime();
+        var methodLedger=new MethodLedger();
         currentLifetime=model;
         countAlloc=countRealloc=countFree=missingStacks=hasGioFrameCount=exactMethodCount=loadedGioModules=lookupModules=0;
         countZeroAlloc=countZeroRealloc=countZeroOldSize=countZeroNewSize=0;
@@ -240,6 +440,8 @@ internal static class Program
                         result.ExactGioMethod
                         ? GenericHeapLifetime.OriginProof.VerifiedGioMethod
                         : GenericHeapLifetime.OriginProof.Unresolved);
+                    methodLedger.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
+                        result.Cohort);
                 };
                 heap.HeapTraceReAlloc+=ev=>
                 {
@@ -249,8 +451,12 @@ internal static class Program
                     if(ev.NewAllocSize==0)countZeroNewSize++;
                     if(ev.OldAllocSize==0 || ev.NewAllocSize==0)countZeroRealloc++;
                     if(model.IsTracked(ev.HeapHandle,ev.OldAllocAddress))
+                    {
                         model.Realloc(ev.HeapHandle,ev.OldAllocAddress,
                             ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
+                        methodLedger.Realloc(ev.HeapHandle,ev.OldAllocAddress,
+                            ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
+                    }
                     else orphanRealloc++;
                 };
                 heap.HeapTraceFree+=ev=>
@@ -258,7 +464,10 @@ internal static class Program
                     if(ev.ProcessID!=pid)return;
                     Tick();heapFree++;countFree=heapFree;
                     if(model.IsTracked(ev.HeapHandle,ev.FreeAddress))
+                    {
                         model.Free(ev.HeapHandle,ev.FreeAddress);
+                        methodLedger.Free(ev.HeapHandle,ev.FreeAddress);
+                    }
                     else orphanFree++;
                 };
                 src.Process();
@@ -266,7 +475,10 @@ internal static class Program
         }
         diagnosticStage="finalize_owner_lifetime";
         model.FinalizePending();
+        methodLedger.FinalizePending();
+        methodLedger.CheckAgainst(model);
         var snapshot=model.Snapshot();
+        methodLedger.Report(arm);
         diagnosticStage="safe_numeric_census";
         Console.WriteLine($"C545D_GIO_ETLX_FIRST_SOURCE_CENSUS,arm={arm},"+
             $"pid_heap_events={heapEvents},original_alloc_events={heapAlloc},"+
