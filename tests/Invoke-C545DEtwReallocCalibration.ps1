@@ -87,6 +87,14 @@ try {
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe -PathType Leaf)){
     throw 'Synthetic realloc source compilation failed'
   }
+  # Compile the original-address event adapter BEFORE tracing; no CI-build
+  # noise enters the tiny known 64/16/48 native heap ETW interval.
+  $adapter=Join-Path $root 'C545DEtwHeapIdentity.dll'
+  & dotnet build tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release --output $root --nologo *> $raw
+  if($LASTEXITCODE -ne 0 -or -not(Test-Path $adapter -PathType Leaf)){
+    Write-Host 'C545D_REALLOC_ETW_IDENTITY_GAP,stage=BUILD,reason=DOTNET_ADAPTER_BUILD_FAILED,raw_uploaded=0'
+    throw 'Private source-event adapter compilation did not succeed'
+  }
   $env:C545D_REALLOC_CAL_ROOT=$root
   $proc=Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
   Wait-Signal 'ready.signal' 30
@@ -144,6 +152,23 @@ try {
   } else {
     Write-Host 'C545D_REALLOC_STACK_BOUNDS_GAP,reason=UNVERIFIED_REPORT_NUMBERS,raw_uploaded=0'
   }
+  # Parse the SAME local ETL before the 16 intentionally held blocks are
+  # freed. Do not export the ETL, payload pointers, stack names or PID.
+  # This is a distinct real-event validation, not another GIO measurement.
+  $identities=@(& dotnet $adapter --etl $etl --pid "$($proc.Id)" --preworkload-and-losszero-verified 2> $raw)
+  $identityStatus=$LASTEXITCODE
+  $safeIdentity=@($identities | Where-Object {
+    $_ -match '^C545D_ETW_REALLOC_IDENTITY_MATCHED,[A-Za-z0-9_,=.-]+$'
+  })
+  if($identityStatus -ne 0 -or $safeIdentity.Count -ne 1){
+    $gap=@($identities | Where-Object {
+      $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+,raw_uploaded=0,release_HOLD=1$'
+    })
+    if($gap.Count -eq 1){Write-Host $gap[0]}
+    else{Write-Host 'C545D_ETW_REALLOC_IDENTITY_GAP,reason=unverified_adapter_output,raw_uploaded=0,release_HOLD=1'}
+    throw 'Real ETW old-new identity unverified: synthetic source still safe'
+  }
+  Write-Host $safeIdentity[0]
   Signal 'exit.signal'
   if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
     throw 'Synthetic realloc process did not exit normally'
