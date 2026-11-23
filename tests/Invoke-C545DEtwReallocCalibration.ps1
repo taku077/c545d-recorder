@@ -1,6 +1,6 @@
 # CI-only small synthetic ETW realloc-source grouping experiment.
 # No GIO, camera, recorder, host registry writes, IFEO, WPR, or raw ETL upload.
-param([switch]$SelfTest)
+param([switch]$SelfTest,[switch]$ThroughCleanup)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
@@ -110,6 +110,16 @@ try {
   Signal 'go.signal'
   Wait-Signal 'finished.signal' 30
   Write-Host 'C545D_REALLOC_WINDOW_STAGE,known_alloc=64,known_realloc=16,known_free=48,held=16'
+  if($ThroughCleanup){
+    # Both native phases are captured in ONE sequential ETW session.
+    # The known 16 held blocks are freed only after the controller
+    # receives the finished.signal and explicitly authorizes cleanup.
+    Signal 'exit.signal'
+    if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
+      throw 'Synthetic post-epoch cleanup did not complete'
+    }
+    Write-Host 'C545D_REALLOC_WINDOW_STAGE,precleanup_held=16,postcleanup_freed=16,fixture_process_exited=1'
+  }
   & $xperf -loggers *> $stats
   if($LASTEXITCODE -ne 0){throw 'ETW logger integrity unavailable'}
   $statString=[IO.File]::ReadAllText($stats)
@@ -131,6 +141,7 @@ try {
     throw 'Local ETW trace absent or excessive'
   }
   $env:_NT_SYMBOL_PATH="$root;srv*$(Join-Path $root 'private_symbols')*https://msdl.microsoft.com/download/symbols"
+  if(-not $ThroughCleanup){
   Run-Xperf 'stacks' @('-i',$etl,'-o',$report,'-symbols','-a','heap','-stacks','-top','4096')
   if(-not(Test-Path $report -PathType Leaf) -or (Get-Item $report).Length -gt 2MB){
     throw 'Local synthetic stack report missing or excessive'
@@ -152,10 +163,14 @@ try {
   } else {
     Write-Host 'C545D_REALLOC_STACK_BOUNDS_GAP,reason=UNVERIFIED_REPORT_NUMBERS,raw_uploaded=0'
   }
-  # Parse the SAME local ETL before the 16 intentionally held blocks are
-  # freed. Do not export the ETL, payload pointers, stack names or PID.
+  }
+  # Parse the SAME local ETL with either 16 held or 16 explicitly freed
+  # after producer-ack signal; only tiny synthetic native fixture is allowed.
+  # Do not export the ETL, payload pointers, stack names or PID.
   # This is a distinct real-event validation, not another GIO measurement.
-  $identities=@(& dotnet $adapter --etl $etl --pid "$($proc.Id)" --preworkload-and-losszero-verified 2> $raw)
+  $identityArgs=@('--etl',$etl,'--pid',"$($proc.Id)",'--preworkload-and-losszero-verified')
+  if($ThroughCleanup){$identityArgs+= '--expect-through-cleanup'}
+  $identities=@(& dotnet $adapter @identityArgs 2> $raw)
   $identityStatus=$LASTEXITCODE
   $safeIdentity=@($identities | Where-Object {
     $_ -match '^C545D_ETW_REALLOC_IDENTITY_MATCHED,[A-Za-z0-9_,=.-]+$'
@@ -169,12 +184,18 @@ try {
     throw 'Real ETW old-new identity unverified: synthetic source still safe'
   }
   Write-Host $safeIdentity[0]
-  Signal 'exit.signal'
-  if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
-    throw 'Synthetic realloc process did not exit normally'
+  if(-not $ThroughCleanup){
+    Signal 'exit.signal'
+    if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
+      throw 'Synthetic realloc process did not exit normally'
+    }
   }
   $complete=$true
-  Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=48,known_held=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  if($ThroughCleanup){
+    Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=64,known_held_at_stop=0,precleanup_held=16,postcleanup_freed=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  } else {
+    Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=48,known_held=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  }
 } finally {
   if($heapOn){& $xperf -stop HeapSession *> $raw}
   if($kernelOn){& $xperf -stop *> $raw}
