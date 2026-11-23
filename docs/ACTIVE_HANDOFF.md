@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `40475b2d34c5f03156101397bc588f57bd84d9b4`
-- **PR updated at (UTC):** `2026-11-23T07:25:40Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/40475b2d34c5f03156101397bc588f57bd84d9b4/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `2ab3dbeffb6d698630392bff22d7d87976cc5b68`
+- **PR updated at (UTC):** `2026-11-23T07:26:45Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/2ab3dbeffb6d698630392bff22d7d87976cc5b68/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45131015385](https://github.com/taku077/c545d-recorder/actions/runs/45131015385) |
-| C545D archived paired 466 arithmetic residual accountability | failure | [#45131011546](https://github.com/taku077/c545d-recorder/actions/runs/45131011546) |
+| C545D active development handoff auto-refresh | in_progress | [#45131144510](https://github.com/taku077/c545d-recorder/actions/runs/45131144510) |
+| C545D archived paired 466 arithmetic residual accountability | success | [#45131140960](https://github.com/taku077/c545d-recorder/actions/runs/45131140960) |
 
 ## Current development findings from the active PR
 
