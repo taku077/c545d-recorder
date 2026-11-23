@@ -1,0 +1,71 @@
+name: C545D active GIO two-epoch native compile and stock-SDK smoke
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/gio_appinfo_key_handle_probe.c'
+      - 'tests/patch_c545d_gio_active_two_epoch_ci.py'
+      - 'tests/audit_c545d_gio_active_two_epoch_ci.py'
+      - '.github/workflows/c545d-gio-active-two-epoch-native-smoke-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-disposable:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Source selftests before any external binary download
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/patch_c545d_gio_active_two_epoch_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'two-epoch source overlay selftest failed'}
+          py tests/audit_c545d_gio_active_two_epoch_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'three-phase numeric auditor selftest failed'}
+      - name: Compile instrumented disposable C probe with official GStreamer 1.28.8 MSVC SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'c545d-stock-gst1288'
+          $installer=Join-Path $env:RUNNER_TEMP 'c545d-stock-sdk1288.exe'
+          if((Test-Path $sdk) -or (Test-Path $installer)){throw 'stale runner private location'}
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'official SDK download incomplete'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'stock SDK install failed'}
+          foreach($needed in @('include/glib-2.0/gio/gio.h','lib/gio-2.0.lib','bin/gio-2.0-0.dll')){
+            if(-not(Test-Path (Join-Path $sdk $needed))){throw 'expected 1.28.8 development SDK file absent'}
+          }
+          $root=Join-Path $env:RUNNER_TEMP 'c545d-native-twoepoch-smoke'
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          $source=Join-Path $root 'c545d_gio_preinit_probe.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $source
+          py tests/patch_c545d_gio_active_two_epoch_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'two-epoch source patch failure'}
+          $exe=Join-Path $root 'c545d_gio_twoepoch_stock_probe.exe'
+          $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@($source,"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'actual native C two-epoch probe failed to compile'}
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_NATIVE_COMPILE_PASS,stock_GSTREAMER_SDK_1288=1,msvc_x64=1,CI_only=1,candidate_GIO_not_tested=1'
+          $before=$env:PATH
+          $output=Join-Path $root 'private-numeric-probe.out'
+          $errors=Join-Path $root 'private-probe-error.txt'
+          try {
+            $env:PATH="$sdk/bin;$before"
+            Remove-Item Env:C545D_HANDLE_EXE -ErrorAction SilentlyContinue
+            $run=Start-Process -FilePath $exe -WorkingDirectory $root -ArgumentList @('--cycles=2','--no-registry-change','--vm-summary') -PassThru -Wait -RedirectStandardOutput $output -RedirectStandardError $errors
+            if($run.ExitCode -ne 0){throw 'stock SDK two-epoch disposable smoke process failed'}
+            $body=Get-Content $output -Raw
+            if($body -notmatch 'GIO_PROBE_DONE,cycles=2,'){throw 'two-epoch smoke missing completion'}
+            py tests/audit_c545d_gio_active_two_epoch_ci.py --input $output
+            if($LASTEXITCODE -ne 0){throw 'stock SDK two-epoch phase/CPU/VM numeric gate failed'}
+          } finally {
+            $env:PATH=$before
+          }
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_STOCK_SMOKE_PASS,cycles=2,registry_change=0,phase_numeric_verified=1,candidate_GIO_not_tested=1,actual_recorder_untouched=1,release_HOLD=1'
