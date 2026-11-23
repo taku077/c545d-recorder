@@ -149,7 +149,7 @@ try {
   })
   if($exitCode -ne 0 -or $safePass.Count -ne 1){
     $gap=@($source | Where-Object {
-      $_ -match '^C545D_GIO_ETLX_FIRST_SOURCE_GAP,reason=[A-Za-z0-9_]+,raw_uploaded=0,release_HOLD=1$'
+      $_ -match '^C545D_GIO_ETLX_FIRST_SOURCE_GAP,reason=[A-Za-z0-9_]+,stage=[A-Za-z0-9_]+(?:,[A-Za-z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
     })
     if($gap.Count -eq 1){Write-Host $gap[0]}
     else{Write-Host "C545D_GIO_PREINIT_SOURCE_GAP,arm=$Arm,reason=ETLX_ORIGIN_UNVERIFIED,raw_uploaded=0"}
