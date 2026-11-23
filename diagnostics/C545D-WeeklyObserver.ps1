@@ -480,12 +480,40 @@ function Test-Observer {
      ($t+'  WARNING: FileSystemWatcher lost events (3). Run a private script.'),
      ($t+'  Rename deferred (secret): C:\Users\PRIVATE_SECRET_923')
    ),$utf8)
+   $stem='Recording_'+$now.ToLocalTime().ToString('yyyyMMdd_HHmmss',$culture)+'_'
+   $completed=@(
+     'GStreamer launching (EOS enabled); attempt=1',
+     'RTSP_PASSWORD_SECRET_992 from a process output line',
+     'GStreamer returned; exitCode=1; stopMarker=False; consoleCtrlCEvents=0',
+     'Recorder exit policy: reconnect',
+     'GStreamer launching (EOS enabled); attempt=2',
+     'GStreamer returned; exitCode=0; stopMarker=True; consoleCtrlCEvents=1',
+     'Recorder exit policy: stop',
+     'Recording stopped by GUI; GStreamer EOS completed.',
+     'Windows PowerShell transcript end'
+   )
+   [IO.File]::WriteAllLines((Join-Path $logFixture ($stem+'991.txt')),$completed,$utf8)
+   # A fake success marker alone, even inside an ended transcript, must
+   # NOT count as EOS without the paired authorized rc0+stop policy.
+   [IO.File]::WriteAllLines((Join-Path $logFixture ($stem+'992.txt')),@(
+     'RTSP_PASSWORD_SECRET_992 in original output',
+     'Recording stopped by GUI; GStreamer EOS completed.',
+     'Windows PowerShell transcript end'
+   ),$utf8)
+   # A still-running/incomplete transcript is not negative proof.
+   [IO.File]::WriteAllLines((Join-Path $logFixture ($stem+'993.txt')),@(
+     'GStreamer returned; exitCode=0; stopMarker=True; consoleCtrlCEvents=1',
+     'Recorder exit policy: stop',
+     'Recording stopped by GUI; GStreamer EOS completed.'
+   ),$utf8)
    $zip=New-SafeBundle $root $now.AddHours(-1) $now.AddHours(1) 'selftest'
    $unpacked=Join-Path $root 'unpacked'
    Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
    $meta=Get-Content (Join-Path $unpacked 'manifest.json') -Raw | ConvertFrom-Json
    $metric=Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw
    $mediaCsv=Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw
+   $workerCsv=Get-Content (Join-Path $unpacked 'recorder_sessions.csv') -Raw
+   $workerRows=@(Import-Csv (Join-Path $unpacked 'recorder_sessions.csv'))
    $allReport=(@(Get-ChildItem $unpacked -File|ForEach-Object {
      [IO.File]::ReadAllText($_.FullName)
    }) -join [Environment]::NewLine)
@@ -493,7 +521,14 @@ function Test-Observer {
       $meta.renamed_closed_mp4_count -ne 1 -or
       $mediaCsv -notmatch 'MP4_WATCHER_LOST_EVENTS' -or
       $mediaCsv -notmatch 'MP4_RENAME_DEFERRED' -or
-      $allReport -match 'PRIVATE_SECRET_923|rtsp://|C:\\Users\\' -or
+      $allReport -match 'PRIVATE_SECRET_923|RTSP_PASSWORD_SECRET_992|rtsp://|C:\\Users\\' -or
+      $meta.recorder_completed_transcripts -ne 2 -or
+      $meta.recorder_incomplete_transcripts -ne 1 -or
+      $meta.recorder_reported_authorized_eos_count -ne 1 -or
+      $workerRows.Count -ne 3 -or
+      @($workerRows|Where-Object source_status -eq 'incomplete_or_active').Count -ne 1 -or
+      @($workerRows|Where-Object authorized_eos_reported_count -eq '1').Count -ne 1 -or
+      $workerCsv -notmatch 'session_only' -or
       $metric -notmatch 'private_bytes'){
        throw 'SELFTEST_REPORT_INCOMPLETE'
    }
@@ -520,7 +555,7 @@ function Test-Observer {
    if($emptyMeta.actual_samples -ne 0 -or $emptyMeta.missing_intervals -ne 'not_classified'){
      throw 'MISSING_SAMPLES_SILENTLY_MARKED_NORMAL'
    }
-   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,namer_sanitized=1,closed_rename=1,watcher_loss=3,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
+   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,namer_sanitized=1,closed_rename=1,watcher_loss=3,worker_eos_pair=1,reconnect=1,incomplete_session=1,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
  }finally{
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
  }
