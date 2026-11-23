@@ -250,9 +250,10 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      [IO.File]::WriteAllText($metric,($columns -join ',')+[Environment]::NewLine,$utf8)
    }
    $mediaFile=Join-Path $work 'recording_events.csv'
-   $mediaRows=@($media.events)
-   if($mediaRows.Count -gt 0) {
-     $mediaRows | Select-Object utc_time,event,count |
+   # Windows PowerShell 5.1 may throw a dynamic binder ArgumentException
+   # when wrapping a generic List property inside @(...). Enumerate directly.
+   if($media.events.Count -gt 0) {
+     $media.events | Select-Object utc_time,event,count |
        Export-Csv -LiteralPath $mediaFile -NoTypeInformation -Encoding UTF8
    }else{
      [IO.File]::WriteAllText($mediaFile,'utc_time,event,count'+[Environment]::NewLine,$utf8)
