@@ -39,6 +39,40 @@ On exceptions, emit a status indication and preserve continuous recording; never
 
 When an uploaded ZIP arrives, validate schema/completeness/sanitization, compare trends across days and segmented recording health, and merge new evidence into the independent root-cause hypothesis; then continue both tracks. No repeating earlier analysis unless a new specific contradiction is observed. Missing or late ZIP **never blocks Track B**.
 
+## Feedback-driven rolling release and diagnostic evolution — AGREED 2026-11-24
+
+The first release's diagnostic instrument is **not assumed to capture every future root-cause discriminator**. Its measurement schema and collectors are versioned, continually improved according to actual evidence, and released in tandem with **recorder updates when needed**. The user-proposed loop is binding as the project development workflow:
+
+**Safe recorder + detached diagnostics release candidate -> recording and continuous low-overhead collection -> AI source/CI research without waiting -> 72h/weekly sanitized ZIP from host -> immediate analysis of what is measured, what remains unmeasured, and why -> independently implement/test both recorder corrections and next diagnostic version -> publish the next safe versioned release pair (or diagnostics-only update when recorder unchanged) -> repeat.**
+
+Do **not** make release frequency automatically equal to the seven-day upload cadence. The 7-day rhythm is for report delivery, while software updates are **evidence-driven** and pass release-specific safety tests. Continue the installed, known-safe recorder while independently developing or updating the diagnostics whenever recorder modification would introduce unwarranted risk.
+
+### Mandatory decision output after EACH uploaded diagnostic ZIP
+
+Within the current active chat, analyze the new ZIP together with earlier ZIPs, historical ETW/WPR/UMDH/16/256-cycle CI and the live GitHub PR, without restarting completed investigations. Produce a durable, concise **evidence-to-next-release ledger**:
+
+1. **Validated measurements**: collector/schema version, fingerprint, source build hash, time boundaries, number of samples, completeness/lost intervals, CPU/PrivateUsage/handles/thread trend, MP4/finalization/2-RTSP/A-V health. Distinguish initial warmup, steady state, recorder restarts and observer overhead.
+2. **Evidence and uncertainty**: what is new, what hypothesis it confirms/rejects, any changed or conflicting historical reading, and exact unknown cause. Never label a missing metric merely unexplained: identify the missing event, counter, stack, parser or synchronization condition that prevented classification and the least disruptive way to obtain it.
+3. **Instrument gap backlog**: for every meaningful unclassified growth component, specify the required new field/event, collection trigger and duration, expected overhead/storage/privacy, and which hypothesis it will discriminate. Rank by actionable value and minimal impact. Reuse any existing counters/trace before adding a probe.
+4. **Next diagnostic release**: implement the smallest **versioned and backward-compatible** update needed to close the highest-value evidence gaps. Validate via isolated Win2022 CI synthetic inputs, Windows API / runtime compatibility, privacy/low-overhead tests and failure isolation BEFORE any host upgrade.
+5. **Recorder release candidate**: assess independently whether source fix or packaging/quality improvements have passed their separate unit, 2-stream/media/sync/EOS, pinned DLL-ABI and practical acceptance gates. If not, only diagnostics may advance and recorder remains at its last approved version.
+6. **Handoff and next-cycle verification**: publish GitHub commits, PR HEAD, CI pass/fail, exact measured facts, implementation status, release HOLD/approval and the next diagnostic's *specific expected new evidence*; do not treat a weekly report as approval to install.
+
+A diagnostic update may add e.g. **handle-type trend**, GIO worker-cycle event counters, RTSP reconnect causal timestamps, segment-finalization checks, time-series slope after initial warmup or low-volume error/event ring buffer **only when new evidence makes it necessary**. Detailed per-HeapAlloc ETW remains opt-in, separate, bounded and never silently enabled.
+
+### Versioning, upgrades and continuity
+
+- Each package carries independent `recorder_version`, `diagnostics_version`, `diagnostic_schema_version`, hash/fingerprint and UTC+local capture range. Reports retain these plus optional `feature_flags` and **field availability/collection gaps**, so historical reports remain interpretable.
+- Additive schema fields preferred; old JSON/CSV readers accept unknown new fields, new readers accept previous supported versions and annotate `not_collected` rather than silently setting zero. Test migration, mixed-version weekly archives and malformed/missing sample rejection in CI. Include an archive manifest and producer/consumer schema compatibility assertions.
+- Preserve existing local counter history and rolling data across tool upgrades, with atomic backup/rollback; record a `diagnostics_upgrade` event and version transition so trends are split/normalized across instrumentation changes. Never interpret a step caused by the new collector as a recorder regression.
+- Diagnostic-only updates must not change, inject into, pause or restart the recorder; users should be able to update the observer with minimal action and recover automatically if it fails. Recorder binary/DLL updates require a separately approved safe recorder stop/EOS, offline install, rollback and smoke check; never hot-swap DLLs. No forced regular recorder restart as a memory-leak fix.
+- A ZIP may be generated automatically **on the recording PC**, but it is uploaded to the private chat by the user; no automatic sending to ChatGPT, GitHub or another server without explicit setup and permission. Public repo has only synthetic fixtures and aggregated results—never camera footage, RTSP credentials, raw diagnostic logs, private ETL or host paths.
+- If reporting is delayed, the monitor continues **bounded** safe collection/rotation and both engineering tracks advance in chat on request; nothing is "blocked waiting for this week's ZIP" except conclusions requiring new host-specific evidence. If evidence is too thin to specify a useful new collector, defer that collector rather than adding broad, high-overhead logging.
+
+### Definition of a successful iteration
+
+An iteration is useful when it yields **either** a verified reliability/recording improvement **or** a narrower, explicitly measurable explanation of the remaining increase **or** a validated diagnostic feature that discriminates an important unresolved hypothesis. Do not maximize the number of captures/commits as the objective. Keep one release changelog containing fixed issues, new observability, resource overhead, known problems and rollback path, and compare identical conditions before asserting percent improvement.
+
 ## Limited release safety gates (must pass, not waived by this policy)
 
 1. Reproducible signed/hashed or hash-verified versioned Win10-compatible build and pinned DLL/ABI; no unverified DLL swap or registry change on running recorder.
