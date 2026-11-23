@@ -1,0 +1,43 @@
+name: C545D first AppInfo original-stack source preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/patch_c545d_gio_etw_preinit_source_ci.py'
+      - 'tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py'
+      - '.github/workflows/c545d-gio-preinit-stack-source-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  locked-first-appinfo-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require original GLib build source and reject all previous late/baseline capture routes
+        run: |
+          set -euo pipefail
+          python3 tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py --selftest
+          python3 tests/patch_c545d_gio_etw_preinit_source_ci.py --selftest
+          python3 tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py \
+            --probe tests/gio_appinfo_key_handle_probe.c \
+            --workflow .github/workflows/c545d-gio-etw-owner-stack-paired16-ci.yml
+      - name: Patch disposable C probe and assert first AppInfo call is behind ETW start acknowledgement
+        run: |
+          set -euo pipefail
+          cp tests/gio_appinfo_key_handle_probe.c "$RUNNER_TEMP/preinit-isolated-probe.c"
+          python3 tests/patch_c545d_gio_etw_preinit_source_ci.py "$RUNNER_TEMP/preinit-isolated-probe.c"
+          python3 - "$RUNNER_TEMP/preinit-isolated-probe.c" <<'PY'
+          import pathlib,sys
+          src=pathlib.Path(sys.argv[1]).read_text()
+          if not (src.index('L"preinit_ready.signal"') <
+                  src.index("monitor = g_app_info_monitor_get();") <
+                  src.index('L"precleanup_ready.signal"')):
+              raise SystemExit("source_first_GIO_use_not_behind_ETW_ack")
+          if 'late_window_ready.signal' in src or 'baseline_ready.signal' in src:
+              raise SystemExit("source_mixes_old_late4_capture")
+          print("C545D_GIO_PREINIT_SOURCE_FINAL_PASS,first_AppInfo_call_guarded=1,"
+                "pdb_physical_proof_pending=1,real_GIO_owner_unproven=1,"
+                "user_host_untouched=1,release_HOLD=1")
+          PY
