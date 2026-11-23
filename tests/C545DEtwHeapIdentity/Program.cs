@@ -38,6 +38,16 @@ internal static class Program
         internal int OtherRealloc { get; private set; }
         internal int OtherFree { get; private set; }
         internal int UnrelatedAlloc { get; private set; }
+        internal bool PrecleanupHeldMilestone { get; private set; }
+
+        private void ObservePrecleanupMilestone()
+        {
+            // Only a known native fixture promises no extra allocations
+            // after its ready-to-cleanup signal. Do not generalize to GIO.
+            if (OriginalAlloc==64 && Realloc==16 && RawSelectedFree==64 &&
+                pendingFree.Count==48 && live.Count==16)
+                PrecleanupHeldMilestone=true;
+        }
 
         internal void OnAlloc(ulong heap, ulong addr, long bytes)
         {
@@ -88,6 +98,7 @@ internal static class Program
             if (oldAddress == newAddress) Inplace++; else Moved++;
             if (Realloc > 16)
                 throw new GapException("realloc_count_exceeded_fixture");
+            ObservePrecleanupMilestone();
         }
 
         internal void OnFree(ulong heap, ulong address)
@@ -109,6 +120,7 @@ internal static class Program
                 // An unknown free must never be assigned to this fixture.
                 OtherFree++;
             }
+            ObservePrecleanupMilestone();
         }
 
         internal (int Live, long Bytes, int ReallocatedLive) Snapshot()
@@ -133,29 +145,40 @@ internal static class Program
                    $"observed_realloc_after_free={ReallocAfterFree},"+
                    $"observed_max_free_realloc_distance={MaxFreeReallocDistance},"+
                    $"observed_pending_true_free={pendingFree.Count},"+
+                   $"observed_precleanup_held_milestone={intMode(PrecleanupHeldMilestone)},"+
                    $"observed_reallocated_held_count={snap.ReallocatedLive},"+
                    $"observed_realloc_moved={Moved},observed_realloc_inplace={Inplace},"+
                    $"unrelated_realloc={OtherRealloc},unrelated_free={OtherFree},"+
                    $"unrelated_alloc={UnrelatedAlloc}";
         }
 
-        internal string Validate()
+        private static int intMode(bool x) => x ? 1 : 0;
+
+        internal string Validate(bool expectThroughCleanup=false)
         {
             var snap = Snapshot();
-            if (OriginalAlloc != 64 || Realloc != 16 || Freed != 48 ||
-                Moved + Inplace != 16 || snap.Live != 16 ||
-                snap.Bytes != 11520 || snap.ReallocatedLive != 16)
+            if (OriginalAlloc != 64 || Realloc != 16 || Moved + Inplace != 16 ||
+                !PrecleanupHeldMilestone || 
+                (expectThroughCleanup
+                  ? Freed != 64 || RawSelectedFree != 80 || snap.Live != 0 ||
+                    snap.Bytes != 0 || snap.ReallocatedLive != 0
+                  : Freed != 48 || RawSelectedFree != 64 || snap.Live != 16 ||
+                    snap.Bytes != 11520 || snap.ReallocatedLive != 16))
                 throw new GapException("known_fixture_alloc_realloc_free_counts_not_reconciled");
             return "C545D_ETW_REALLOC_IDENTITY_MATCHED,"+
                 $"original_alloc={OriginalAlloc},realloc={Realloc},tracked_free={Freed},"+
                 $"held_at_trace_stop={snap.Live},held_bytes={snap.Bytes},"+
+                $"precleanup_held_milestone={intMode(PrecleanupHeldMilestone)},"+
+                $"postcleanup_free_verified={intMode(expectThroughCleanup)},"+
                 $"realloc_moved={Moved},realloc_inplace={Inplace},"+
                 $"raw_selected_free={RawSelectedFree},realloc_after_provisional_free={ReallocAfterFree},"+
                 $"max_provisional_free_to_realloc_event_distance={MaxFreeReallocDistance},"+
                 $"unrelated_alloc_events={UnrelatedAlloc},"+
                 $"unrelated_realloc_events={OtherRealloc},unrelated_free_events={OtherFree},"+
                 "original_address_identity_preserved=1,"+
-                "expected_lifetime_deliberately_held=1,post_epoch_free_not_observed=1,"+
+                $"expected_lifetime_deliberately_held={intMode(!expectThroughCleanup)},"+
+                $"post_epoch_free_observed={intMode(expectThroughCleanup)},"+
+                "global_GIO_APC_WinRT_producer_closed_proven=0,"+
                 "real_GIO_original_owner_proven=0,real_GIO_tested=0,"+
                 "leak_proven=0,raw_addresses_uploaded=0,real_host_untouched=1";
         }
@@ -192,6 +215,11 @@ internal static class Program
         for(ulong i=1;i<=48;i++)prefree.OnFree(101,i);
         Require(prefree.Validate().Contains("realloc_after_provisional_free=16"),
                 "native_free_before_realloc_fixture_failed");
+        // Same 64/16/48 fixture, but extend the event stream through
+        // the explicit final 16 frees. The former 16 outstanding vanish.
+        for(ulong i=49;i<=64;i++)prefree.OnFree(101,1000+i);
+        Require(prefree.Validate(expectThroughCleanup:true).Contains("postcleanup_free_verified=1"),
+                "native_final_cleanup_fixture_failed");
         var negative=new List<Action>
         {
             () => {var t=new IdentityTracker(); t.OnAlloc(1,1,360);t.OnAlloc(1,1,360);},
@@ -208,6 +236,7 @@ internal static class Program
             () => {var t=new IdentityTracker();t.OnAlloc(1,1,360);t.OnFree(1,1);
                 for(int z=0;z<35;z++)t.OnAlloc(1,1000UL+(ulong)z,100);
                 t.OnRealloc(1,1,100,360,720);},
+            () => {var t=new IdentityTracker();t.Validate(expectThroughCleanup:true);},
         };
         for(int i=0;i<negative.Count;i++)
         {
@@ -215,7 +244,7 @@ internal static class Program
             try { negative[i](); } catch(GapException) { rejected=true; }
             Require(rejected,"negative_fixture_wrongly_accepted");
         }
-        Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_SELFTEST_PASS,positive=3,negative=12,provisional_free_before_realloc=1,pointers_exposed=0,real_ETL_parsed=0,host_untouched=1");
+        Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_SELFTEST_PASS,positive=4,negative=13,provisional_free_before_realloc=1,pointers_exposed=0,real_ETL_parsed=0,host_untouched=1");
     }
 
     private static int Main(string[] args)
@@ -229,7 +258,9 @@ internal static class Program
                 Test();
                 return 0;
             }
-            if (args.Length!=5 || args[0]!="--etl" || args[2]!="--pid" ||
+            bool expectThroughCleanup=(args.Length==6 && args[5]=="--expect-through-cleanup");
+            if ((args.Length!=5 && !expectThroughCleanup) ||
+                args[0]!="--etl" || args[2]!="--pid" ||
                 args[4]!="--preworkload-and-losszero-verified")
                 throw new GapException("invalid_cli_or_trace_gates");
             Require(Environment.GetEnvironmentVariable("GITHUB_ACTIONS")=="true" &&
@@ -276,7 +307,7 @@ internal static class Program
                 source.Process();
             }
             Require(pidEvents>=128 && pidEvents<=250000,"heap_events_missing_or_excessive");
-            Console.WriteLine(tracker.Validate()+
+            Console.WriteLine(tracker.Validate(expectThroughCleanup)+
                 $",heap_events_from_selected_pid={pidEvents},"+
                 "preworkload_barrier_verified_by_controller=1,"+
                 "logger_loss_zero_verified_by_controller=1,"+
