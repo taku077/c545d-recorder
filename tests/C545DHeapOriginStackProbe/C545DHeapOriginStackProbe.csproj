@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
+    <Compile Include="../C545DEtwHeapIdentity/GenericHeapLifetime.cs" Link="GenericHeapLifetime.cs" />
   </ItemGroup>
 </Project>
