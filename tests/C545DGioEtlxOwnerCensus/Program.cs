@@ -16,7 +16,8 @@ internal static class Program
 {
     private const int EventCap=390000;
     private static string diagnosticStage="not_started";
-    private static int countAlloc,countRealloc,countFree,missingStacks,
+    private static int countZeroAlloc,countZeroRealloc,countZeroOldSize,
+        countZeroNewSize, countAlloc,countRealloc,countFree,missingStacks,
         hasGioFrameCount,exactMethodCount,loadedGioModules,lookupModules;
     private static GenericHeapLifetime? currentLifetime;
     private static readonly HashSet<string> SafeArgumentReasons=new(StringComparer.Ordinal)
@@ -26,7 +27,7 @@ internal static class Program
         "etlx_trace_missing_or_unbounded","invalid_owned_pid",
         "unknown_disposable_arm","selected_process_metadata_absent",
         "stack_depth_limit","heap_event_capture_limit",
-        "allocation_zero_size_unmodeled","stack_depth_exceeded",
+        "stack_depth_exceeded",
         "invalid_heap_event_identity_or_size","overlapping_live_allocation",
         "orphan_realloc_prior_alloc_not_observed",
         "stale_provisional_free_cannot_match_realloc",
@@ -40,6 +41,8 @@ internal static class Program
         var p=currentLifetime?.Snapshot();
         return $",stage={diagnosticStage},"+
             $"alloc_observed={countAlloc},realloc_observed={countRealloc},"+
+            $"zero_req_alloc={countZeroAlloc},zero_req_realloc={countZeroRealloc},"+
+            $"zero_old_size_realloc={countZeroOldSize},zero_new_size_realloc={countZeroNewSize},"+
             $"free_observed={countFree},stack_missing={missingStacks},"+
             $"gio_module_in_original_stack={hasGioFrameCount},"+
             $"exact_gio_method={exactMethodCount},"+
@@ -161,6 +164,7 @@ internal static class Program
         var model=new GenericHeapLifetime();
         currentLifetime=model;
         countAlloc=countRealloc=countFree=missingStacks=hasGioFrameCount=exactMethodCount=loadedGioModules=lookupModules=0;
+        countZeroAlloc=countZeroRealloc=countZeroOldSize=countZeroNewSize=0;
         int heapAlloc=0,heapEvents=0,heapRealloc=0,heapFree=0;
         int missingStack=0,hasGioModule=0,exactMethod=0,unknownOrigin=0;
         int orphanRealloc=0,orphanFree=0;
@@ -204,7 +208,10 @@ internal static class Program
                 {
                     if(ev.ProcessID!=pid)return;
                     Tick();heapAlloc++;countAlloc=heapAlloc;
-                    if(ev.AllocSize<=0)throw new ArgumentException("allocation_zero_size_unmodeled");
+                    if(ev.AllocSize==0)countZeroAlloc++;
+                    // Valid non-null HeapAlloc(0) can still own an allocated
+                    // heap block. The shared lifetime model validates heap
+                    // handle/address and rejects negative or unbounded size.
                     var frames=new List<Frame>();
                     var stack=ev.CallStack();
                     int depth=0;
@@ -233,6 +240,9 @@ internal static class Program
                 {
                     if(ev.ProcessID!=pid)return;
                     Tick();heapRealloc++;countRealloc=heapRealloc;
+                    if(ev.OldAllocSize==0)countZeroOldSize++;
+                    if(ev.NewAllocSize==0)countZeroNewSize++;
+                    if(ev.OldAllocSize==0 || ev.NewAllocSize==0)countZeroRealloc++;
                     if(model.IsTracked(ev.HeapHandle,ev.OldAllocAddress))
                         model.Realloc(ev.HeapHandle,ev.OldAllocAddress,
                             ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
@@ -255,6 +265,10 @@ internal static class Program
         diagnosticStage="safe_numeric_census";
         Console.WriteLine($"C545D_GIO_ETLX_FIRST_SOURCE_CENSUS,arm={arm},"+
             $"pid_heap_events={heapEvents},original_alloc_events={heapAlloc},"+
+            $"zero_req_original_alloc={countZeroAlloc},"+
+            $"zero_req_realloc={countZeroRealloc},"+
+            $"zero_req_old_size={countZeroOldSize},zero_req_new_size={countZeroNewSize},"+
+            "zero_req_not_zero_heap_commit=1,"+
             $"realloc_events={heapRealloc},free_events={heapFree},"+
             $"missing_initial_stack={missingStack},gio_module_in_alloc_stack={hasGioModule},"+
             $"exact_GIO_source_method_on_original_alloc={exactMethod},"+

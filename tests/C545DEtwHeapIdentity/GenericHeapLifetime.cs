@@ -24,6 +24,8 @@ internal sealed class GenericHeapLifetime
     internal int ProvenOriginalAllocations { get; private set; }
     internal int ProvenReallocationOrigins { get; private set; }
     internal int ProvenLogicalFrees { get; private set; }
+    internal int ZeroRequestedOriginalAllocations { get; private set; }
+    internal int ZeroRequestedReallocations { get; private set; }
     internal int AllocCount { get; private set; }
     internal int ReallocCount { get; private set; }
     internal int FreeCount { get; private set; }
@@ -46,7 +48,7 @@ internal sealed class GenericHeapLifetime
     }
     private static void Check(ulong heap, ulong address, long size)
     {
-        if (heap == 0 || address == 0 || size <= 0 || size > MaxSize)
+        if (heap == 0 || address == 0 || size < 0 || size > MaxSize)
             throw new ArgumentException("invalid_heap_event_identity_or_size");
     }
 
@@ -71,6 +73,7 @@ internal sealed class GenericHeapLifetime
         }
         live.Add(key,new Block(size,proof,seq,0));
         AllocCount++;
+        if(size==0)ZeroRequestedOriginalAllocations++;
         if(proof==OriginProof.SyntheticFixture)ProvenOriginalAllocations++;
         if(proof==OriginProof.VerifiedGioMethod)GioMethodOriginalAllocations++;
     }
@@ -137,6 +140,7 @@ internal sealed class GenericHeapLifetime
         live.Add(after,new Block(newSize,original.Proof,original.Birth,
                                  original.Reallocations+1));
         ReallocCount++;
+        if(oldSize==0 || newSize==0)ZeroRequestedReallocations++;
         if(original.Proof==OriginProof.SyntheticFixture)ProvenReallocationOrigins++;
         if(original.Proof==OriginProof.VerifiedGioMethod)GioMethodLinkedReallocations++;
         if (oldAddress==newAddress) ReallocInplace++; else ReallocMoved++;
@@ -253,6 +257,9 @@ internal sealed class GenericHeapLifetime
         // never implied. Production gate remains HOLD unconditionally.
         return "C545D_ETW_GENERIC_HEAP_LIFETIME,"+
             $"observed_original_alloc={AllocCount},linked_realloc={ReallocCount},"+
+            $"zero_requested_original_alloc={ZeroRequestedOriginalAllocations},"+
+            $"zero_requested_realloc={ZeroRequestedReallocations},"+
+            "zero_request_never_equated_to_zero_committed_bytes=1,"+
             $"fixture_proven_original_alloc={ProvenOriginalAllocations},"+
             $"gio_method_original_alloc={GioMethodOriginalAllocations},"+
             $"gio_method_realloc={GioMethodLinkedReallocations},"+
@@ -322,6 +329,30 @@ internal sealed class GenericHeapLifetime
                reusedOther.ReuseByUntrackedSource==1 &&
                reusedOther.ProvenLogicalFrees==1 &&
                reusedOther.Snapshot().Count==0);
+        // HeapAlloc(0) can return a real address with a valid lifetime.
+        // 0 is a REQUEST size, not a proof that the heap used no pages.
+        var zero=new GenericHeapLifetime();
+        zero.Alloc(3,501,0,OriginProof.VerifiedGioMethod);
+        var z0=zero.Snapshot();
+        Expect(z0.Count==1 && z0.Bytes==0 && z0.Unresolved==0 &&
+               zero.ZeroRequestedOriginalAllocations==1);
+        zero.Free(3,501); // Native Free may arrive before ReAlloc.
+        zero.Realloc(3,501,502,0,32);
+        zero.Realloc(3,502,502,32,0); // size can become zero again.
+        Expect(zero.Snapshot().Count==1 &&
+               zero.GioMethodLinkedReallocations==2 &&
+               zero.ZeroRequestedReallocations==2);
+        zero.Free(3,502);
+        zero.FinalizePending();
+        Expect(zero.Snapshot().Count==0 && zero.FreeCount==1 &&
+               zero.GioMethodOriginalAllocations==1 &&
+               zero.GioMethodLogicalFrees==1);
+        var zeroOther=new GenericHeapLifetime();
+        zeroOther.Alloc(4,201,0,OriginProof.Unresolved);
+        zeroOther.Free(4,201);
+        zeroOther.Alloc(4,201,0,OriginProof.Unresolved); // reuse still recognized
+        Expect(zeroOther.AddressReuse==1 && zeroOther.FreeCount==1 &&
+               zeroOther.Snapshot().Count==1 && zeroOther.Snapshot().Bytes==0);
         var gioOnly=new GenericHeapLifetime();
         gioOnly.Alloc(11,51,4096,OriginProof.VerifiedGioMethod);
         gioOnly.Free(11,51);
@@ -351,8 +382,10 @@ internal sealed class GenericHeapLifetime
         Action[] bad={
             () => new GenericHeapLifetime().Alloc(0,1,100,OriginProof.Unresolved),
             () => new GenericHeapLifetime().Alloc(1,0,100,OriginProof.Unresolved),
-            () => new GenericHeapLifetime().Alloc(1,1,0,OriginProof.Unresolved),
+            () => new GenericHeapLifetime().Alloc(1,1,-1,OriginProof.Unresolved),
             () => new GenericHeapLifetime().Alloc(1,1,100,(OriginProof)9),
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,0,0,OriginProof.Unresolved);},
+            () => {var t=new GenericHeapLifetime();t.Alloc(1,1,0,OriginProof.Unresolved);t.Realloc(1,1,2,0,-1);},
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.Alloc(1,1,100,OriginProof.Unresolved);},
             () => new GenericHeapLifetime().Realloc(1,1,2,100,200),
             () => {var t=new GenericHeapLifetime();t.Alloc(1,1,100,OriginProof.Unresolved);t.Realloc(1,1,2,99,200);},
@@ -384,8 +417,9 @@ internal sealed class GenericHeapLifetime
             catch (ArgumentException) {denied=true;}
             Expect(denied);
         }
-        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=5,negative=21,"+
-            "arbitrary_sizes=1,source_class_no_size_guess=1,orphan_realloc_denied=1,"+
+        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=7,negative=23,"+
+            "arbitrary_sizes=1,zero_request_identity_tracked=1,"+
+            "zero_request_not_zero_commit=1,source_class_no_size_guess=1,orphan_realloc_denied=1,"+
             "source_gio_untested=1,release_HOLD=1,raw_addresses_uploaded=0");
     }
 }
