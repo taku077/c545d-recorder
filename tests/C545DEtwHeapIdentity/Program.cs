@@ -253,6 +253,13 @@ internal static class Program
         int diagnosticEventCount = 0;
         try
         {
+            if (args.Length==1 && args[0]=="--generic-selftest")
+            {
+                GenericHeapLifetime.SelfTest();
+                return 0;
+            }
+            if (args.Length>0 && args[0]=="--generic-fixture-etl")
+                return GenericEtwFixtureReader.MainMode(args);
             if (args.Length==1 && args[0]=="--selftest")
             {
                 Test();
