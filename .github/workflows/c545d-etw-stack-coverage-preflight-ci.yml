@@ -1,0 +1,24 @@
+name: C545D Xperf stack coverage arithmetic fail-closed source preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_etw_stack_coverage_bounds_ci.py'
+      - '.github/workflows/c545d-etw-stack-coverage-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-coverage-bounds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate stack rejection and report truncation arithmetic
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --selftest
+          python3 tests/analyze_c545d_gio_etw_stack_cohorts_ci.py --selftest
+          python3 tests/analyze_c545d_gio_etw_image_aggregate_ci.py --selftest
+          python3 tests/validate_c545d_memory_classification_cases.py --source docs/MEMORY_CLASSIFICATION_CASES.json
+          echo 'C545D_XPERF_STACK_GAP_PREFLIGHT_PASS,source_only=1,raw_ETL=0,Windows_runs=0,user_host=0,release=HOLD'
