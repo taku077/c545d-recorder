@@ -1,0 +1,23 @@
+name: C545D HeapReAlloc old-new identity and lifetime source proof
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_realloc_origin_lifetime_ci.py'
+      - '.github/workflows/c545d-realloc-origin-lifetime-source-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-event-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject orphan realloc, source identity overwrite, false epoch closure and privacy breach
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_realloc_origin_lifetime_ci.py
+          python3 tests/analyze_c545d_alloc_free_lifetime_ci.py --selftest
+          python3 tests/analyze_c545d_etw_realloc_transfer_ci.py --selftest
+          echo 'C545D_REALLOC_ORIGIN_SOURCE_CONTRACT_PASS,old_new_identity=1,synthetic_epoch=1,actual_ETW_adapter=0,global_APC_quiet=0,production_HOLD=1'
