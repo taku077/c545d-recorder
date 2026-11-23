@@ -45,6 +45,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          & ./tests/Invoke-C545DEtwReallocCalibration.ps1
-          if(-not $? -or $LASTEXITCODE -ne 0){throw 'Synthetic realloc source-lifetime experiment incomplete'}
-          Write-Host 'C545D_REALLOC_WINDOWS_CI_PASS,synthetic_only=1,source_GIO=0,raw_uploaded=0,real_camera_untested=1'
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -ThroughCleanup
+          if(-not $? -or $LASTEXITCODE -ne 0){throw 'Synthetic old-new address postcleanup lifetime experiment incomplete'}
+          Write-Host 'C545D_REALLOC_WINDOWS_CI_PASS,synthetic_only=1,precleanup_held=16,postcleanup_freed=16,source_GIO=0,raw_uploaded=0,real_camera_untested=1'
