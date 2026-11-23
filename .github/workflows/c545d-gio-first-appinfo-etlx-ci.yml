@@ -1,14 +1,8 @@
 name: C545D first AppInfo live GIO original method ETLX (single bounded paired run)
+# The one-initialization GIO original-stack paired test already passed
+# #45204265078. Do not repeat this heavy run for source-only epoch
+# discriminator edits. Explicit dispatch retains the regression route.
 on:
-  push:
-    branches: ['investigate/c545d-status-only-monitor-20261120']
-    paths:
-      - 'tests/C545DGioEtlxOwnerCensus/**'
-      - 'tests/C545DEtwHeapIdentity/GenericHeapLifetime.cs'
-      - 'tests/audit_c545d_private_pdb_guid_age_ci.py'
-      - 'tests/patch_c545d_gio_etw_preinit_source_ci.py'
-      - 'tests/Invoke-C545DGioInitialSourceEtwCI.ps1'
-      - '.github/workflows/c545d-gio-first-appinfo-etlx-ci.yml'
   workflow_dispatch:
 permissions:
   contents: read
