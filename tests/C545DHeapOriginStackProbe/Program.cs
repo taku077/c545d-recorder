@@ -106,7 +106,16 @@ internal static class Program
             throw new ArgumentException("original_native_fixture_exe_missing");
 
         int alloc=0,hasStack=0,hasNative=0,exactMethod=0,nonfixture=0;
-        int symbolsAttempted=0;
+        int symbolsAttempted=0,reallocMatched=0,earlyMarker=0;
+        var lifetimes=new GenericHeapLifetime();
+        void CheckMilestone()
+        {
+            var snap=lifetimes.Snapshot();
+            if(lifetimes.AllocCount==24 && lifetimes.ReallocCount==6 &&
+               snap.Count==6 && snap.Bytes==7120 &&
+               lifetimes.FreeCount+lifetimes.PendingFreeCount==18)
+                earlyMarker=1;
+        }
         using(var log=TraceLog.OpenOrConvert(etl,new TraceLogOptions{ConversionLog=TextWriter.Null}))
         {
             var proc=log.Processes.LastProcessWithID(pid);
@@ -146,7 +155,10 @@ internal static class Program
                         throw new ArgumentException("unbounded_selected_heap_events");
                     if(data.AllocSize!=192 && data.AllocSize!=448 && data.AllocSize!=832)
                     {
+                        lifetimes.ObserveUntrackedAlloc(data.HeapHandle,data.AllocAddress,
+                            data.AllocSize);
                         nonfixture++;
+                        CheckMilestone();
                         return;
                     }
                     var frames=new List<Frame>();
@@ -166,6 +178,35 @@ internal static class Program
                     if(verdict.Present)hasStack++;
                     if(verdict.FixtureModule)hasNative++;
                     if(verdict.ExactOriginalMethod)exactMethod++;
+                    lifetimes.Alloc(data.HeapHandle,data.AllocAddress,data.AllocSize,
+                        verdict.ExactOriginalMethod
+                        ? GenericHeapLifetime.OriginProof.SyntheticFixture
+                        : GenericHeapLifetime.OriginProof.Unresolved);
+                    CheckMilestone();
+                };
+                heap.HeapTraceReAlloc+=data=>
+                {
+                    if(data.ProcessID!=pid)return;
+                    if(lifetimes.IsTracked(data.HeapHandle,data.OldAllocAddress))
+                    {
+                        lifetimes.Realloc(data.HeapHandle,data.OldAllocAddress,
+                            data.NewAllocAddress,data.OldAllocSize,data.NewAllocSize);
+                        reallocMatched++;
+                    }
+                    else
+                        lifetimes.ObserveUntrackedRealloc(data.HeapHandle,
+                            data.OldAllocAddress,data.NewAllocAddress,
+                            data.OldAllocSize,data.NewAllocSize);
+                    CheckMilestone();
+                };
+                heap.HeapTraceFree+=data=>
+                {
+                    if(data.ProcessID!=pid)return;
+                    if(lifetimes.IsTracked(data.HeapHandle,data.FreeAddress))
+                        lifetimes.Free(data.HeapHandle,data.FreeAddress);
+                    else
+                        lifetimes.ObserveUntrackedFree(data.HeapHandle,data.FreeAddress);
+                    CheckMilestone();
                 };
                 source.Process();
             }
@@ -175,17 +216,34 @@ internal static class Program
         if(alloc<24 || alloc>MaxFixtureEvents)
             throw new ArgumentException("heap_stack_source_trace_incomplete");
         int selected=alloc-nonfixture;
+        lifetimes.FinalizePending();
+        var end=lifetimes.Snapshot();
         Console.WriteLine($"C545D_ETLX_ORIGINAL_ALLOC_STACK_AUDIT,selected_alloc={selected},"+
             $"original_stack_attached={hasStack},fixture_module_seen={hasNative},"+
             $"exact_native_alloc_method={exactMethod},unresolved_original_alloc={selected-exactMethod},"+
             $"native_symbol_lookup_modules={symbolsAttempted},events_heap_alloc={alloc},"+
+            $"linked_realloc={reallocMatched},fixture_origin_realloc_proven={lifetimes.ProvenReallocationOrigins},"+
+            $"fixture_logical_frees={lifetimes.FreeCount},"+
+            $"fixture_origin_free_proven={lifetimes.ProvenLogicalFrees},"+
+            $"original_proven_alloc={lifetimes.ProvenOriginalAllocations},"+
+            $"precleanup_held_six={earlyMarker},postcleanup_live={end.Count},"+
+            $"postcleanup_live_bytes={end.Bytes},"+
+            $"unresolved_at_end={end.Unresolved},"+
             "unresolved_source_class_never_guessed=1,"+
             "original_heap_source_not_LFH_inferred=1,real_GIO_owner_proven=0,"+
             "raw_etl_uploaded=0,pointers_logged=0,release_HOLD=1");
-        if(selected!=24 || exactMethod!=24 || symbolsAttempted!=1)
-            throw new ArgumentException("original_alloc_stack_source_incomplete");
+        if(selected!=24 || exactMethod!=24 || symbolsAttempted!=1 ||
+           lifetimes.ProvenOriginalAllocations!=24 ||
+           lifetimes.ReallocCount!=6 || reallocMatched!=6 ||
+           lifetimes.ProvenReallocationOrigins!=6 ||
+           lifetimes.FreeCount!=24 || lifetimes.ProvenLogicalFrees!=24 ||
+           earlyMarker!=1 || end.Count!=0 || end.Bytes!=0 ||
+           lifetimes.ReallocOldFreeMatched!=6)
+            throw new ArgumentException("original_alloc_stack_source_or_lifetime_incomplete");
         Console.WriteLine("C545D_ETLX_ORIGINAL_ALLOC_SOURCE_PASS,known_fixture=1,"+
             "all_24_native_original_alloc_functions_proven=1,"+
+            "original_source_survived_6_reallocs=1,"+
+            "original_source_survived_24_frees=1,final_held=0,"+
             "realloc_source_not_substituted=1,real_GIO_stack_proven=0,release_HOLD=1");
         return 0;
     }
