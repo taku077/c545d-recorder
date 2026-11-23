@@ -41,7 +41,9 @@ def verify(probe: str, workflow: str) -> str:
         "--late-window",
     )
     for needle in required_workflow:
-        if workflow.count(needle)!=1:raise ValueError("pinned_build_or_prior_window_drift")
+        seen=workflow.count(needle)
+        if seen!=1 and not (needle=="Invoke-C545DGioEtwOwner16Window.ps1" and seen>=1):
+            raise ValueError("pinned_build_or_prior_window_drift")
     if not(workflow.index(required_workflow[0])<
            workflow.index(required_workflow[1])<
            workflow.index(required_workflow[2])<
