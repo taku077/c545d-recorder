@@ -1,0 +1,199 @@
+name: C545D patched GIO active two-epoch resource and worker gate
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-active-two-epoch-candidate-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pre-first-appinfo-source-census:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify source and native PDB identity contracts before any GLib build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Original AppInfo source audit selftest invalid'}
+          py tests/patch_c545d_gio_etw_preinit_source_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'AppInfo preinit source fence selftest invalid'}
+          py tests/audit_c545d_private_pdb_guid_age_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Native GUID+age PDB parser selftest failed'}
+          dotnet build tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Actual GIO ETLX source census does not compile'}
+          dotnet run --no-build --project tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release -- --selftest
+          if($LASTEXITCODE -ne 0){throw 'False GIO owner/source classifier not rejected'}
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DGioInitialSourceEtwCI.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if(@($errors).Count -ne 0){throw 'New disposable GIO ETW controller PowerShell source invalid'}
+          Write-Host 'C545D_GIO_FIRST_APPINFO_PREFLIGHT_PASS,source_before_initialization=1,exact_pdb_signature_guard=1,no_host_work=1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
+          repository: taku077/c545d-recorder
+          run-id: 44757713497
+          github-token: ${{ github.token }}
+          path: artifacts/core
+      - name: Build native+event-epoch DisplayName cache GLib from upstream 2.82.4 via MSVC x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $core=(Resolve-Path artifacts/core/gio-2.0-0.dll).Path
+          $manifest=Get-Content artifacts/core/manifest.txt -Raw
+          $hash=(Get-FileHash $core -Algorithm SHA256).Hash
+          if($hash -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
+             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$hash") -or
+             $manifest -notmatch 'STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){
+            throw 'Core-only candidate provenance mismatch'
+          }
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if($LASTEXITCODE -ne 0){throw 'Meson tools failed'}
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $src
+          if($LASTEXITCODE -ne 0){throw 'Source clone failed'}
+          py tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'Core weakref patch failed'}
+          py tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'Core UTF16 patch failed'}
+          py tests/patch_glib_registry_watch_lifetime_ci.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'CI-only watch lifetime trace patch failed'}
+          py tests/patch_glib_msvc_gio_sdk_export.py "$src/gio/meson.build"
+          if($LASTEXITCODE -ne 0){throw 'SDK export patch failed'}
+          py tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'UWP staging source patch failed'}
+          py tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native path patch failed'}
+          py tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Owned DisplayName cache source patch failed'}
+          py tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Dedicated WinRT epoch bridge source patch failed'}
+          py tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Generation lazy rescan source patch failed'}
+          py tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'GAppInfoMonitor worker source patch failed'}
+          py tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'AppInfo worker/parser source phase trace patch failed'}
+          py tests/patch_c545d_gio_etw_stop_qpc_ci.py --appinfo "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'QPC worker source overlay invalid'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher signal source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher status source patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC native PackageCatalog sidecar build failed'}
+          git -C $src diff --check
+          if($LASTEXITCODE -ne 0){throw 'Source diff whitespace invalid'}
+          $changed=@(git -C $src diff --name-only | Sort-Object)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32packageparser.c','gio/gwin32registrykey.c','gio/meson.build')
+          $expected=@($expected | Sort-Object)
+          if($changed.Count -ne 4 -or (Compare-Object $changed $expected)){throw 'Unexpected source changes'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){throw 'SDK provenance mismatch'}
+          $env:LIB="$sdk/lib;$env:LIB"; $env:INCLUDE="$sdk/include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdk/lib/pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdk;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdk/bin;$env:PATH"
+          $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=debugoptimized
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path configure failed'}
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path compile failed'}
+          $built=@(Get-ChildItem $build -Recurse -Filter gio-2.0-0.dll -File)
+          if($built.Count -ne 1){throw 'Built GIO DLL not unique'}
+          py tests/audit_c545d_private_pdb_guid_age_ci.py --dll $built[0].FullName --pdb-root $build
+          if($LASTEXITCODE -ne 0){throw 'Actual native GLib/GIO PDB does not match compiled DLL CodeView signature'}
+          Write-Host 'C545D_GIO_FIRST_SOURCE_PDB_IDENTITY_VERIFIED,source_GLIB_2824=1,actual_GIO_method_not_yet_proven=1,raw_pdb_uploaded=0'
+          function GetExports($path){
+            $rows=@(& dumpbin.exe /nologo /exports $path)
+            if($LASTEXITCODE -ne 0){throw 'dumpbin export inventory failed'}
+            return ,@($rows | ForEach-Object {
+              if($_ -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)'){$Matches[1]}
+            } | Sort-Object -Unique)
+          }
+          $official=GetExports "$sdk/bin/gio-2.0-0.dll"
+          $new=GetExports $built[0].FullName
+          if($official.Count -ne 2047 -or $new.Count -ne 2047 -or
+             @($official | Where-Object {$_ -notin $new}).Count){throw 'SDK 2047-export ABI mismatch'}
+          foreach($mode in @('core','combo')){
+            $dir=Join-Path (Resolve-Path artifacts).Path "overlay-$mode"
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            if($mode -eq 'core'){$file=$core}else{$file=$built[0].FullName}
+            Copy-Item $file (Join-Path $dir 'gio-2.0-0.dll')
+          }
+          $zip=Join-Path $env:RUNNER_TEMP 'handle.zip'
+          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 60
+          $dir=Join-Path $env:RUNNER_TEMP 'handle'
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          if(-not (Test-Path "$dir/handle64.exe")){throw 'Handle64 missing'}
+          "C545D_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "C545D_HANDLE_EXE=$dir/handle64.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+          "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'C545D_GIO_ETW_SOURCE_MSVC_BUILD_PASS,pinned_source=1,exports2047=1,debug_symbols=1,CI_only=1,host_untouched=1'
+      - name: Run exactly two active epochs per arm with numeric resource and worker QPC gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $sdk=$env:C545D_SDK_ROOT
+          $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
+          $root=Join-Path $env:RUNNER_TEMP 'c545d-active-twoepoch-candidate'
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          $source=Join-Path $root 'c545d_gio_preinit_probe.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $source
+          py tests/patch_c545d_gio_active_two_epoch_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'two epoch native source contract not verified'}
+          $exe=Join-Path $root 'c545d_gio_twoepoch_candidate_probe.exe'
+          $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/Zi','/TC')+$include+@($source,"/Fe:$exe",'/link','/DEBUG',"/PDB:$root/c545d_gio_twoepoch_candidate_probe.pdb","/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'candidate twoepoch C probe compile failed'}
+          $origPath=$env:PATH
+          $oldTrace=$env:C545D_CI_APPINFO_PHASE_TRACE
+          $oldExpected=$env:C545D_EXPECTED_GIO_DLL
+          try{
+            $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$origPath"
+            $env:C545D_CI_APPINFO_PHASE_TRACE='1'
+            $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
+            foreach($arm in @('nochange','registry')){
+              $out=Join-Path $root "$arm-private.out"
+              $err=Join-Path $root "$arm-private.err"
+              $arglist=@('--cycles=2','--vm-summary')
+              if($arm -eq 'nochange'){$arglist+='--no-registry-change'}
+              $p=Start-Process -FilePath $exe -WorkingDirectory $root -ArgumentList $arglist -PassThru -Wait -RedirectStandardOutput $out -RedirectStandardError $err
+              if($p.ExitCode -ne 0){throw 'isolated candidate twoepoch process failed'}
+              $numeric=Get-Content $out -Raw
+              if($numeric -notmatch 'GIO_PROBE_DONE,cycles=2,'){throw 'candidate epoch completion missing'}
+              py tests/audit_c545d_gio_active_two_epoch_ci.py --input $out
+              if($LASTEXITCODE -ne 0){throw 'candidate private CPU memory handle phase data invalid'}
+              py tests/audit_c545d_gio_active_worker_epochs_ci.py --input $out --arm $arm
+              if($LASTEXITCODE -ne 0){throw 'candidate active worker epochs not comparable'}
+              Write-Host "C545D_GIO_ACTIVE_TWO_EPOCH_CANDIDATE_SCOPE,arm=$arm,completed=2,worker_parity_gate=1,strict_original_owner_ETLX_not_collected=1,leak_slope_not_proven=1,release_HOLD=1"
+            }
+          } finally {
+            $env:PATH=$origPath
+            if($null -eq $oldTrace){Remove-Item Env:C545D_CI_APPINFO_PHASE_TRACE -ErrorAction SilentlyContinue}
+            else{$env:C545D_CI_APPINFO_PHASE_TRACE=$oldTrace}
+            if($null -eq $oldExpected){Remove-Item Env:C545D_EXPECTED_GIO_DLL -ErrorAction SilentlyContinue}
+            else{$env:C545D_EXPECTED_GIO_DLL=$oldExpected}
+          }
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_CANDIDATE_CI_PASS,arms=2,cycles_each=2,pinned_GIO_2824=1,host_untouched=1,release_HOLD=1'
