@@ -1,0 +1,47 @@
+name: C545D mixed-size real ETW heap lifetime calibration
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545DEtwHeapIdentity/GenericHeapLifetime.cs'
+      - 'tests/C545DEtwHeapIdentity/GenericEtwFixtureReader.cs'
+      - 'tests/C545DEtwHeapIdentity/Program.cs'
+      - 'tests/c545d_etw_generic_mixed_size_ci.c'
+      - 'tests/Invoke-C545DEtwReallocCalibration.ps1'
+      - '.github/workflows/c545d-etw-generic-mixed-size-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mixed-heap-events:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build generic typed ETW reader and reject 15 owner/lifetime corruptions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet build tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Generic heap ETW reader cannot compile'}
+          dotnet run --no-build --project tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release -- --generic-selftest
+          if($LASTEXITCODE -ne 0){throw 'Generic heap owner/lifetime contract missing'}
+          dotnet run --no-build --project tests/C545DEtwHeapIdentity/C545DEtwHeapIdentity.csproj --configuration Release -- --selftest
+          if($LASTEXITCODE -ne 0){throw 'Former known fixture regressed'}
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+             (Resolve-Path tests/Invoke-C545DEtwReallocCalibration.ps1).Path,
+             [ref]$tokens,[ref]$errors)
+          if(@($errors).Count -ne 0){throw 'Synthetic WPT controller parser rejects'}
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -SelfTest
+          if(-not $?){throw 'CI-only ETW capture guard failed'}
+      - name: Capture one genuinely new mixed-size native ETW lifetime and verify 6 held then freed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -GenericMixed -ThroughCleanup
+          if(-not $? -or $LASTEXITCODE -ne 0){throw 'Mixed-size original-address ETW reader failed closed'}
+          Write-Host 'C545D_GENERIC_MIXED_WINDOWS_CI_PASS,fixture_alloc=24,fixture_realloc=6,fixture_final_live=0,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1'
