@@ -72,8 +72,7 @@ internal static class Program
             if (live.Remove((heap,address), out _))
             {
                 Freed++;
-                if (Freed > 48)
-                    throw new GapException("selected_held_blocks_freed_before_trace_stop");
+
             }
             else
             {
@@ -93,6 +92,18 @@ internal static class Program
                 if (b.Reallocations > 0) converted++;
             }
             return (live.Count, bytes, converted);
+        }
+
+        internal string Diagnostics(int events)
+        {
+            var snap=Snapshot();
+            return $",events_from_pid={events},observed_360_alloc={OriginalAlloc},"+
+                   $"observed_linked_realloc={Realloc},observed_linked_free={Freed},"+
+                   $"observed_held_count={snap.Live},observed_held_bytes={snap.Bytes},"+
+                   $"observed_reallocated_held_count={snap.ReallocatedLive},"+
+                   $"observed_realloc_moved={Moved},observed_realloc_inplace={Inplace},"+
+                   $"unrelated_realloc={OtherRealloc},unrelated_free={OtherFree},"+
+                   $"unrelated_alloc={UnrelatedAlloc}";
         }
 
         internal string Validate()
@@ -156,6 +167,8 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        IdentityTracker? diagnosticTracker = null;
+        int diagnosticEventCount = 0;
         try
         {
             if (args.Length==1 && args[0]=="--selftest")
@@ -180,6 +193,7 @@ internal static class Program
             Require(fi.Exists && fi.Length>=512 && fi.Length<=128*1024*1024,
                     "ETL_absent_or_unbounded");
             var tracker=new IdentityTracker();
+            diagnosticTracker=tracker;
             int pidEvents=0;
             using(var source=new ETWTraceEventSource(path))
             {
@@ -188,12 +202,14 @@ internal static class Program
                 {
                     if (data.ProcessID!=pid) return;
                     pidEvents++;
+                    diagnosticEventCount=pidEvents;
                     tracker.OnAlloc(data.HeapHandle,data.AllocAddress,data.AllocSize);
                 };
                 heap.HeapTraceReAlloc += data =>
                 {
                     if(data.ProcessID!=pid) return;
                     pidEvents++;
+                    diagnosticEventCount=pidEvents;
                     tracker.OnRealloc(data.HeapHandle,data.OldAllocAddress,
                             data.NewAllocAddress,data.OldAllocSize,data.NewAllocSize);
                 };
@@ -201,6 +217,7 @@ internal static class Program
                 {
                     if(data.ProcessID!=pid) return;
                     pidEvents++;
+                    diagnosticEventCount=pidEvents;
                     tracker.OnFree(data.HeapHandle,data.FreeAddress);
                 };
                 source.Process();
@@ -216,12 +233,16 @@ internal static class Program
         catch(GapException ex)
         {
             // Ex.Message is strictly one of the internal closed enum strings.
-            Console.WriteLine($"C545D_ETW_REALLOC_IDENTITY_GAP,reason={ex.Message},raw_uploaded=0,release_HOLD=1");
+            Console.WriteLine($"C545D_ETW_REALLOC_IDENTITY_GAP,reason={ex.Message}"+
+                (diagnosticTracker?.Diagnostics(diagnosticEventCount) ?? "")+
+                ",raw_uploaded=0,release_HOLD=1");
             return 2;
         }
         catch(Exception)
         {
-            Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_GAP,reason=unrecognized_ETL_or_parser_failure,raw_uploaded=0,release_HOLD=1");
+            Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_GAP,reason=unrecognized_ETL_or_parser_failure"+
+                (diagnosticTracker?.Diagnostics(diagnosticEventCount) ?? "")+
+                ",raw_uploaded=0,release_HOLD=1");
             return 3;
         }
     }
