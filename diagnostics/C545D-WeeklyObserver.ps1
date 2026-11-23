@@ -390,7 +390,15 @@ function Test-Observer {
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
  }
 }
-if($SelfTest){Test-Observer;exit 0}
+if($SelfTest){
+ try{Test-Observer}
+ catch{
+   Write-Host ('C545D_OBSERVER_SELFTEST_FAILURE,line='+
+      $_.InvocationInfo.ScriptLineNumber+',type='+$_.Exception.GetType().Name)
+   throw
+ }
+ exit 0
+}
 if(-not(Test-Path -LiteralPath $RootDirectory)){
  New-Item -ItemType Directory -Path $RootDirectory -Force|Out-Null
 }
