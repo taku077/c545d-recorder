@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45130841809](https://github.com/taku077/c545d-recorder/actions/runs/45130841809) |
+| C545D Xperf stack coverage arithmetic fail-closed source preflight | success | [#45130839574](https://github.com/taku077/c545d-recorder/actions/runs/45130839574) |
 
 ## Current development findings from the active PR
 
