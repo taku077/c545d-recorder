@@ -13,6 +13,11 @@ using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Etlx;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 
+// TraceEvent exposes its raw ETW QPC as a discouraged but documented API.
+// Phase matching MUST use raw counter ticks from the same Windows session;
+// RelativeMSec would introduce an independent clock-origin conversion.
+#pragma warning disable CS0618
+
 internal static class Program
 {
     // The one-cycle real GIO registry arm already reached 390000 typed events
