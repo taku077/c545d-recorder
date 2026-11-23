@@ -4,6 +4,7 @@
 param(
   [ValidateRange(10,600)][int]$IntervalSeconds=60,
   [string]$RootDirectory=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\WeeklyObserver'),
+  [string]$RecorderLogDirectory=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\Logs'),
   [switch]$SelfTest,
   [switch]$Once,
   [switch]$ExportNow
@@ -11,7 +12,7 @@ param(
 $ErrorActionPreference='Stop'
 $culture=[Globalization.CultureInfo]::InvariantCulture
 $utf8=New-Object Text.UTF8Encoding($false)
-$version='0.1.0'
+$version='0.2.0'
 $schema='1'
 $columns=@('schema_version','utc_time','status','pid','start_utc',
  'private_bytes','working_set_bytes','handle_count','thread_count',
@@ -122,9 +123,84 @@ function Read-ValidRows([string]$root,[datetime]$begin,[datetime]$end){
  }
  return $result
 }
+# Passive source: existing finalized-file renamer's timestamped log ONLY.
+# We never enumerate, open, probe or rename any video file from this observer.
+# Extract allowlisted event names and integer counts; discard all log payload.
+function Read-NamerEvents([string]$directory,[datetime]$begin,[datetime]$end){
+ $events=New-Object 'System.Collections.Generic.List[object]'
+ $result=[pscustomobject]@{
+   status='not_found';events=$events
+   renamed=0;deferred=0;watcher_losses=0;watcher_errors=0;scan_lines=0
+ }
+ $path=Join-Path $directory 'Filename_Rename.log'
+ if(-not(Test-Path -LiteralPath $path -PathType Leaf)){return $result}
+ $stream=$null;$reader=$null
+ try{
+   $file=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+   if($file.Length -gt 8MB){$result.status='source_too_large';return $result}
+   if(($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+     $result.status='source_reparse_rejected';return $result
+   }
+   $stream=[IO.File]::Open($file.FullName,[IO.FileMode]::Open,
+     [IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+   $reader=New-Object IO.StreamReader($stream,[Text.Encoding]::UTF8,$true)
+   $result.status='complete'
+   while(($line=$reader.ReadLine()) -ne $null){
+     $result.scan_lines++
+     if($result.scan_lines -gt 100000){
+       $result.status='scan_limit';break
+     }
+     if($line.Length -gt 8192){continue}
+     $m=[regex]::Match($line,
+       '^(?<time>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)  (?<event>Renamed \(closed\): |Rename deferred \(|WARNING: FileSystemWatcher lost events \(|Watcher shutdown grace expired|ERROR event watcher:)')
+     if(-not $m.Success){continue}
+     try{
+       $stamp=[datetime]::ParseExact($m.Groups['time'].Value,
+         'yyyy-MM-dd HH:mm:ss',$culture,
+         [Globalization.DateTimeStyles]::AssumeLocal).ToUniversalTime()
+     }catch{continue}
+     if($stamp -lt $begin -or $stamp -ge $end){continue}
+     $kind='';$number=1
+     $label=$m.Groups['event'].Value
+     if($label -eq 'Renamed (closed): '){
+       $kind='MP4_RENAME_AFTER_CLOSED';$result.renamed++
+     }elseif($label -eq 'Rename deferred ('){
+       $kind='MP4_RENAME_DEFERRED';$result.deferred++
+     }elseif($label -eq 'WARNING: FileSystemWatcher lost events ('){
+       $n=[regex]::Match($line.Substring($m.Length),'^\d{1,6}\)')
+       if(-not $n.Success){continue}
+       $number=[int]($n.Value.TrimEnd(')'))
+       $kind='MP4_WATCHER_LOST_EVENTS';$result.watcher_losses+=$number
+     }elseif($label -eq 'Watcher shutdown grace expired'){
+       $kind='MP4_WATCHER_SHUTDOWN_TIMEOUT';$result.watcher_errors++
+     }elseif($label -eq 'ERROR event watcher:'){
+       $kind='MP4_WATCHER_ERROR';$result.watcher_errors++
+     }else{continue}
+     if($events.Count -ge 20000){$result.status='event_limit';break}
+     $events.Add([pscustomobject][ordered]@{
+       utc_time=UtcText $stamp;event=$kind;count=$number
+     })
+   }
+   if($result.status -ne 'complete'){
+     $events.Clear()
+     $result.renamed=0;$result.deferred=0
+     $result.watcher_losses=0;$result.watcher_errors=0
+   }
+ }catch{
+   $result.status='source_unreadable'
+   $events.Clear()
+   $result.renamed=0;$result.deferred=0
+   $result.watcher_losses=0;$result.watcher_errors=0
+ }finally{
+   if($reader){$reader.Dispose()}
+   elseif($stream){$stream.Dispose()}
+ }
+ return $result
+}
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
  $rows=Read-ValidRows $root $begin $end
+ $media=Read-NamerEvents $RecorderLogDirectory $begin $end
  $dir=Join-Path $root 'reports'
  New-Item -ItemType Directory -Path $dir -Force|Out-Null
  $work=Join-Path $dir ('work_'+[guid]::NewGuid().ToString('N'))
@@ -144,7 +220,13 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      actual_samples=$samples.Count;valid_process_samples=$okay
      unavailable_process_samples=$samples.Count-$okay
      missing_intervals='not_classified'
-     recording_integrity='not_collected'
+     recording_integrity='closed_rename_events_only_not_media_integrity'
+     namer_event_source_status=$media.status
+     renamed_closed_mp4_count=$media.renamed
+     video_stream_count='not_collected'
+     aac_audio_integrity='not_collected'
+     mp4_duration='not_collected'
+     eos_confirmation='not_collected'
      rtsp_reconnects='not_collected'
      gstreamer_heap_attribution='not_collected'
      heavy_etw='disabled';automatic_upload=$false
@@ -154,7 +236,12 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      not_running=@($samples|Where-Object status -eq 'NOT_RUNNING').Count
      ambiguous_gstreamer_process=@($samples|Where-Object status -eq 'MULTIPLE_PROCESSES').Count
      memory_leak_proven=$false
-     next_instrumentation_gap='MP4_close_2_stream_AAC_eos_and_heap_source_not_yet_collected'
+     closed_mp4_rename_events=$media.renamed
+     rename_deferred_events=$media.deferred
+     watcher_lost_event_count=$media.watcher_losses
+     watcher_error_count=$media.watcher_errors
+     namer_source_status=$media.status
+     next_instrumentation_gap='2_stream_AAC_duration_EOS_not_proven_by_rename_log'
    }
    $metric=Join-Path $work 'process_metrics.csv'
    if($samples.Count){
@@ -162,11 +249,19 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
    }else{
      [IO.File]::WriteAllText($metric,($columns -join ',')+[Environment]::NewLine,$utf8)
    }
+   $mediaFile=Join-Path $work 'recording_events.csv'
+   $mediaRows=@($media.events)
+   if($mediaRows.Count -gt 0) {
+     $mediaRows | Select-Object utc_time,event,count |
+       Export-Csv -LiteralPath $mediaFile -NoTypeInformation -Encoding UTF8
+   }else{
+     [IO.File]::WriteAllText($mediaFile,'utc_time,event,count'+[Environment]::NewLine,$utf8)
+   }
    [IO.File]::WriteAllText((Join-Path $work 'manifest.json'),
       (ConvertTo-Json $manifest -Depth 4 -Compress),$utf8)
    [IO.File]::WriteAllText((Join-Path $work 'summary.json'),
       (ConvertTo-Json $summary -Depth 4 -Compress),$utf8)
-   Compress-Archive -LiteralPath @($metric,(Join-Path $work 'manifest.json'),
+   Compress-Archive -LiteralPath @($metric,$mediaFile,(Join-Path $work 'manifest.json'),
      (Join-Path $work 'summary.json')) -DestinationPath $partial -CompressionLevel Optimal -ErrorAction Stop
    if(-not(Test-Path $partial)){throw 'ZIP_NOT_CREATED'}
    Move-Item -LiteralPath $partial -Destination $output -ErrorAction Stop
@@ -239,13 +334,32 @@ function Test-Observer {
    $row=Get-ObserverRow
    Assert-ObserverRow $row
    Save-ObserverRow $row $root
+   # Synthetic preexisting namer log contains private file/RTSP text;
+   # only allowlisted event type, UTC time and count may appear in the ZIP.
+   $logFixture=Join-Path $root 'fake_namer_logs'
+   New-Item -ItemType Directory -Path $logFixture -Force | Out-Null
+   $script:RecorderLogDirectory=$logFixture
+   $t=$now.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss',$culture)
+   [IO.File]::WriteAllLines((Join-Path $logFixture 'Filename_Rename.log'),@(
+     ($t+'  Renamed (closed): PRIVATE_SECRET_923.mp4 -> rtsp://secret@host/stream1'),
+     ($t+'  WARNING: FileSystemWatcher lost events (3). Run a private script.'),
+     ($t+'  Rename deferred (secret): C:\Users\PRIVATE_SECRET_923')
+   ),$utf8)
    $zip=New-SafeBundle $root $now.AddHours(-1) $now.AddHours(1) 'selftest'
    $unpacked=Join-Path $root 'unpacked'
    Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
    $meta=Get-Content (Join-Path $unpacked 'manifest.json') -Raw | ConvertFrom-Json
    $metric=Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw
+   $mediaCsv=Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw
+   $allReport=(@(Get-ChildItem $unpacked -File|ForEach-Object {
+     [IO.File]::ReadAllText($_.FullName)
+   }) -join [Environment]::NewLine)
    if($meta.diagnostics_version -ne $version -or $meta.heavy_etw -ne 'disabled' -or
-      $metric -notmatch 'private_bytes' -or $metric -match 'rtsp://'){
+      $meta.renamed_closed_mp4_count -ne 1 -or
+      $mediaCsv -notmatch 'MP4_WATCHER_LOST_EVENTS' -or
+      $mediaCsv -notmatch 'MP4_RENAME_DEFERRED' -or
+      $allReport -match 'PRIVATE_SECRET_923|rtsp://|C:\\Users\\' -or
+      $metric -notmatch 'private_bytes'){
        throw 'SELFTEST_REPORT_INCOMPLETE'
    }
    $bad=Get-ObserverRow
@@ -271,7 +385,7 @@ function Test-Observer {
    if($emptyMeta.actual_samples -ne 0 -or $emptyMeta.missing_intervals -ne 'not_classified'){
      throw 'MISSING_SAMPLES_SILENTLY_MARKED_NORMAL'
    }
-   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
+   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,namer_sanitized=1,closed_rename=1,watcher_loss=3,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
  }finally{
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
  }
