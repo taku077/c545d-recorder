@@ -9,6 +9,7 @@ on:
       - 'tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1'
       - 'tests/analyze_c545d_xperf_size360_totals_calibration.py'
       - 'tests/analyze_c545d_xperf_owner_stack_calibration.py'
+      - 'tests/analyze_c545d_xperf_action_layout_ci.py'
       - '.github/workflows/c545d-etw-owner-lifetime-calibration-ci.yml'
   workflow_dispatch:
 permissions:
@@ -38,6 +39,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Filtered totals selftest failed'}
           & py tests/analyze_c545d_xperf_owner_stack_calibration.py --selftest
           if($LASTEXITCODE -ne 0){throw 'Xperf filtered totals negative fixtures failed'}
+          & py tests/analyze_c545d_xperf_action_layout_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Heap action layout source fixtures failed'}
           & ./tests/Invoke-C545DEtwOwnerLifetimeCalibration.ps1 -SelfTest
           if(-not $?){throw 'Owner calibration source safety fixture rejected'}
       - name: Run short exact known alloc/free Xperf capability in isolated runner
