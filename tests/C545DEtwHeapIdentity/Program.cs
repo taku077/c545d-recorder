@@ -44,7 +44,7 @@ internal static class Program
         {
             // Only a known native fixture promises no extra allocations
             // after its ready-to-cleanup signal. Do not generalize to GIO.
-            if (OriginalAlloc==64 && Realloc==16 && RawSelectedFree==64 &&
+            if (OriginalAlloc==64 && Realloc==16 && RawSelectedFree==48+ReallocAfterFree &&
                 pendingFree.Count==48 && live.Count==16)
                 PrecleanupHeldMilestone=true;
         }
@@ -160,9 +160,9 @@ internal static class Program
             if (OriginalAlloc != 64 || Realloc != 16 || Moved + Inplace != 16 ||
                 !PrecleanupHeldMilestone || 
                 (expectThroughCleanup
-                  ? Freed != 64 || RawSelectedFree != 80 || snap.Live != 0 ||
+                  ? Freed != 64 || RawSelectedFree != 64+ReallocAfterFree || snap.Live != 0 ||
                     snap.Bytes != 0 || snap.ReallocatedLive != 0
-                  : Freed != 48 || RawSelectedFree != 64 || snap.Live != 16 ||
+                  : Freed != 48 || RawSelectedFree != 48+ReallocAfterFree || snap.Live != 16 ||
                     snap.Bytes != 11520 || snap.ReallocatedLive != 16))
                 throw new GapException("known_fixture_alloc_realloc_free_counts_not_reconciled");
             return "C545D_ETW_REALLOC_IDENTITY_MATCHED,"+
