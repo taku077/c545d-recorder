@@ -198,7 +198,7 @@ def selftest() -> None:
     negatives.extend([
         (corrupted(64, old_address=9999), {}),
         (corrupted(64, old_size=359), {}),
-        (corrupted(64, new_address=49), {}),
+        (corrupted(64, new_address=50), {}),
         (corrupted(64, site="UNKNOWN_SOURCE"), {}),
         (corrupted(64, new_size=-1), {}),
         (corrupted(64, heap="OTHER"), {}),
