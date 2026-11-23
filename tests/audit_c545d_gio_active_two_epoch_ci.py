@@ -43,7 +43,7 @@ def audit(raw: str) -> dict[str, int]:
                 }[kind]):
                     # Outside the three selected points: reject malformed but
                     # ignore valid alternative phases such as after_cleanup.
-                    if not re.fullmatch(r"[A-Z0-9_,]+", line):
+                    if not re.fullmatch(r"[A-Za-z0-9_,]+", line):
                         raise Gap("malformed_numeric_probe_line")
                 continue
             phase, cycle = match.group(1), int(match.group(2))
@@ -91,7 +91,7 @@ def selftest() -> None:
         )
     pieces = [row(*pair, i) for i, pair in enumerate(PHASES)]
     good = "".join(pieces)
-    r = audit(good)
+    r = audit(good + "GIO_VM,after_cleanup,3,20,50000,1000,2000,0\n")
     assert r["epoch1_private_delta"] == 256
     assert r["epoch2_handles_delta"] == 1
     assert r["epoch1_cpu100ns"] == 20
