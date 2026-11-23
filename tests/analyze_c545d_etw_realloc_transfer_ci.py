@@ -75,6 +75,65 @@ def analyze(raw: str) -> str:
         "CI_only=1,raw_uploaded=0"
     )
 
+REASONS = {
+    "synthetic_stack_report_missing_or_oversized",
+    "unexpected_heap_summary_shape", "ambiguous_heap_summary",
+    "incomplete_stack_row", "invalid_raw_count",
+    "missing_or_duplicated_synthetic_owner",
+    "known_original_source_alloc_unverified",
+    "impossible_realloc_group_counts", "source_group_exceeds_global",
+}
+
+def diagnose(raw: str) -> str:
+    """Only fixed enum and aggregated numeric counts may leave the runner."""
+    reason = "none"
+    try:
+        analyze(raw)
+    except ValueError as exc:
+        reason = str(exc) if str(exc) in REASONS else "unclassified_rejected"
+    parts = [x.strip() for x in DASH.split(raw) if x.strip()]
+    stack_rows = [
+        x for x in parts
+        if not GLOBAL.search(x) and not TOP.search(x)
+        and any(rx.search(x) for rx in METRICS.values())
+    ]
+    totals = {}
+    for source in SOURCES:
+        matching = [x for x in stack_rows
+                    if re.search(r"\b" + re.escape(source) + r"\b", x)]
+        nums = [0, 0, 0]
+        parsed = 0
+        for row in matching:
+            match = {key: rx.findall(row) for key, rx in METRICS.items()}
+            if all(len(v)==1 for v in match.values()):
+                nums[0] += int(match["alloc"][0][0])
+                nums[1] += int(match["out"][0][0])
+                nums[2] += int(match["realloc"][0])
+                parsed += 1
+        totals[source] = (len(matching), parsed, nums)
+    ga = go = 0
+    global_sections = [x for x in parts if GLOBAL.search(x)]
+    if len(global_sections)==1:
+        try:
+            ga, _, go, _, _ = num(global_sections[0])
+        except ValueError:
+            pass
+    o, r = totals[SOURCES[0]], totals[SOURCES[1]]
+    return (
+        "C545D_ETW_REALLOC_STACK_PARSE_DIAGNOSTIC,"
+        f"reason={reason},global_headers={len(GLOBAL.findall(raw))},"
+        f"top_headers={len(TOP.findall(raw))},"
+        f"global_alloc={ga},global_out={go},stack_rows={len(stack_rows)},"
+        f"original_source_rows={o[0]},original_parsed_rows={o[1]},"
+        f"original_alloc={o[2][0]},original_out={o[2][1]},"
+        f"original_realloc={o[2][2]},"
+        f"realloc_source_rows={r[0]},realloc_parsed_rows={r[1]},"
+        f"realloc_alloc={r[2][0]},realloc_out={r[2][1]},"
+        f"realloc_realloc={r[2][2]},"
+        "raw_report_uploaded=0,source_frame_strings_uploaded=0,"
+        "leak_proven=0,host_untouched=1"
+    )
+
 def fixture(realloc_alloc: int, realloc_out: int) -> str:
     return (
         "GLOBAL ALLOCATIONS:\nAlloc : 80, 30.0 KB\n"
@@ -96,6 +155,9 @@ def selftest() -> None:
     assert "realloc_source_zeroalloc_positiveout=1" in value
     assert "realloc_source_alloc=0,realloc_source_out=16" in value
     assert "realloc_source_zeroalloc_positiveout=0" in analyze(fixture(16,16))
+    assert "reason=none" in diagnose(fixture(0,16))
+    assert "reason=missing_or_duplicated_synthetic_owner" in diagnose(
+        fixture(0,16).replace("c545d_ci_alloc_360", "other_function"))
     bad = [
         fixture(0,16).replace("GLOBAL ALLOCATIONS:", "INVALID:"),
         fixture(0,16).replace("c545d_ci_realloc_720", "unknown_symbol"),
@@ -118,6 +180,7 @@ def selftest() -> None:
 def main() -> None:
     p=argparse.ArgumentParser()
     p.add_argument("--selftest",action="store_true")
+    p.add_argument("--diagnose",action="store_true")
     p.add_argument("--report",type=Path)
     a=p.parse_args()
     if a.selftest:
@@ -125,7 +188,8 @@ def main() -> None:
         return
     if a.report is None or a.report.stat().st_size > 2_000_000:
         raise ValueError("missing_or_oversized_local_report")
-    print(analyze(a.report.read_text("utf-8-sig",errors="replace")))
+    raw=a.report.read_text("utf-8-sig",errors="replace")
+    print(diagnose(raw) if a.diagnose else analyze(raw))
 
 if __name__=="__main__":
     main()

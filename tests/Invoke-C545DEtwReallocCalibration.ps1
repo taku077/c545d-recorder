@@ -83,7 +83,7 @@ try {
   if(@($existing | Where-Object {$_ -match '(?i)\bHeapSession\b|\bNT Kernel Logger\b'}).Count){
     throw 'Refuse to modify existing external ETW sessions'
   }
-  & cl.exe /nologo /W4 /WX /MT /O2 /Zi /TC tests/c545d_etw_realloc_transfer_ci.c "/Fe:$exe" "/Fd:$root\realloc.pdb" /link /DEBUG "/PDB:$root\realloc.pdb" *> $raw
+  & cl.exe /nologo /W4 /WX /MT /Od /Zi /TC tests/c545d_etw_realloc_transfer_ci.c "/Fe:$exe" "/Fd:$root\realloc.pdb" /link /DEBUG "/PDB:$root\realloc.pdb" *> $raw
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe -PathType Leaf)){
     throw 'Synthetic realloc source compilation failed'
   }
@@ -130,6 +130,9 @@ try {
   $evidence=@(& py tests/analyze_c545d_etw_realloc_transfer_ci.py --report $report 2> $raw)
   $pass=@($evidence | Where-Object {$_ -match '^C545D_ETW_REALLOC_STACK_GROUP_DIAGNOSTIC,[A-Za-z0-9_,=.-]+$'})
   if($LASTEXITCODE -ne 0 -or $pass.Count -ne 1){
+    $diagnostic=@(& py tests/analyze_c545d_etw_realloc_transfer_ci.py --report $report --diagnose 2> $raw)
+    $safe=@($diagnostic | Where-Object {$_ -match '^C545D_ETW_REALLOC_STACK_PARSE_DIAGNOSTIC,[A-Za-z0-9_,=.-]+$'})
+    if($LASTEXITCODE -eq 0 -and $safe.Count -eq 1){Write-Host $safe[0]}
     Write-Host 'C545D_REALLOC_XPERF_GAP,stage=source_stack,reason=SOURCE_METRIC_NOT_VERIFIED,raw_uploaded=0'
     throw 'Cannot infer realloc group behavior from report'
   }
