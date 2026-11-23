@@ -198,7 +198,54 @@ try {
   if($identityStatus -ne 0 -or $safeIdentity.Count -ne 1){
     $gap=@($identities | Where-Object {
       if($GenericMixed){
-        $_ -match '^C545D_ETW_GENERIC_HEAP_GAP,reason=[A-Za-z0-9_]+,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1$'
+        $_ -match '^C545D_ETW_GENERIC_HEAP_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1
+      }else{
+        $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
+      }
+    })
+    if($gap.Count -eq 1){Write-Host $gap[0]}
+    else{Write-Host 'C545D_ETW_REALLOC_IDENTITY_GAP,reason=unverified_adapter_output,raw_uploaded=0,release_HOLD=1'}
+    throw 'Real ETW old-new identity unverified: synthetic source still safe'
+  }
+  Write-Host $safeIdentity[0]
+  if(-not $ThroughCleanup){
+    Signal 'exit.signal'
+    if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
+      throw 'Synthetic realloc process did not exit normally'
+    }
+  }
+  $complete=$true
+  if($GenericMixed){
+    Write-Host 'C545D_GENERIC_SYNTHETIC_ETW_COMPLETE,original_alloc=24,realloc=6,logical_freed=24,final_held=0,held_at_phase_boundary=6,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  }elseif($ThroughCleanup){
+    Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=64,known_held_at_stop=0,precleanup_held=16,postcleanup_freed=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  } else {
+    Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=48,known_held=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  }
+} finally {
+  if($heapOn){& $xperf -stop HeapSession *> $raw}
+  if($kernelOn){& $xperf -stop *> $raw}
+  if($proc){
+    try{
+      $proc.Refresh()
+      if(-not $proc.HasExited){
+        if(-not(Test-Path (Join-Path $root 'exit.signal'))){
+          New-Item -ItemType File (Join-Path $root 'exit.signal') | Out-Null
+        }
+        if(-not $proc.WaitForExit(4000)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+      }
+    }catch{}
+  }
+  if($null -eq $oldRoot){Remove-Item Env:C545D_REALLOC_CAL_ROOT -ErrorAction SilentlyContinue}
+  else{$env:C545D_REALLOC_CAL_ROOT=$oldRoot}
+  if($null -eq $oldSymbols){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+  else{$env:_NT_SYMBOL_PATH=$oldSymbols}
+  if((Test-Path $owned) -and $root.StartsWith($env:RUNNER_TEMP,[StringComparison]::OrdinalIgnoreCase)){
+    Remove-Item -Recurse -Force -Path $root -ErrorAction SilentlyContinue
+  }
+}
+if($complete){$global:LASTEXITCODE=0}
+
       }else{
         $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
       }
