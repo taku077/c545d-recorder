@@ -81,7 +81,8 @@ internal static class GenericEtwFixtureReader
             {
                 var snapshot=model.Snapshot();
                 if(model.AllocCount==24 && model.ReallocCount==6 &&
-                   snapshot.Count==6 && model.PendingFreeCount==18 &&
+                   snapshot.Count==6 &&
+                   model.FreeCount+model.PendingFreeCount==18 &&
                    snapshot.Bytes==7120)
                     earlyMarker=1;
                 lastEarlyMarker=earlyMarker;
@@ -92,7 +93,11 @@ internal static class GenericEtwFixtureReader
                 lastPidEvents=++heapEvents;
                 if(heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
                 long size=evt.AllocSize;
-                if(!InitialSizes.Contains(size)){unrelatedAlloc++;return;}
+                if(!InitialSizes.Contains(size))
+                {
+                    model.ObserveUntrackedAlloc(evt.HeapHandle,evt.AllocAddress,size);
+                    unrelatedAlloc++;CheckMilestone();return;
+                }
                 // The shape (3 sizes * 8 allocations) is only used to
                 // test our generic parser, NOT to attribute real GIO origin.
                 counts[size]++;
@@ -110,7 +115,9 @@ internal static class GenericEtwFixtureReader
                 if(heapEvents>100000)throw new ArgumentException("too_many_fixture_heap_events");
                 if(!model.IsTracked(evt.HeapHandle,evt.OldAllocAddress))
                 {
-                    unrelatedRealloc++;return;
+                    model.ObserveUntrackedRealloc(evt.HeapHandle,evt.OldAllocAddress,
+                        evt.NewAllocAddress,evt.OldAllocSize,evt.NewAllocSize);
+                    unrelatedRealloc++;CheckMilestone();return;
                 }
                 if(!ReallocSizes.TryGetValue(evt.OldAllocSize,out long expected) ||
                    evt.NewAllocSize!=expected)
@@ -130,7 +137,12 @@ internal static class GenericEtwFixtureReader
                     model.Free(evt.HeapHandle,evt.FreeAddress);
                     CheckMilestone();
                 }
-                else unrelatedFree++;
+                else
+                {
+                    model.ObserveUntrackedFree(evt.HeapHandle,evt.FreeAddress);
+                    unrelatedFree++;
+                    CheckMilestone();
+                }
             };
             source.Process();
         }
