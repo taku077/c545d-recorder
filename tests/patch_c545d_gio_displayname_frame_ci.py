@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-TARGET = "           hr = IPackage2_get_DisplayName (ipackage2, &display_name);"
+TARGET = "          hr = IPackage2_get_DisplayName (ipackage2, &display_name);"
 MARKER = "c545d_ci_displayname_getter_scope"
 ENTRY = "gboolean\ng_win32_package_parser_enum_packages"
 FUNCTION = r'''/* Disposable MSVC CI ONLY: visible allocation stack boundary.
@@ -31,6 +31,8 @@ c545d_ci_displayname_getter_scope (IPackage2 *package, HSTRING *returned)
 def patch(s: str) -> str:
     if MARKER in s:
         raise ValueError("displayname_frame_already_injected")
+    # The composed bridge overlay uses TEN spaces at this exact callsite,
+    # not the eleven in the earlier synthetic-only source. Keep source-locked.
     if s.count(TARGET) != 1 or s.count(ENTRY) != 1:
         raise ValueError("getter_callsite_or_function_anchor_not_unique")
     if s.index(ENTRY) > s.index(TARGET):
