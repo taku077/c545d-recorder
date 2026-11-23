@@ -84,7 +84,8 @@ internal static class Program
         AmbiguousMultipleMethods=9
     }
     private readonly record struct Owner(bool HasStack,bool HasGioFrame,
-        bool ExactGioMethod,Cohort Cohort,Cohort NearestKnown,bool FirstGioExact);
+        bool ExactGioMethod,Cohort Cohort,Cohort NearestKnown,bool FirstGioExact,
+        bool InsideDisplayNameGetterFrame);
     private static readonly Dictionary<string,Cohort> TrustedGioMethods=
         new(StringComparer.Ordinal)
     {
@@ -110,9 +111,9 @@ internal static class Program
     private static Owner Classify(IReadOnlyList<Frame>? frames)
     {
         if(frames is null || frames.Count==0)
-            return new(false,false,false,Cohort.MissingStack,Cohort.MissingStack,false);
+            return new(false,false,false,Cohort.MissingStack,Cohort.MissingStack,false,false);
         if(frames.Count>256)throw new ArgumentException("stack_depth_exceeded");
-        bool gio=false,firstGioExact=false;
+        bool gio=false,firstGioExact=false,insideDisplayNameGetter=false;
         Cohort nearest=Cohort.GioMethodUnmatched;
         var hits=new HashSet<Cohort>();
         foreach(var f in frames)
@@ -124,6 +125,8 @@ internal static class Program
             bool firstGioFrame=!gio;
             gio=true;
             var exact=NormalizeFunction(f.Function);
+            if(exact=="c545d_ci_displayname_getter_scope")
+                insideDisplayNameGetter=true;
             if(exact is not null && TrustedGioMethods.TryGetValue(exact,out var method))
             {
                 hits.Add(method);
@@ -142,7 +145,8 @@ internal static class Program
             hits.Count==1?hits.First():
             gio?Cohort.GioMethodUnmatched:Cohort.NoGioFrame;
         if(!gio)nearest=Cohort.NoGioFrame;
-        return new(true,gio,hits.Count>0,cohort,nearest,firstGioExact);
+        return new(true,gio,hits.Count>0,cohort,nearest,firstGioExact,
+            insideDisplayNameGetter);
     }
 
     // Separately audited method-level ledger; the existing size/address
@@ -153,7 +157,8 @@ internal static class Program
         private const int Count=10;
         private const int MaxReallocGap=32;
         private readonly record struct Key(ulong Heap,ulong Address);
-        private readonly record struct Entry(long Bytes,Cohort Cohort,long Birth,int Reallocs);
+        private readonly record struct Entry(long Bytes,Cohort Cohort,long Birth,
+            int Reallocs,bool GetterFrame);
         private readonly record struct Held(Entry Entry,long Event,int Generation);
         private readonly Dictionary<Key,Entry> live=new();
         private readonly Dictionary<Key,Held> pending=new();
@@ -164,7 +169,8 @@ internal static class Program
         private int generation;
         internal void MarkEpochCut(){generation++;}
 
-        internal void Alloc(ulong heap,ulong address,long size,Cohort source)
+        internal void Alloc(ulong heap,ulong address,long size,Cohort source,
+            bool getterFrame=false)
         {
             sequence++;
             if(heap==0||address==0||size<0||size>(1L<<36)||
@@ -175,7 +181,7 @@ internal static class Program
                 throw new ArgumentException("cohort_overlapping_live");
             if(pending.Remove(key,out var old))
                 freed[(int)old.Entry.Cohort]++;
-            live.Add(key,new Entry(size,source,sequence,0));
+            live.Add(key,new Entry(size,source,sequence,0,getterFrame));
             original[(int)source]++;
         }
         internal void Realloc(ulong heap,ulong oldAddress,ulong newAddress,
@@ -216,7 +222,7 @@ internal static class Program
             if(wasLive)live.Remove(before);
             else pending.Remove(before);
             live.Add(after,new Entry(newSize,parent.Cohort,parent.Birth,
-                parent.Reallocs+1));
+                parent.Reallocs+1,parent.GetterFrame));
             reallocated[(int)parent.Cohort]++;
         }
         internal void Free(ulong heap,ulong address)
@@ -241,6 +247,14 @@ internal static class Program
             foreach(var entry in live.Values)
                 if(entry.Cohort==cohort){count++;bytes=checked(bytes+entry.Bytes);}
             return (original[index],reallocated[index],freed[index],count,bytes);
+        }
+        internal (long Live,long Bytes) GetterFrameLive(bool onlyPackage)
+        {
+            long count=0,bytes=0;
+            foreach(var e in live.Values)
+                if(e.GetterFrame&&(!onlyPackage||e.Cohort==Cohort.PackageEnum))
+                {count++;bytes=checked(bytes+e.Bytes);}
+            return (count,bytes);
         }
         internal void CheckAgainst(GenericHeapLifetime generic)
         {
@@ -297,7 +311,8 @@ internal static class Program
         private static readonly string[] Names={"baseline","cycle1","cycle2"};
         private readonly long[] cutoffs;
         private readonly List<(long Count,long Bytes,(long Live,long Bytes)[] Strict,
-            (long Live,long Bytes)[] Nearest)> samples=new();
+            (long Live,long Bytes)[] Nearest,(long Live,long Bytes) GetterAll,
+            (long Live,long Bytes) GetterPackage)> samples=new();
         private int next;
         private long lastQpc;
         private bool sawEventBeforeBaseline,sawEventAfterBaseline;
@@ -337,7 +352,13 @@ internal static class Program
             if(al!=all.Count||bl!=all.Count||
                ab!=all.Bytes||bb!=all.Bytes)
                 throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
-            samples.Add((all.Count,all.Bytes,a,b));
+            var strictGetter=strict.GetterFrameLive(false);
+            var nearestGetter=nearest.GetterFrameLive(false);
+            var getterPackage=nearest.GetterFrameLive(true);
+            if(strictGetter!=nearestGetter||getterPackage.Live>nearestGetter.Live||
+               getterPackage.Bytes>nearestGetter.Bytes)
+                throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
+            samples.Add((all.Count,all.Bytes,a,b,nearestGetter,getterPackage));
             strict.MarkEpochCut();
             nearest.MarkEpochCut();
             next++;
@@ -377,6 +398,14 @@ internal static class Program
                             "source_heap_only=1,direct_allocator_not_proven=1,release_HOLD=1");
                     }
                 }
+                Console.WriteLine("C545D_GIO_ACTIVE_GETTER_FRAME_SCOPE,"+
+                    $"arm={arm},phase={Names[p]},"+
+                    $"live={samples[p].GetterAll.Live},"+
+                    $"request_bytes_live={samples[p].GetterAll.Bytes},"+
+                    $"package_nearest_live={samples[p].GetterPackage.Live},"+
+                    $"package_nearest_bytes={samples[p].GetterPackage.Bytes},"+
+                    "verified_module_and_symbol=1,original_allocation_stack_only=1,"+
+                    "direct_winrt_owner_not_proven=1,release_HOLD=1");
                 Console.WriteLine("C545D_GIO_ACTIVE_SOURCE_EPOCH_SCOPE,"+
                     $"arm={arm},phase={Names[p]},"+
                     $"tracked_source_live={samples[p].Count},"+
@@ -429,6 +458,26 @@ internal static class Program
             Cohort.GioMethodUnmatched);
         Expect(Classify(new Frame[]{new("ntdll","HeapAlloc")}).Cohort==
             Cohort.NoGioFrame);
+        var getterExample=Classify(new Frame[]{
+            new("kernelbase","HeapAlloc"),
+            new("gio-2.0-0.dll","c545d_ci_displayname_getter_scope()"),
+            new("gio-2.0-0.dll","g_win32_package_parser_enum_packages()"),
+            new("gio-2.0-0.dll","update_registry_data()")});
+        Expect(getterExample.InsideDisplayNameGetterFrame &&
+               getterExample.NearestKnown==Cohort.PackageEnum &&
+               getterExample.Cohort==Cohort.AmbiguousMultipleMethods);
+        Expect(!Classify(new Frame[]{
+            new("notgio","c545d_ci_displayname_getter_scope"),
+            new("gio-2.0-0.dll","c545d_ci_displayname_getter_scope_lookalike")
+        }).InsideDisplayNameGetterFrame);
+        var getterTest=new MethodLedger();
+        getterTest.Alloc(13,1,11,Cohort.PackageEnum,true);
+        getterTest.Realloc(13,1,2,11,35);
+        Expect(getterTest.GetterFrameLive(false)==(1L,35L) &&
+               getterTest.GetterFrameLive(true)==(1L,35L));
+        getterTest.Free(13,2);
+        getterTest.FinalizePending();
+        Expect(getterTest.GetterFrameLive(false)==(0L,0L));
         var cohortModel=new MethodLedger();
         var cohortGeneric=new GenericHeapLifetime();
         cohortModel.Alloc(1,10,100,Cohort.UpdateRegistryData);
@@ -548,6 +597,7 @@ internal static class Program
             "positive=12,negative=12,method_cohort_ledger=1,"+
             "multiple_distinct_methods_ambiguous=1,realloc_target_owner_preserved=1,"+
             "active_epoch_source_cut_model=1,cutoff_crossing_rejected=1,"+
+            "exact_displayname_stack_marker_filter=1,getter_realloc_identity=1,"+
             "LFH_not_owner=1,original_stack_survives_realloc_free=1,"+
             "real_GIO_stacks_not_yet_examined=1,release_HOLD=1");
     }
@@ -594,7 +644,7 @@ internal static class Program
         var model=new GenericHeapLifetime();
         var methodLedger=new MethodLedger();
         var nearestLedger=new MethodLedger();
-        int nearestFirstGioRaw=0;
+        int nearestFirstGioRaw=0,getterFrameOriginalRaw=0;
         currentLifetime=model;
         countAlloc=countRealloc=countFree=missingStacks=hasGioFrameCount=exactMethodCount=loadedGioModules=lookupModules=0;
         countZeroAlloc=countZeroRealloc=countZeroOldSize=countZeroNewSize=0;
@@ -670,10 +720,11 @@ internal static class Program
                         ? GenericHeapLifetime.OriginProof.VerifiedGioMethod
                         : GenericHeapLifetime.OriginProof.Unresolved);
                     methodLedger.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
-                        result.Cohort);
+                        result.Cohort,result.InsideDisplayNameGetterFrame);
                     nearestLedger.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
-                        result.NearestKnown);
+                        result.NearestKnown,result.InsideDisplayNameGetterFrame);
                     if(result.FirstGioExact)nearestFirstGioRaw++;
+                    if(result.InsideDisplayNameGetterFrame)getterFrameOriginalRaw++;
                 };
                 heap.HeapTraceReAlloc+=ev=>
                 {
@@ -721,6 +772,13 @@ internal static class Program
         methodLedger.Report(arm);
         nearestLedger.Report(arm,nearest:true);
         cuts?.Report(arm);
+        if(activeMode)
+        {
+            Console.WriteLine($"C545D_GIO_GETTER_MARKER_ORIGINALS,arm={arm},"+
+                $"raw_original_stack_hits={getterFrameOriginalRaw},"+
+                "exact_private_gio_symbol=1,direct_winrt_owner_not_proven=1,"+
+                "release_HOLD=1");
+        }
         Console.WriteLine($"C545D_GIO_NEAREST_FRAME_SCOPE,arm={arm},"+
             $"raw_first_gio_exact_method={nearestFirstGioRaw},"+
             "raw_not_logical_owner_count=1,release_HOLD=1");
