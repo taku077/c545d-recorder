@@ -302,6 +302,12 @@ function Read-WorkerSessions([string]$directory,[datetime]$begin,[datetime]$end)
      event_time_resolution='session_only'
    })
  }
+ # A directory with no qualifying (session,mtime) file is not evidence of
+ # error-free operation. An unfinished transcript means partial coverage.
+ if($result.status -eq 'complete'){
+   if($result.files_seen -eq 0){$result.status='no_sessions_in_window'}
+   elseif($result.incomplete_sessions -gt 0){$result.status='partial_or_active'}
+ }
  return $result
 }
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
@@ -525,6 +531,7 @@ function Test-Observer {
       $meta.recorder_completed_transcripts -ne 2 -or
       $meta.recorder_incomplete_transcripts -ne 1 -or
       $meta.recorder_reported_authorized_eos_count -ne 1 -or
+      $meta.recorder_session_event_source_status -ne 'partial_or_active' -or
       $workerRows.Count -ne 3 -or
       @($workerRows|Where-Object source_status -eq 'incomplete_or_active').Count -ne 1 -or
       @($workerRows|Where-Object authorized_eos_reported_count -eq '1').Count -ne 1 -or
