@@ -3,17 +3,27 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5f963a4ab553f71a7eeff4df02446232ddb5233a`
-- **PR updated at (UTC):** `2026-11-23T11:57:40Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5f963a4ab553f71a7eeff4df02446232ddb5233a/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `e011a152643e2540ae4746e14641a371c9fac018`
+- **PR updated at (UTC):** `2026-11-23T11:59:09Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/e011a152643e2540ae4746e14641a371c9fac018/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45169833007](https://github.com/taku077/c545d-recorder/actions/runs/45169833007) |
+| C545D active development handoff auto-refresh | in_progress | [#45170046398](https://github.com/taku077/c545d-recorder/actions/runs/45170046398) |
+| C545D memory classification accountability and exit gate | failure | [#45170041902](https://github.com/taku077/c545d-recorder/actions/runs/45170041902) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-23 JST — Generic mixed-size actual heap ETW source fixture PASS (24 HeapAlloc/6 ReAlloc/24 logical Free, final 0)
+
+- **Exact continuation:** draft [PR #62](https://github.com/taku077/c545d-recorder/pull/62) on `investigate/c545d-status-only-monitor-20261120`; current new result [Windows CI #45169421721 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45169421721), job `137674751327`. Replaces older **"only fixed360→720 native address pairing"** limitation. Recorder Windows10/Tapo not touched; do not repeat old uniform native/GIO16/top8192/4h tests.
+- **New implemented source:** `tests/C545DEtwHeapIdentity/{GenericHeapLifetime.cs,GenericEtwFixtureReader.cs}`, `tests/c545d_etw_generic_mixed_size_ci.c`, opt-in `-GenericMixed -ThroughCleanup` in `tests/Invoke-C545DEtwReallocCalibration.ps1`. New ETW typed address tracking accepts arbitrary positive sizes with per-heap+address original identity, old-Free-before-ReAlloc transfer, moved/in-place, false-double-free prevention when **foreign size allocation reuses a freed address**; source deliberately `Unresolved` until independently proven by original call stack. 3 positive and 18 negative model fixtures pass.
+- **ACTUAL isolated Windows 2022 ETW SUCCESS #45169421721:** native known original Alloc24 (192/448/832 B **8 each**), ReAlloc6 (to544/1216/1800 B) with **6 moved** pointer identities and **6 old-address Free** correctly paired, precleanup **6 held/7120 B**, explicit last six HeapFree, final logical Free24, **0 live /0 request bytes /0 pending free**, 104 selected PID heap events, unrelated-size alloc25/free19, **one address reused** by a foreign-size allocation safely retired. Zero logger event/buffer loss. Source signals `finished.signal` → controller `exit.signal` → native `freed.signal` → controller ETW STOP while native process **still alive** → analyzer → `terminate.signal`; avoids conflating process exit cleanup. This does NOT classify real GIO/WinRT original allocating call stacks or demonstrate the memory leak is fixed.
+- **Failures already diagnosed:** #45167808307 first mixed source failure no reason counters; #45168268066 PowerShell malformed source after accidental JavaScript `$'` replacement expansion; repaired exact 248-line controller; #45168803028 saw duplicate provisional-free during process exit; #45169113710 confirmed specific 24alloc/6realloc/held6 before exit contamination; #45169368240 transitional source waited for exit before sending `terminate.signal`. Final #45169421721 passes; original uniform fixture [#45168802991 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45168802991). Details [mixed-size report](https://github.com/taku077/c545d-recorder/blob/investigate/c545d-status-only-monitor-20261120/docs/C545D_REAL_ETW_GENERIC_MIXED_SIZE_20261123.md).
+- **Next ONE AI-only source change:** true **original HeapAlloc call-stack ownership** from private Windows ETL via Microsoft TraceEvent ETLX `TraceLog.OpenOrConvert` and `TraceEvent.CallStack()` (no guess from size/PID/heap `Source`/stack group); fail-closed absent/unresolved source stack counters, verified origin propagated through arbitrary-size ReAlloc Old/New→Free. Then comparable *active subscribed* AppInfo phases (6 stable watch subscriptions are baseline, not a leaking 6 handles; worker idle is not globally idle), phase-aligned PrivateUsage/REGION/CPU/handles, ONE new bounded disposable GIO run only when new evidence possible. No new user host work.
+- **Overall:** 4/4 broad cases still `EVIDENCE_GAP`, release `HOLD`, `install_approved=0`, `live_test_authorized=0`, real recorder postpatch untested. Preserve existing stream1 wide left +stream6 tele right, 2560x720 15fps, x264 medium QP24, AAC mono48kHz 192kbps, hour MP4, A/V sync, avdec_h264, EOS, no forced DLL swap or process restart.
 
 ### UPDATE 2026-11-23 JST — pinned GLib 2.82.4 persistent watcher scope / original CI watch-pending STABLE; active-state epoch replaces false all-watchers-closed requirement
 
