@@ -155,6 +155,123 @@ try {
     else{Write-Host "C545D_GIO_PREINIT_SOURCE_GAP,arm=$Arm,reason=ETLX_ORIGIN_UNVERIFIED,raw_uploaded=0"}
     throw 'Actual original GIO source attribution not demonstrated'
   }
+  # Explicit, bounded source-method cohorts from the ORIGINAL HeapAlloc
+  # stack must be emitted and independently reconciled, rather than quietly
+  # dropped by the numeric-only privacy filter. Fail closed on missing rows.
+  $expectedCohorts=@(
+    'MissingStack','NoGioFrame','GioMethodUnmatched',
+    'UpdateRegistryData','KeysUpdated','WatchKeys','AppinfoWorker',
+    'RegistryKeyWatch','PackageEnum','AmbiguousMultipleMethods'
+  )
+  $cohortRows=@($source | Where-Object {
+    $_ -match ('^C545D_GIO_METHOD_COHORT,arm='+$Arm+
+      ',category=[A-Za-z]+,original=\d+,realloc=\d+,logical_free=\d+,'+
+      'live=\d+,request_bytes_live=\d+,'+
+      'source_original_stack_only=1,global_leak_proven=0,release_HOLD=1
+  # but positive deltas do NOT imply a leak and cannot be subtracted from
+  # selected heap request bytes without accounting for other memory paths.
+  $lines=@(Get-Content $out -ErrorAction Stop)
+  $private=@{}
+  $region=@{}
+  $handles=@{}
+  foreach($phase in @('preappinfo','baseline','cycle','settled_cleanup')){
+    $rows=@($lines | Where-Object {
+      $_ -match ('^GIO_PROBE,'+$phase+',\d+,\d+,\d+,\d+$')
+    })
+    $vm=@($lines | Where-Object {
+      $_ -match ('^GIO_VM,'+$phase+',\d+,\d+,\d+,\d+,\d+,0$')
+    })
+    if($rows.Count -ne 1 -or $vm.Count -ne 1){
+      Write-Host "C545D_GIO_PREINIT_RESOURCE_GAP,arm=$Arm,reason=PHASE_METRICS_INCOMPLETE,phase=$phase,raw_uploaded=0"
+      throw 'Incomplete phase measurements; release HOLD'
+    }
+    $r=$rows[0].Split(',')
+    $v=$vm[0].Split(',')
+    $private[$phase]=[long]$r[5]
+    $handles[$phase]=[long]$r[4]
+    $region[$phase]=[long]$v[3]
+  }
+  $pd=$private['settled_cleanup']-$private['preappinfo']
+  $rd=$region['settled_cleanup']-$region['preappinfo']
+  $hd=$handles['settled_cleanup']-$handles['preappinfo']
+  Write-Host "C545D_GIO_PREINIT_RESOURCE_SCOPE,arm=$Arm,private_delta=$pd,region_private_delta=$rd,handles_delta=$hd,scope=preappinfo_to_settled_cleanup,persistent_watches_allowed=1,global_idle_proven=0,leak_proven=0,raw_uploaded=0"
+  $success=$true
+} finally {
+  if($heapOn){& $xperf -stop HeapSession *> $rawLocal}
+  if($kernelOn){& $xperf -stop *> $rawLocal}
+  if((Test-Path $local) -and -not(Test-Path (Join-Path $local 'trace_stopped.signal'))){
+    try{Signal 'trace_stopped.signal'}catch{}
+  }
+  if($proc){
+    try{$proc.Refresh();if(-not $proc.WaitForExit(4000)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}}catch{}
+  }
+  if($null -eq $oldFence){Remove-Item Env:C545D_CI_ETW_PHASE_ROOT -ErrorAction SilentlyContinue}
+  else{$env:C545D_CI_ETW_PHASE_ROOT=$oldFence}
+  if($null -eq $oldSymbols){Remove-Item Env:_NT_SYMBOL_PATH -ErrorAction SilentlyContinue}
+  else{$env:_NT_SYMBOL_PATH=$oldSymbols}
+  if((Test-Path $local) -and (Test-Path (Join-Path $local 'ci_owned.signal')) -and
+     $local.StartsWith($env:RUNNER_TEMP,[StringComparison]::OrdinalIgnoreCase)){
+    Remove-Item $local -Force -Recurse -ErrorAction SilentlyContinue
+  }
+}
+if($success){$global:LASTEXITCODE=0}
+)
+  })
+  $seen=@{}
+  $summed=@{original=0L;realloc=0L;logical_free=0L;live=0L;request_bytes_live=0L}
+  $trusted=@{original=0L;realloc=0L;logical_free=0L}
+  foreach($line in $cohortRows){
+    $row=@{}
+    foreach($entry in $line.Split(',') | Select-Object -Skip 1){
+      $kv=$entry.Split('=',2)
+      if($kv.Count -ne 2 -or $row.ContainsKey($kv[0])){
+        throw 'Malformed method cohort row'
+      }
+      $row[$kv[0]]=$kv[1]
+    }
+    $category=[string]$row['category']
+    if($expectedCohorts -notcontains $category -or $seen.ContainsKey($category)){
+      throw 'Unexpected or duplicate method cohort category'
+    }
+    $seen[$category]=1
+    foreach($field in @('original','realloc','logical_free','live','request_bytes_live')){
+      $value=[long]::Parse([string]$row[$field],
+        [Globalization.NumberStyles]::None,
+        [Globalization.CultureInfo]::InvariantCulture)
+      $summed[$field]=[long]$summed[$field]+$value
+      if($category -notin @('MissingStack','NoGioFrame','GioMethodUnmatched') -and
+         $field -in @('original','realloc','logical_free')){
+        $trusted[$field]=[long]$trusted[$field]+$value
+      }
+    }
+    if(([long]$row['original']-[long]$row['logical_free']) -ne [long]$row['live']){
+      throw 'Individual source method cohort balance mismatch'
+    }
+  }
+  if($cohortRows.Count -ne 10 -or $seen.Count -ne 10 -or $safeCensus.Count -ne 1){
+    Write-Host "C545D_GIO_METHOD_COHORT_GAP,arm=$Arm,reason=MISSING_OR_DUPLICATE_COHORT,release_HOLD=1"
+    throw 'Original source-method cohort evidence incomplete'
+  }
+  $census=@{}
+  foreach($entry in $safeCensus[0].Split(',') | Select-Object -Skip 1){
+    $kv=$entry.Split('=',2)
+    if($kv.Count -eq 2){$census[$kv[0]]=$kv[1]}
+  }
+  $checks=@(
+    @($summed['live'],$census['original_allocation_live']),
+    @($summed['request_bytes_live'],$census['request_bytes_live']),
+    @($trusted['original'],$census['gio_source_origin_alloc']),
+    @($trusted['realloc'],$census['gio_source_origin_realloc']),
+    @($trusted['logical_free'],$census['gio_source_origin_logical_free'])
+  )
+  foreach($check in $checks){
+    if([long]$check[0] -ne [long]$check[1]){
+      Write-Host "C545D_GIO_METHOD_COHORT_GAP,arm=$Arm,reason=INDEPENDENT_BALANCE_MISMATCH,release_HOLD=1"
+      throw 'Per-method totals disagree with independent generic owner census'
+    }
+  }
+  foreach($row in $cohortRows){Write-Host $row}
+  Write-Host "C545D_GIO_METHOD_COHORT_ACCOUNTING_PASS,arm=$Arm,cohorts=10,independent_total_checks=5,release_HOLD=1,raw_uploaded=0"
   Write-Host $safePass[0]
   # The disposable probe performs equivalent PSAPI+VirtualQuery phases,
   # but positive deltas do NOT imply a leak and cannot be subtracted from
