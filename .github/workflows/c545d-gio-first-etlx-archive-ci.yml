@@ -1,0 +1,31 @@
+name: C545D saved first GIO ETLX source vs phase resource reconciliation
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_first_etlx_archive_ci.py'
+      - '.github/workflows/c545d-gio-first-etlx-archive-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archived-source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject 15 false owner/lifetime/scope claims before parsing archived job
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_first_etlx_archive_ci.py --selftest
+      - name: Reuse original finished Windows job log without raw upload or new ETW
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          local_log="$(mktemp "$RUNNER_TEMP/c545d-first-gio-etlx.XXXXXX")"
+          trap 'rm -f "$local_log"' EXIT
+          gh api --allow-escape-sequences repos/taku077/c545d-recorder/actions/jobs/137733556139/logs > "$local_log"
+          python3 tests/analyze_c545d_gio_first_etlx_archive_ci.py --log "$local_log"
+          echo 'C545D_GIO_FIRST_ETLX_ARCHIVE_CI_PASS,source_run=45186553913,Windows_runs_added=0,real_host_untouched=1,release_HOLD=1'
