@@ -162,6 +162,40 @@ try {
       $allow[0] | Set-Content -Path (Join-Path $Root ("numeric/etw-$Arm-stack-gap-summary-only.txt")) -Encoding ascii
       Write-Host $allow[0]
     }
+    # NEW, DIFFERENTIATING SIGNAL from this SAME captured ETL: inventory
+    # sum of raw metric counts in structurally rejected groups, then widen
+    # the displayed stack groups from 1024 to 8192 to distinguish omitted
+    # top-N entries from rejected row accounting. Neither diagnostic is
+    # proof that arithmetic residuals identify distinct leaked addresses.
+    # Raw stack frames / paths / pointers remain in the CI-only temp dir.
+    New-Item -ItemType Directory -Path (Join-Path $Root 'numeric') -Force | Out-Null
+    function Emit-C545DSanitizedStackBounds([string]$privateReport,[string]$topLabel) {
+      if(-not(Test-Path $privateReport -PathType Leaf) -or
+         (Get-Item $privateReport).Length -lt 100 -or
+         (Get-Item $privateReport).Length -gt 16MB){
+        Write-Host "C545D_GIO_ETW_STACK_BOUNDS_GAP,arm=$Arm,top=$topLabel,reason=PRIVATE_REPORT_MISSING_OR_OVERSIZED,raw_uploaded=0"
+        return
+      }
+      $boundsSafe=@(& py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --report $privateReport --arm $Arm 2> $rawLocal)
+      $status=$LASTEXITCODE
+      $match=@($boundsSafe | Where-Object {
+        $_ -match ('^C545D_GIO_ETW_STACK_COVERAGE_BOUNDS,arm='+$Arm+',[A-Za-z0-9_,=.-]+$')
+      })
+      if($status -ne 0 -or $match.Count -ne 1) {
+        Write-Host "C545D_GIO_ETW_STACK_BOUNDS_GAP,arm=$Arm,top=$topLabel,reason=COUNTS_OR_STRUCTURE_UNPROVEN,raw_uploaded=0"
+        return
+      }
+      $match[0] | Set-Content (Join-Path $Root ("numeric/etw-"+$Arm+"-stack-"+$topLabel+"-bounds-only.txt")) -Encoding ascii
+      Write-Host $match[0]
+    }
+    Emit-C545DSanitizedStackBounds $stack '1024'
+    $wide=Join-Path $local 'stacks_top8192_private.txt'
+    & $xperf -i $etl -o $wide -symbols -a heap -stacks -top 8192 *> $rawLocal
+    if($LASTEXITCODE -eq 0) {
+      Emit-C545DSanitizedStackBounds $wide '8192'
+    } else {
+      Write-Host "C545D_GIO_ETW_STACK_BOUNDS_GAP,arm=$Arm,top=8192,reason=ACTION_FAILED,raw_uploaded=0"
+    }
     # When a top-1024 call-stack report is incomplete, try the documented
     # Xperf -images mode as an independent *top-frame-image group* count.
     # It is NOT an allocating function, and can also be incomplete.
