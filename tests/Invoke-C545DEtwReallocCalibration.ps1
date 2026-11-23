@@ -25,7 +25,7 @@ if($SelfTest){
   foreach($entry in $bad) {
     $blocked=$false
     try{Check-Plan $entry}catch{$blocked=$true}
-    if(-not$blocked){throw 'Unsafe synthetic plan accepted'}
+    if(-not $blocked){throw 'Unsafe synthetic plan accepted'}
   }
   Write-Host 'C545D_REALLOC_SYNTHETIC_CONTROLLER_SELFTEST_PASS,positive=1,negative=4,CI_only=1,host_untouched=1'
   return
