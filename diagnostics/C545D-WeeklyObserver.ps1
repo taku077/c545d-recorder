@@ -198,7 +198,9 @@ function Save-ObserverState($state,[string]$root){
  $temp=$name+'.partial'
  [IO.File]::WriteAllText($temp,(ConvertTo-Json $state -Depth 5),$utf8)
  if(Test-Path -LiteralPath $name){
-   [IO.File]::Replace($temp,$name,$null)
+   # .NET Framework 4.x on Windows requires a real backup path here;
+   # a null backup path failed the isolated CI runtime.
+   [IO.File]::Replace($temp,$name,($name+'.previous'))
  }else{Move-Item -LiteralPath $temp -Destination $name}
 }
 function Export-WhenDue($state,[string]$root,[datetime]$now){
@@ -252,6 +254,7 @@ function Test-Observer {
    try{Assert-ObserverRow $bad}catch{$denied=$true}
    if(-not $denied){throw 'SECRET_UNSAFE_SCHEMA_ACCEPTED'}
    $state=Load-ObserverState $root $now
+   Save-ObserverState $state $root
    Save-ObserverState $state $root
    $restored=Load-ObserverState $root $now.AddHours(3)
    if((ToUtc $restored.next_cut_utc) -ne $now.AddHours(72)){throw 'RESTART_CHANGED_CADENCE'}
