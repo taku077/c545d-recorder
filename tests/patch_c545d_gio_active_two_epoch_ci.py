@@ -45,7 +45,7 @@ def patch(src: str) -> str:
     for anchor in (ARG, BASE, CYCLE_IF, CYCLE_TAIL, MAIN):
         if src.count(anchor) != 1:
             raise ValueError("missing_or_duplicated_active_epoch_source_anchor")
-    if not (src.index(MAIN) < src.index(BASE) < src.index(CYCLE_TAIL)):
+    if not (src.index(MAIN) < src.index(BASE) < src.index(CYCLE_IF) < src.index(CYCLE_TAIL)):
         raise ValueError("active_epoch_measurement_order_invalid")
     # Immutable patch sequence; never use regex interpolation on untrusted C.
     src = src.replace(MAIN, HELPER + "\n" + MAIN, 1)
@@ -86,7 +86,7 @@ def selftest() -> None:
         sample.replace(BASE, BASE + BASE),
         sample.replace(CYCLE_IF, CYCLE_IF + CYCLE_IF),
         sample.replace(CYCLE_TAIL, CYCLE_TAIL + CYCLE_TAIL),
-        sample.replace(CYCLE_IF, "").replace(BASE, BASE + CYCLE_IF),
+        sample.replace(CYCLE_IF, "").replace(BASE, CYCLE_IF + BASE),
     ]
     for bad in cases:
         try:
