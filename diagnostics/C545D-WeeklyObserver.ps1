@@ -258,7 +258,20 @@ function Test-Observer {
    Save-ObserverState $state $root
    $restored=Load-ObserverState $root $now.AddHours(3)
    if((ToUtc $restored.next_cut_utc) -ne $now.AddHours(72)){throw 'RESTART_CHANGED_CADENCE'}
-   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,72h_restart=1,recorder_untouched=1'
+   $first=Export-WhenDue $restored $root $now.AddHours(73)
+   if(-not $first -or -not(Test-Path $first)){throw 'FIRST_72H_REPORT_MISSING'}
+   if((ToUtc $restored.next_cut_utc) -ne $now.AddHours(72).AddDays(7)){
+     throw 'WEEKLY_INTERVAL_NOT_SEVEN_DAYS'
+   }
+   $second=Export-WhenDue $restored $root $now.AddHours(72).AddDays(8)
+   if(-not $second -or -not(Test-Path $second)){throw 'SEVEN_DAY_REPORT_MISSING'}
+   $emptyUnpack=Join-Path $root 'empty_week'
+   Expand-Archive -LiteralPath $second -DestinationPath $emptyUnpack
+   $emptyMeta=Get-Content (Join-Path $emptyUnpack 'manifest.json') -Raw|ConvertFrom-Json
+   if($emptyMeta.actual_samples -ne 0 -or $emptyMeta.missing_intervals -ne 'not_classified'){
+     throw 'MISSING_SAMPLES_SILENTLY_MARKED_NORMAL'
+   }
+   Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
  }finally{
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
  }
