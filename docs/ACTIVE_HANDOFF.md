@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a0f8edaefb61b3a5682b41206b495281927ecedb`
-- **PR updated at (UTC):** `2026-11-23T11:01:39Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a0f8edaefb61b3a5682b41206b495281927ecedb/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `d613f5740ec64660917aae57adeadb710cfd8a47`
+- **PR updated at (UTC):** `2026-11-23T11:02:57Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/d613f5740ec64660917aae57adeadb710cfd8a47/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45161395303](https://github.com/taku077/c545d-recorder/actions/runs/45161395303) |
-| C545D GLib 2.82.4 Win32 watcher epoch source audit | failure | [#45161388998](https://github.com/taku077/c545d-recorder/actions/runs/45161388998) |
+| C545D active development handoff auto-refresh | in_progress | [#45161583095](https://github.com/taku077/c545d-recorder/actions/runs/45161583095) |
+| C545D GLib 2.82.4 Win32 watcher epoch source audit | success | [#45161578777](https://github.com/taku077/c545d-recorder/actions/runs/45161578777) |
 
 ## Current development findings from the active PR
 
