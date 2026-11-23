@@ -26,6 +26,6 @@ jobs:
           set -euo pipefail
           private_log="$(mktemp "$RUNNER_TEMP/c545d-watch-original.XXXXXX")"
           trap 'rm -f "$private_log"' EXIT
-          gh api repos/taku077/c545d-recorder/actions/jobs/137554982677/logs > "$private_log"
+          gh api --allow-escape-sequences repos/taku077/c545d-recorder/actions/jobs/137554982677/logs > "$private_log"
           python3 tests/analyze_c545d_gio_watch_active_epoch_saved_ci.py --log "$private_log"
           echo 'C545D_WATCH_ACTIVE_ARCHIVE_CI_PASS,source_run=45133754345,windows_runs_added=0,real_host_untouched=1,release_HOLD=1'
