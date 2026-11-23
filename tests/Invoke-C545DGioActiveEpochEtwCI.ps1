@@ -321,6 +321,41 @@ try {
   foreach($line in $epochRows){Write-Host $line}
   foreach($line in $epochScopes){Write-Host $line}
   Write-Host $epochPass[0]
+  # Two mechanisms must not be conflated: this is an exact CI-only GIO
+  # wrapper frame around IPackage2_get_DisplayName, not a direct proof of
+  # WinRT OS allocation ownership or a production-safe fix.
+  $getters=@($source | Where-Object {
+    $_ -like "C545D_GIO_ACTIVE_GETTER_FRAME_SCOPE,arm=$Arm,*"
+  })
+  if($getters.Count -ne 3){throw 'Getter original source cutoff scope incomplete'}
+  $gseen=@{}
+  $getterShape='^C545D_GIO_ACTIVE_GETTER_FRAME_SCOPE,arm='+[regex]::Escape($Arm)+
+    ',phase=(baseline|cycle1|cycle2),live=\d+,request_bytes_live=\d+,'+
+    'package_nearest_live=\d+,package_nearest_bytes=\d+,'+
+    'verified_module_and_symbol=1,original_allocation_stack_only=1,'+
+    'direct_winrt_owner_not_proven=1,release_HOLD=1$'
+  foreach($line in $getters){
+    $m=[regex]::Match($line,$getterShape)
+    if(-not $m.Success -or $gseen.ContainsKey($m.Groups[1].Value)){
+      throw 'Getter source phase malformed or duplicated'
+    }
+    $gseen[$m.Groups[1].Value]=1
+  }
+  if($gseen.Count -ne 3){throw 'Getter source phases not complete'}
+  $rawGetter=@($source | Where-Object {
+    $_ -match ('^C545D_GIO_GETTER_MARKER_ORIGINALS,arm='+[regex]::Escape($Arm)+
+      ',raw_original_stack_hits=\d+,exact_private_gio_symbol=1,'+
+      'direct_winrt_owner_not_proven=1,release_HOLD=1$')
+  })
+  if($rawGetter.Count -ne 1){throw 'Getter frame original-hit evidence missing'}
+  $hits=[regex]::Match($rawGetter[0],'raw_original_stack_hits=(\d+)')
+  if(-not $hits.Success){throw 'Getter original-hit numeric field malformed'}
+  if($Arm -eq 'registry' -and [long]$hits.Groups[1].Value -eq 0){
+    throw 'Getter function exact PDB frame not exercised in registry path'
+  }
+  foreach($row in $getters){Write-Host $row}
+  Write-Host $rawGetter[0]
+  Write-Host "C545D_GIO_GETTER_FRAME_QPC_ACCOUNTING_PASS,arm=$Arm,phases=3,source_private_marker=1,release_HOLD=1"
   Write-Host $safePass[0]
   # The disposable probe performs equivalent PSAPI+VirtualQuery phases,
   # but positive deltas do NOT imply a leak and cannot be subtracted from
