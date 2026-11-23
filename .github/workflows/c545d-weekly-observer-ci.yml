@@ -44,11 +44,12 @@ jobs:
           $unpacked=Join-Path $env:RUNNER_TEMP 'weekly-check-expanded'
           Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $unpacked
           $names=@(Get-ChildItem $unpacked -File|ForEach-Object Name|Sort-Object)
-          if((Compare-Object @('manifest.json','process_metrics.csv','summary.json') $names).Count -ne 0){
+          if((Compare-Object @('manifest.json','process_metrics.csv','recording_events.csv','summary.json') $names).Count -ne 0){
             throw 'Unexpected/missing report files'
           }
           $blob=(Get-Content (Join-Path $unpacked 'manifest.json') -Raw)+
             (Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw)+
+            (Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw)+
             (Get-Content (Join-Path $unpacked 'summary.json') -Raw)
           foreach($forbidden in @('rtsp://','user-pw','authorization','password=','C:\Users\', '192.0.2.1', 'camerauser')){
             if($blob.IndexOf($forbidden,[StringComparison]::OrdinalIgnoreCase) -ge 0){
@@ -56,11 +57,18 @@ jobs:
             }
           }
           $manifest=Get-Content (Join-Path $unpacked 'manifest.json') -Raw|ConvertFrom-Json
-          if($manifest.schema_version -ne 1 -or $manifest.diagnostics_version -ne '0.1.0' -or
+          if($manifest.schema_version -ne 1 -or $manifest.diagnostics_version -ne '0.2.0' -or
              $manifest.actual_samples -ne 1 -or
-             $manifest.recording_integrity -ne 'not_collected' -or
+             $manifest.recording_integrity -ne 'closed_rename_events_only_not_media_integrity' -or
              $manifest.heavy_etw -ne 'disabled' -or $manifest.automatic_upload -ne $false){
             throw 'Missing report version/actual sample/safety flags'
+          }
+          $recording=(Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw)
+          if($recording -notmatch 'utc_time,event,count' -or
+             $manifest.video_stream_count -ne 'not_collected' -or
+             $manifest.aac_audio_integrity -ne 'not_collected' -or
+             $manifest.eos_confirmation -ne 'not_collected'){
+             throw 'Namer-only evidence overstated AV or EOS proof'
           }
           $csv=@(Import-Csv (Join-Path $unpacked 'process_metrics.csv'))
           if($csv.Count -ne 1 -or $csv[0].status -notin @('OK','NOT_RUNNING','MULTIPLE_PROCESSES','PROCESS_ACCESS_ERROR','PROCESS_LOOKUP_ERROR')){
