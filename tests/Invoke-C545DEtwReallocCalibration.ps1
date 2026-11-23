@@ -1,6 +1,6 @@
 # CI-only small synthetic ETW realloc-source grouping experiment.
 # No GIO, camera, recorder, host registry writes, IFEO, WPR, or raw ETL upload.
-param([switch]$SelfTest,[switch]$ThroughCleanup)
+param([switch]$SelfTest,[switch]$ThroughCleanup,[switch]$GenericMixed)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
@@ -29,6 +29,9 @@ if($SelfTest){
   }
   Write-Host 'C545D_REALLOC_SYNTHETIC_CONTROLLER_SELFTEST_PASS,positive=1,negative=4,CI_only=1,host_untouched=1'
   return
+}
+if($GenericMixed -and -not $ThroughCleanup){
+  throw 'Mixed-size fixture requires explicit postcleanup producer signal'
 }
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){
   throw 'Only isolated disposable Windows GitHub Actions accepted'
@@ -83,7 +86,8 @@ try {
   if(@($existing | Where-Object {$_ -match '(?i)\bHeapSession\b|\bNT Kernel Logger\b'}).Count){
     throw 'Refuse to modify existing external ETW sessions'
   }
-  & cl.exe /nologo /W4 /WX /MT /Od /Zi /TC tests/c545d_etw_realloc_transfer_ci.c "/Fe:$exe" "/Fd:$root\realloc.pdb" /link /DEBUG "/PDB:$root\realloc.pdb" *> $raw
+  $nativeSource=if($GenericMixed){'tests/c545d_etw_generic_mixed_size_ci.c'}else{'tests/c545d_etw_realloc_transfer_ci.c'}
+  & cl.exe /nologo /W4 /WX /MT /Od /Zi /TC $nativeSource "/Fe:$exe" "/Fd:$root\realloc.pdb" /link /DEBUG "/PDB:$root\realloc.pdb" *> $raw
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe -PathType Leaf)){
     throw 'Synthetic realloc source compilation failed'
   }
@@ -109,7 +113,11 @@ try {
   $heapOn=$true
   Signal 'go.signal'
   Wait-Signal 'finished.signal' 30
-  Write-Host 'C545D_REALLOC_WINDOW_STAGE,known_alloc=64,known_realloc=16,known_free=48,held=16'
+  if($GenericMixed){
+    Write-Host 'C545D_GENERIC_WINDOW_STAGE,known_alloc=24,known_realloc=6,known_precleanup_free=18,known_precleanup_held=6'
+  }else{
+    Write-Host 'C545D_REALLOC_WINDOW_STAGE,known_alloc=64,known_realloc=16,known_free=48,held=16'
+  }
   if($ThroughCleanup){
     # Both native phases are captured in ONE sequential ETW session.
     # The known 16 held blocks are freed only after the controller
@@ -118,7 +126,11 @@ try {
     if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
       throw 'Synthetic post-epoch cleanup did not complete'
     }
-    Write-Host 'C545D_REALLOC_WINDOW_STAGE,precleanup_held=16,postcleanup_freed=16,fixture_process_exited=1'
+    if($GenericMixed){
+      Write-Host 'C545D_GENERIC_WINDOW_STAGE,precleanup_held=6,postcleanup_freed=6,fixture_process_exited=1'
+    }else{
+      Write-Host 'C545D_REALLOC_WINDOW_STAGE,precleanup_held=16,postcleanup_freed=16,fixture_process_exited=1'
+    }
   }
   & $xperf -loggers *> $stats
   if($LASTEXITCODE -ne 0){throw 'ETW logger integrity unavailable'}
@@ -168,16 +180,28 @@ try {
   # after producer-ack signal; only tiny synthetic native fixture is allowed.
   # Do not export the ETL, payload pointers, stack names or PID.
   # This is a distinct real-event validation, not another GIO measurement.
-  $identityArgs=@('--etl',$etl,'--pid',"$($proc.Id)",'--preworkload-and-losszero-verified')
-  if($ThroughCleanup){$identityArgs+= '--expect-through-cleanup'}
+  if($GenericMixed){
+    $identityArgs=@('--generic-fixture-etl',$etl,'--pid',"$($proc.Id)",'--preworkload-and-losszero-verified')
+  }else{
+    $identityArgs=@('--etl',$etl,'--pid',"$($proc.Id)",'--preworkload-and-losszero-verified')
+    if($ThroughCleanup){$identityArgs+= '--expect-through-cleanup'}
+  }
   $identities=@(& dotnet $adapter @identityArgs 2> $raw)
   $identityStatus=$LASTEXITCODE
   $safeIdentity=@($identities | Where-Object {
-    $_ -match '^C545D_ETW_REALLOC_IDENTITY_MATCHED,[A-Za-z0-9_,=.-]+$'
+    if($GenericMixed){
+      $_ -match '^C545D_ETW_GENERIC_HEAP_LIFETIME,[A-Za-z0-9_,=.-]+$'
+    }else{
+      $_ -match '^C545D_ETW_REALLOC_IDENTITY_MATCHED,[A-Za-z0-9_,=.-]+$'
+    }
   })
   if($identityStatus -ne 0 -or $safeIdentity.Count -ne 1){
     $gap=@($identities | Where-Object {
-      $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
+      if($GenericMixed){
+        $_ -match '^C545D_ETW_GENERIC_HEAP_GAP,reason=[A-Za-z0-9_]+,raw_uploaded=0,real_GIO_owner_unproven=1,release_HOLD=1$'
+      }else{
+        $_ -match '^C545D_ETW_REALLOC_IDENTITY_GAP,reason=[A-Za-z0-9_]+(?:,[a-zA-Z0-9_]+=-?[0-9]+)*,raw_uploaded=0,release_HOLD=1$'
+      }
     })
     if($gap.Count -eq 1){Write-Host $gap[0]}
     else{Write-Host 'C545D_ETW_REALLOC_IDENTITY_GAP,reason=unverified_adapter_output,raw_uploaded=0,release_HOLD=1'}
@@ -191,7 +215,9 @@ try {
     }
   }
   $complete=$true
-  if($ThroughCleanup){
+  if($GenericMixed){
+    Write-Host 'C545D_GENERIC_SYNTHETIC_ETW_COMPLETE,original_alloc=24,realloc=6,logical_freed=24,final_held=0,held_at_phase_boundary=6,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
+  }elseif($ThroughCleanup){
     Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=64,known_held_at_stop=0,precleanup_held=16,postcleanup_freed=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
   } else {
     Write-Host 'C545D_REALLOC_SYNTHETIC_ETW_COMPLETE,known_alloc=64,known_realloc=16,known_free=48,known_held=16,logger_loss_zero=1,source_owner_not_real_GIO=1,raw_uploaded=0,host_untouched=1'
