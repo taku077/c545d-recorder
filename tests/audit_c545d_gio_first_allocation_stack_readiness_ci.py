@@ -48,8 +48,8 @@ def verify(probe: str, workflow: str) -> str:
            workflow.index(required_workflow[3])<
            workflow.index(required_workflow[4])):
         raise ValueError("build_order_or_meson_options_changed")
-    if "LookupSymbolsForModule" in workflow or
-       "Test-Path (Join-Path $build 'gio-2.0-0.pdb')" in workflow:
+    if ("LookupSymbolsForModule" in workflow or
+        "Test-Path (Join-Path $build 'gio-2.0-0.pdb')" in workflow):
         raise ValueError("pdb_already_checked_reassess")
     return (
         "C545D_GIO_ORIGINAL_SOURCE_READINESS,"
