@@ -119,6 +119,14 @@ internal sealed class GenericHeapLifetime
         pending.Clear();
     }
 
+    internal bool IsTracked(ulong heap, ulong address)
+    {
+        return live.ContainsKey(new Key(heap,address)) ||
+               pending.ContainsKey(new Key(heap,address));
+    }
+
+    internal int PendingFreeCount => pending.Count;
+
     internal (int Count,long Bytes,int Reallocated,int Unresolved) Snapshot()
     {
         long bytes=0;
