@@ -123,12 +123,15 @@ try {
     # The known 16 held blocks are freed only after the controller
     # receives the finished.signal and explicitly authorizes cleanup.
     Signal 'exit.signal'
-    if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
-      throw 'Synthetic post-epoch cleanup did not complete'
-    }
     if($GenericMixed){
-      Write-Host 'C545D_GENERIC_WINDOW_STAGE,precleanup_held=6,postcleanup_freed=6,fixture_process_exited=1'
+      Wait-Signal 'freed.signal' 30
+      $proc.Refresh()
+      if($proc.HasExited){throw 'Mixed-size producer unexpectedly exited before ETW stop'}
+      Write-Host 'C545D_GENERIC_WINDOW_STAGE,precleanup_held=6,postcleanup_freed=6,fixture_process_still_alive=1'
     }else{
+      if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
+        throw 'Synthetic post-epoch cleanup did not complete'
+      }
       Write-Host 'C545D_REALLOC_WINDOW_STAGE,precleanup_held=16,postcleanup_freed=16,fixture_process_exited=1'
     }
   }
@@ -208,6 +211,12 @@ try {
     throw 'Real ETW old-new identity unverified: synthetic source still safe'
   }
   Write-Host $safeIdentity[0]
+  if($GenericMixed){
+    Signal 'terminate.signal'
+    if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
+      throw 'Mixed-size fixture failed normal exit after ETW validation'
+    }
+  }
   if(-not $ThroughCleanup){
     Signal 'exit.signal'
     if(-not $proc.WaitForExit(10000) -or $proc.ExitCode -ne 0){
@@ -229,6 +238,9 @@ try {
     try{
       $proc.Refresh()
       if(-not $proc.HasExited){
+        if($GenericMixed -and -not(Test-Path (Join-Path $root 'terminate.signal'))){
+          New-Item -ItemType File (Join-Path $root 'terminate.signal') | Out-Null
+        }
         if(-not(Test-Path (Join-Path $root 'exit.signal'))){
           New-Item -ItemType File (Join-Path $root 'exit.signal') | Out-Null
         }
