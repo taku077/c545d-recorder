@@ -23,6 +23,7 @@ PIN = {
     "gwin32appinfo.c": "f2b9cf346a18e4a525885fbd49f8bf77dc973bb5",
     "gwin32registrykey.c": "bd83b38b5ec0de126e94fd3b8b2372c492f0fc5d",
     "gwin32registrykey.h": "e2b25da4648c3e842a1d10285a88590c581c15d9",
+    "gwin32packageparser.c": "a73dbba642c842606e30e6cf6cf339264fd18e70",
 }
 MAX_SOURCE = 280_000
 
@@ -40,8 +41,8 @@ def section(src: str, beginning: str, ending: str, label: str) -> str:
     return result
 
 
-def verify_source(app: str, key: str, header: str) -> str:
-    if any(not isinstance(x, str) or len(x) > MAX_SOURCE for x in (app, key, header)):
+def verify_source(app: str, key: str, header: str, package: str) -> str:
+    if any(not isinstance(x, str) or len(x) > MAX_SOURCE for x in (app, key, header, package)):
         raise ValueError("source_size_or_type_invalid")
     callback = section(app, "static void\nkeys_updated (", "static void\nwatch_keys (void)\n{", "appinfo_callback")
     watchers = section(app, "static void\nwatch_keys (void)\n{",
@@ -50,6 +51,9 @@ def verify_source(app: str, key: str, header: str) -> str:
                      "/* Initializes Windows AppInfo.", "appinfo_worker")
     init = section(app, "void\ngio_win32_appinfo_init (gboolean do_wait)",
                    "static void g_win32_app_info_iface_init", "appinfo_init")
+    package_enum = section(
+        package, "gboolean\ng_win32_package_parser_enum_packages (",
+        "static gboolean\nparse_manifest_file (", "winrt_package_enum")
     apc = section(key, "static VOID NTAPI\nkey_changed (",
                   "/**\n * g_win32_registry_key_watch:", "registry_apc")
     watch = section(key, "gboolean\ng_win32_registry_key_watch (",
@@ -81,6 +85,21 @@ def verify_source(app: str, key: str, header: str) -> str:
     for area, evidence, label in requirements:
         if area.count(evidence) != 1:
             raise ValueError(f"{label}_missing_or_drifted")
+    # Source-scoped WinRT parser iteration is synchronous; COM cleanup
+    # precedes return. No implication of globally empty COM/WinRT caches.
+    for term in ("CoInitializeEx (", "IIterable_First (",
+                 "IIterator_get_HasCurrent (", "IIterator_get_Current (",
+                 "parse_manifest_file (sax);", "IIterator_MoveNext (",
+                 "CoUninitialize ();", "return result;"):
+        if term not in package_enum:
+            raise ValueError("winrt_owned_package_enumeration_changed")
+    if not (package_enum.index("IIterable_First (") <
+            package_enum.index("IIterator_MoveNext (") <
+            package_enum.index("CoUninitialize ();") <
+            package_enum.index("return result;")):
+        raise ValueError("package_iterator_cleanup_order_changed")
+    if "IAsyncOperation" in package_enum:
+        raise ValueError("package_enumerator_now_async_reassess")
     if "g_win32_registry_key_unwatch" in header or "g_win32_registry_key_unwatch" in key:
         raise ValueError("new_unwatch_api_requires_source_reassessment")
     # The header has a public watch function and *no* public unwatch.
@@ -100,7 +119,7 @@ def verify_source(app: str, key: str, header: str) -> str:
         "C545D_GLIB_2824_PRODUCER_SOURCE_AUDIT_PASS,"
         "watched_roots=8,one_appinfo_worker_pool=1,source_rearm_before_queue=1,"
         "source_apc_ref_held_until_callback=1,source_public_unwatch_api=0,"
-        "source_gio_DLL_PIN=1,source_cond_not_queue_drain=1,"
+        "source_gio_DLL_PIN=1,source_cond_not_queue_drain=1,"\n        "source_winrt_enum_iterator_and_COM_cleanup=1,"\n        "no_global_COM_cache_quiet_inference=1,"
         "watch_zero_not_valid_default=1,worker_idle_not_global_quiet=1,"
         "actual_GIO_closed_epoch_proven=0,actual_heap_owner_proven=0,"
         "production_release_HOLD=1,host_untouched=1"
@@ -205,8 +224,8 @@ def main() -> None:
         return
     if not args.verify_pinned:
         p.error("must explicitly choose --selftest or --verify-pinned")
-    app,key,header=(get_pinned(name) for name in PIN)
-    print(verify_source(app,key,header))
+    app,key,header,package=(get_pinned(name) for name in PIN)
+    print(verify_source(app,key,header,package))
 
 
 if __name__ == "__main__":
