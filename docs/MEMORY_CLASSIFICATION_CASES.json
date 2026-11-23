@@ -72,8 +72,7 @@
         "tests/C545DEtwHeapIdentity/GenericHeapLifetime.cs",
         "tests/C545DEtwHeapIdentity/GenericEtwFixtureReader.cs",
         "tests/c545d_etw_generic_mixed_size_ci.c",
-        "docs/C545D_REAL_ETW_GENERIC_MIXED_SIZE_20261123.md",
-        ".github/workflows/c545d-etw-generic-mixed-size-ci.yml"
+        "docs/C545D_REAL_ETW_GENERIC_MIXED_SIZE_20261123.md"
       ],
       "next_automatic_action": "No further repeats of native uniform360->720, mixed 192/448/832, GIO16 top8192, 4h host, or old source-only tests. Implement original allocation stack resolution via Microsoft PerfView TraceEvent TraceLog.OpenOrConvert/CallStack on disposable private ETL and fail-closed source class allowlist; source-check frame availability and identity through realloc/free, with numeric unresolved stack counts. Then integrate with source-backed comparable active AppInfo phase (stable watched roots, queued and active worker/registration counters); only then one new bounded disposable Windows GIO run collecting private/region/CPU/handles+event owner lifetime. Keep production HOLD.",
       "decisive_rule": "Nochange 0 and registry 16061 are observed newly allocated Win32 heap live blocks at ETW stop last4/16, not process-wide leaks. Worker_active_after_cleanup=1 and worker_active_final=0 from the same run make expected-lifetime proof incomplete, not leak confirmation; source-validated GIO stack 15595 not direct owner, 466 unknown. Classify LEAK_CONFIRMED only after owner source and post-expected-lifetime unfreed growth at comparable windows; bounded retention requires plateau and heap free/commit reconciliation. Until then evidence_gap.",
