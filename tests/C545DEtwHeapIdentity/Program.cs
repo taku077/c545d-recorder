@@ -22,9 +22,17 @@ internal static class Program
     private sealed class IdentityTracker
     {
         private readonly Dictionary<(ulong Heap, ulong Address), Block> live = new();
+        // On this WPT build the old block emits a HeapFree event BEFORE
+        // HeapReAlloc(old,new). Defer classifying an observed free as an
+        // application free until a matching realloc can consume it.
+        private readonly Dictionary<(ulong Heap, ulong Address), (Block Value, int Sequence)> pendingFree = new();
+        private int sequence;
+        internal int RawSelectedFree { get; private set; }
+        internal int ReallocAfterFree { get; private set; }
+        internal int MaxFreeReallocDistance { get; private set; }
         internal int OriginalAlloc { get; private set; }
         internal int Realloc { get; private set; }
-        internal int Freed { get; private set; }
+        internal int Freed => pendingFree.Count;
         internal int Moved { get; private set; }
         internal int Inplace { get; private set; }
         internal int OtherRealloc { get; private set; }
@@ -33,12 +41,14 @@ internal static class Program
 
         internal void OnAlloc(ulong heap, ulong addr, long bytes)
         {
+            sequence++;
             if (bytes != 360)
             {
                 UnrelatedAlloc++;
                 return;
             }
-            if (heap == 0 || addr == 0 || !live.TryAdd((heap,addr), new Block(bytes, 0)))
+            if (heap == 0 || addr == 0 || pendingFree.ContainsKey((heap,addr)) ||
+                !live.TryAdd((heap,addr), new Block(bytes, 0)))
                 throw new GapException("duplicate_or_invalid_original_address");
             OriginalAlloc++;
             if (OriginalAlloc > 64)
@@ -48,17 +58,30 @@ internal static class Program
         internal void OnRealloc(ulong heap, ulong oldAddress, ulong newAddress,
                                 long oldBytes, long newBytes)
         {
-            if (!live.TryGetValue((heap, oldAddress), out var prior))
+            sequence++;
+            var fromLive=live.TryGetValue((heap,oldAddress),out Block? prior);
+            if(!fromLive)
             {
-                OtherRealloc++;
-                return;
+                if (!pendingFree.TryGetValue((heap,oldAddress),out var pending))
+                {
+                    OtherRealloc++;
+                    return;
+                }
+                int distance=sequence-pending.Sequence;
+                if (distance<1 || distance>32)
+                    throw new GapException("free_to_realloc_sequence_not_local");
+                MaxFreeReallocDistance=Math.Max(MaxFreeReallocDistance,distance);
+                prior=pending.Value;
+                pendingFree.Remove((heap,oldAddress));
+                ReallocAfterFree++;
             }
             if (heap == 0 || oldAddress == 0 || newAddress == 0 ||
-                prior.Size != oldBytes || newBytes != 720)
+                prior is null || prior.Size != oldBytes || newBytes != 720)
                 throw new GapException("realloc_identity_or_size_mismatch");
-            if (oldAddress != newAddress && live.ContainsKey((heap, newAddress)))
+            if (oldAddress != newAddress && (live.ContainsKey((heap, newAddress)) ||
+                    pendingFree.ContainsKey((heap,newAddress))))
                 throw new GapException("realloc_target_collision");
-            if (!live.Remove((heap,oldAddress)))
+            if (fromLive && !live.Remove((heap,oldAddress)))
                 throw new GapException("realloc_old_address_missing");
             live.Add((heap,newAddress), new Block(newBytes, prior.Reallocations + 1));
             Realloc++;
@@ -69,10 +92,16 @@ internal static class Program
 
         internal void OnFree(ulong heap, ulong address)
         {
-            if (live.Remove((heap,address), out _))
+            sequence++;
+            if (live.Remove((heap,address), out var prior))
             {
-                Freed++;
-
+                RawSelectedFree++;
+                if (!pendingFree.TryAdd((heap,address),(prior,sequence)))
+                    throw new GapException("duplicate_provisional_free");
+            }
+            else if (pendingFree.ContainsKey((heap,address)))
+            {
+                throw new GapException("duplicated_selected_address_free");
             }
             else
             {
@@ -100,6 +129,10 @@ internal static class Program
             return $",events_from_pid={events},observed_360_alloc={OriginalAlloc},"+
                    $"observed_linked_realloc={Realloc},observed_linked_free={Freed},"+
                    $"observed_held_count={snap.Live},observed_held_bytes={snap.Bytes},"+
+                   $"observed_raw_selected_free={RawSelectedFree},"+
+                   $"observed_realloc_after_free={ReallocAfterFree},"+
+                   $"observed_max_free_realloc_distance={MaxFreeReallocDistance},"+
+                   $"observed_pending_true_free={pendingFree.Count},"+
                    $"observed_reallocated_held_count={snap.ReallocatedLive},"+
                    $"observed_realloc_moved={Moved},observed_realloc_inplace={Inplace},"+
                    $"unrelated_realloc={OtherRealloc},unrelated_free={OtherFree},"+
@@ -117,6 +150,8 @@ internal static class Program
                 $"original_alloc={OriginalAlloc},realloc={Realloc},tracked_free={Freed},"+
                 $"held_at_trace_stop={snap.Live},held_bytes={snap.Bytes},"+
                 $"realloc_moved={Moved},realloc_inplace={Inplace},"+
+                $"raw_selected_free={RawSelectedFree},realloc_after_provisional_free={ReallocAfterFree},"+
+                $"max_provisional_free_to_realloc_event_distance={MaxFreeReallocDistance},"+
                 $"unrelated_alloc_events={UnrelatedAlloc},"+
                 $"unrelated_realloc_events={OtherRealloc},unrelated_free_events={OtherFree},"+
                 "original_address_identity_preserved=1,"+
@@ -144,6 +179,19 @@ internal static class Program
         for(ulong i=49;i<=64;i++) inplace.OnRealloc(101,i,i,360,720);
         for(ulong i=1;i<=48;i++) inplace.OnFree(101,i);
         Require(inplace.Validate().Contains("realloc_inplace=16"),"fixture_inplace_failed");
+        // Exact native ETW ordering measured on the original private Windows
+        // fixture: a HeapFree for the old address precedes the HeapReAlloc.
+        // The provisional free must NOT erase its HeapAlloc origin.
+        var prefree=new IdentityTracker();
+        for(ulong i=1;i<=64;i++) prefree.OnAlloc(101,i,360);
+        for(ulong i=49;i<=64;i++)
+        {
+            prefree.OnFree(101,i);
+            prefree.OnRealloc(101,i,1000+i,360,720);
+        }
+        for(ulong i=1;i<=48;i++)prefree.OnFree(101,i);
+        Require(prefree.Validate().Contains("realloc_after_provisional_free=16"),
+                "native_free_before_realloc_fixture_failed");
         var negative=new List<Action>
         {
             () => {var t=new IdentityTracker(); t.OnAlloc(1,1,360);t.OnAlloc(1,1,360);},
@@ -155,6 +203,11 @@ internal static class Program
             () => {var t=new IdentityTracker();for(ulong i=1;i<=65;i++)t.OnAlloc(1,i,360);},
             () => {var t=new IdentityTracker();t.OnAlloc(1,1,360);t.OnFree(1,1);t.Validate();},
             () => {var t=new IdentityTracker();t.OnAlloc(1,0,360);},
+            () => {var t=new IdentityTracker();t.OnAlloc(1,1,360);t.OnFree(1,1);t.OnFree(1,1);},
+            () => {var t=new IdentityTracker();t.OnAlloc(1,1,360);t.OnFree(1,1);t.OnAlloc(1,1,360);},
+            () => {var t=new IdentityTracker();t.OnAlloc(1,1,360);t.OnFree(1,1);
+                for(int z=0;z<35;z++)t.OnAlloc(1,1000UL+(ulong)z,100);
+                t.OnRealloc(1,1,100,360,720);},
         };
         for(int i=0;i<negative.Count;i++)
         {
@@ -162,7 +215,7 @@ internal static class Program
             try { negative[i](); } catch(GapException) { rejected=true; }
             Require(rejected,"negative_fixture_wrongly_accepted");
         }
-        Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_SELFTEST_PASS,positive=2,negative=9,pointers_exposed=0,real_ETL_parsed=0,host_untouched=1");
+        Console.WriteLine("C545D_ETW_REALLOC_IDENTITY_SELFTEST_PASS,positive=3,negative=12,provisional_free_before_realloc=1,pointers_exposed=0,real_ETL_parsed=0,host_untouched=1");
     }
 
     private static int Main(string[] args)
