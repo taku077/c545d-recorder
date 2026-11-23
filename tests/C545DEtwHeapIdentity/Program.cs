@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Parsers;
+using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 
 internal static class Program
 {
