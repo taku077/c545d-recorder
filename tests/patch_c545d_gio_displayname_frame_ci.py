@@ -39,7 +39,7 @@ def patch(s: str) -> str:
     s = s.replace(ENTRY, FUNCTION + ENTRY, 1)
     s = s.replace(TARGET, TARGET.replace(
         "IPackage2_get_DisplayName", MARKER), 1)
-    if s.count(MARKER) != 3: # declaration, definition, and call
+    if s.count(MARKER) != 2: # static function definition and one getter call
         # One definition + one call is required; no partial application.
         raise ValueError("getter_frame_marker_count")
     return s
