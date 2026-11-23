@@ -73,7 +73,7 @@ internal static class Program
         AmbiguousMultipleMethods=9
     }
     private readonly record struct Owner(bool HasStack,bool HasGioFrame,
-        bool ExactGioMethod,Cohort Cohort);
+        bool ExactGioMethod,Cohort Cohort,Cohort NearestKnown,bool FirstGioExact);
     private static readonly Dictionary<string,Cohort> TrustedGioMethods=
         new(StringComparer.Ordinal)
     {
@@ -99,9 +99,10 @@ internal static class Program
     private static Owner Classify(IReadOnlyList<Frame>? frames)
     {
         if(frames is null || frames.Count==0)
-            return new(false,false,false,Cohort.MissingStack);
+            return new(false,false,false,Cohort.MissingStack,Cohort.MissingStack,false);
         if(frames.Count>256)throw new ArgumentException("stack_depth_exceeded");
-        bool gio=false;
+        bool gio=false,firstGioExact=false;
+        Cohort nearest=Cohort.GioMethodUnmatched;
         var hits=new HashSet<Cohort>();
         foreach(var f in frames)
         {
@@ -109,17 +110,28 @@ internal static class Program
                 ? f.Module[..^4] : f.Module;
             if(!string.Equals(name,GioModule,StringComparison.OrdinalIgnoreCase))
                 continue;
+            bool firstGioFrame=!gio;
             gio=true;
             var exact=NormalizeFunction(f.Function);
             if(exact is not null && TrustedGioMethods.TryGetValue(exact,out var method))
+            {
                 hits.Add(method);
+                // TraceEvent starts at event frame, then walks Caller.
+                // Nearest allowlisted function is a PROXY, not proven direct origin.
+                if(nearest==Cohort.GioMethodUnmatched)
+                {
+                    nearest=method;
+                    firstGioExact=firstGioFrame;
+                }
+            }
         }
         // A stack containing multiple distinct allowlisted functions proves
         // GIO participation, NOT one arbitrary original allocating method.
         Cohort cohort=hits.Count>1?Cohort.AmbiguousMultipleMethods:
             hits.Count==1?hits.First():
             gio?Cohort.GioMethodUnmatched:Cohort.NoGioFrame;
-        return new(true,gio,hits.Count>0,cohort);
+        if(!gio)nearest=Cohort.NoGioFrame;
+        return new(true,gio,hits.Count>0,cohort,nearest,firstGioExact);
     }
 
     // Separately audited method-level ledger; the existing size/address
@@ -241,17 +253,21 @@ internal static class Program
                knownFree!=generic.GioMethodLogicalFrees)
                 throw new ArgumentException("cohort_generic_reconciliation_failed");
         }
-        internal void Report(string arm)
+        internal void Report(string arm,bool nearest=false)
         {
             foreach(Cohort cohort in Enum.GetValues<Cohort>())
             {
                 var x=Counts(cohort);
-                Console.WriteLine("C545D_GIO_METHOD_COHORT,"+
+                string label=nearest?"C545D_GIO_NEAREST_METHOD_COHORT,":
+                    "C545D_GIO_METHOD_COHORT,";
+                string proof=nearest
+                    ? "nearest_allowlisted_proxy=1,exact_alloc_owner_not_proven=1,release_HOLD=1"
+                    : "source_original_stack_only=1,global_leak_proven=0,release_HOLD=1";
+                Console.WriteLine(label+
                     $"arm={arm},category={cohort},"+
                     $"original={x.Original},realloc={x.Reallocated},"+
                     $"logical_free={x.Freed},live={x.Live},"+
-                    $"request_bytes_live={x.Bytes},"+
-                    "source_original_stack_only=1,global_leak_proven=0,release_HOLD=1");
+                    $"request_bytes_live={x.Bytes},"+proof);
             }
         }
     }
@@ -278,8 +294,17 @@ internal static class Program
         for(int i=0;i<bad.Length;i++)
             Expect(!Classify(bad[i]).ExactGioMethod);
         Expect(Classify(new Frame[]{new("gio-2.0-0",null)}).HasGioFrame);
-        Expect(Classify(new Frame[]{new("gio-2.0-0","update_registry_data"),
-            new("gio-2.0-0","keys_updated")}).Cohort==Cohort.AmbiguousMultipleMethods);
+        var nested=Classify(new Frame[]{new("gio-2.0-0","update_registry_data"),
+            new("gio-2.0-0","keys_updated")});
+        Expect(nested.Cohort==Cohort.AmbiguousMultipleMethods&&
+               nested.NearestKnown==Cohort.UpdateRegistryData&&nested.FirstGioExact);
+        var reverse=Classify(new Frame[]{new("gio-2.0-0","keys_updated"),
+            new("gio-2.0-0","update_registry_data")});
+        Expect(reverse.NearestKnown==Cohort.KeysUpdated&&
+               reverse.Cohort==Cohort.AmbiguousMultipleMethods);
+        var helper=Classify(new Frame[]{new("gio-2.0-0","unlisted_helper"),
+            new("gio-2.0-0","keys_updated")});
+        Expect(helper.NearestKnown==Cohort.KeysUpdated&&!helper.FirstGioExact);
         Expect(Classify(new Frame[]{new("gio-2.0-0","update_registry_data"),
             new("gio-2.0-0","update_registry_data()")}).Cohort==Cohort.UpdateRegistryData);
         Expect(Classify(new Frame[]{new("gio-2.0-0",null)}).Cohort==
@@ -332,7 +357,7 @@ internal static class Program
                lifetime.ProvenOriginalAllocations==0 &&
                lifetime.Snapshot().Count==0);
         Console.WriteLine("C545D_GIO_ETLX_SOURCE_CLASSIFIER_SELFTEST_PASS,"+
-            "positive=8,negative=12,method_cohort_ledger=1,"+
+            "positive=11,negative=12,method_cohort_ledger=1,"+
             "multiple_distinct_methods_ambiguous=1,realloc_target_owner_preserved=1,"+
             "LFH_not_owner=1,original_stack_survives_realloc_free=1,"+
             "real_GIO_stacks_not_yet_examined=1,release_HOLD=1");
@@ -367,6 +392,8 @@ internal static class Program
         diagnosticStage="etlx_open";
         var model=new GenericHeapLifetime();
         var methodLedger=new MethodLedger();
+        var nearestLedger=new MethodLedger();
+        int nearestFirstGioRaw=0;
         currentLifetime=model;
         countAlloc=countRealloc=countFree=missingStacks=hasGioFrameCount=exactMethodCount=loadedGioModules=lookupModules=0;
         countZeroAlloc=countZeroRealloc=countZeroOldSize=countZeroNewSize=0;
@@ -442,6 +469,9 @@ internal static class Program
                         : GenericHeapLifetime.OriginProof.Unresolved);
                     methodLedger.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
                         result.Cohort);
+                    nearestLedger.Alloc(ev.HeapHandle,ev.AllocAddress,ev.AllocSize,
+                        result.NearestKnown);
+                    if(result.FirstGioExact)nearestFirstGioRaw++;
                 };
                 heap.HeapTraceReAlloc+=ev=>
                 {
@@ -456,6 +486,8 @@ internal static class Program
                             ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
                         methodLedger.Realloc(ev.HeapHandle,ev.OldAllocAddress,
                             ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
+                        nearestLedger.Realloc(ev.HeapHandle,ev.OldAllocAddress,
+                            ev.NewAllocAddress,ev.OldAllocSize,ev.NewAllocSize);
                     }
                     else orphanRealloc++;
                 };
@@ -467,6 +499,7 @@ internal static class Program
                     {
                         model.Free(ev.HeapHandle,ev.FreeAddress);
                         methodLedger.Free(ev.HeapHandle,ev.FreeAddress);
+                        nearestLedger.Free(ev.HeapHandle,ev.FreeAddress);
                     }
                     else orphanFree++;
                 };
@@ -476,9 +509,15 @@ internal static class Program
         diagnosticStage="finalize_owner_lifetime";
         model.FinalizePending();
         methodLedger.FinalizePending();
+        nearestLedger.FinalizePending();
         methodLedger.CheckAgainst(model);
+        nearestLedger.CheckAgainst(model);
         var snapshot=model.Snapshot();
         methodLedger.Report(arm);
+        nearestLedger.Report(arm);
+        Console.WriteLine($"C545D_GIO_NEAREST_FRAME_SCOPE,arm={arm},"+
+            $"raw_first_gio_exact_method={nearestFirstGioRaw},"+
+            "raw_not_logical_owner_count=1,release_HOLD=1");
         diagnosticStage="safe_numeric_census";
         Console.WriteLine($"C545D_GIO_ETLX_FIRST_SOURCE_CENSUS,arm={arm},"+
             $"pid_heap_events={heapEvents},original_alloc_events={heapAlloc},"+

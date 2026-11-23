@@ -201,6 +201,53 @@ try {
   }
   foreach($row in $rows){Write-Host $row}
   Write-Host "C545D_GIO_METHOD_COHORT_ACCOUNTING_PASS,arm=$Arm,cohorts=10,checks=5,release_HOLD=1"
+  # The nearest allowlisted method is an ordered-stack PROXY, not proof of
+  # the exact allocating function. Preserve independent ambiguous counts.
+  $nearRows=@($source | Where-Object {
+    $_ -like "C545D_GIO_NEAREST_METHOD_COHORT,arm=$Arm,*"
+  })
+  if($nearRows.Count -ne 10){throw 'missing_nearest_method_cohorts'}
+  $nearSeen=@{}
+  $nLive=0L;$nBytes=0L;$nAlloc=0L;$nRealloc=0L;$nFree=0L
+  $nearPattern='^C545D_GIO_NEAREST_METHOD_COHORT,arm='+[regex]::Escape($Arm)+
+    ',category=([A-Za-z]+),original=(\d+),realloc=(\d+),logical_free=(\d+),'+
+    'live=(\d+),request_bytes_live=(\d+),'+
+    'nearest_allowlisted_proxy=1,exact_alloc_owner_not_proven=1,release_HOLD=1$'
+  foreach($row in $nearRows){
+    $m=[regex]::Match($row,$nearPattern)
+    if(-not $m.Success){throw 'malformed_nearest_cohort'}
+    $name=$m.Groups[1].Value
+    if($names -notcontains $name -or $nearSeen.ContainsKey($name)){
+      throw 'unknown_or_duplicate_nearest_cohort'
+    }
+    $nearSeen[$name]=1
+    $aa=[long]$m.Groups[2].Value
+    $rr=[long]$m.Groups[3].Value
+    $ff=[long]$m.Groups[4].Value
+    $ll=[long]$m.Groups[5].Value
+    $bb=[long]$m.Groups[6].Value
+    if($aa-$ff -ne $ll){throw 'nearest_cohort_balance_mismatch'}
+    $nLive+=$ll;$nBytes+=$bb
+    if($name -notin @('MissingStack','NoGioFrame','GioMethodUnmatched')){
+      $nAlloc+=$aa;$nRealloc+=$rr;$nFree+=$ff
+    }
+  }
+  if($nearSeen.Count -ne 10 -or
+     $nLive -ne [long]$summary['original_allocation_live'] -or
+     $nBytes -ne [long]$summary['request_bytes_live'] -or
+     $nAlloc -ne [long]$summary['gio_source_origin_alloc'] -or
+     $nRealloc -ne [long]$summary['gio_source_origin_realloc'] -or
+     $nFree -ne [long]$summary['gio_source_origin_logical_free']){
+    throw 'nearest_cohort_census_reconciliation_failed'
+  }
+  $nearScope=@($source | Where-Object {
+    $_ -match ('^C545D_GIO_NEAREST_FRAME_SCOPE,arm='+$Arm+
+      ',raw_first_gio_exact_method=\d+,raw_not_logical_owner_count=1,release_HOLD=1$')
+  })
+  if($nearScope.Count -ne 1){throw 'nearest_frame_scope_missing'}
+  foreach($row in $nearRows){Write-Host $row}
+  Write-Host $nearScope[0]
+  Write-Host "C545D_GIO_NEAREST_METHOD_ACCOUNTING_PASS,arm=$Arm,cohorts=10,checks=5,exact_owner_not_proven=1,release_HOLD=1"
   Write-Host $safePass[0]
   # The disposable probe performs equivalent PSAPI+VirtualQuery phases,
   # but positive deltas do NOT imply a leak and cannot be subtracted from
