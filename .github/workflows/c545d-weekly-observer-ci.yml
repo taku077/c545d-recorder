@@ -68,9 +68,19 @@ jobs:
           }
           # Synthetic malicious values in a stored CSV are rejected on ZIP export.
           $daily=@(Get-ChildItem (Join-Path $dir 'metrics') -File|Select-Object -First 1)[0].FullName
-          $raw=[IO.File]::ReadAllText($daily)
-          [IO.File]::WriteAllText($daily,$raw.Replace('NOT_RUNNING','rtsp://secret:p@host/stream6'))
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file -RootDirectory $dir -ExportNow 2>&1 | Out-Null
-          if($LASTEXITCODE -eq 0){throw 'Unsafe report row was accepted'}
+          $unsafeRows=@(Import-Csv -LiteralPath $daily)
+          if($unsafeRows.Count -ne 1){throw 'Expected one sample in synthetic CSV'}
+          $unsafeRows[0].private_bytes='rtsp://synthetic:secret@192.0.2.1/stream6'
+          $unsafeRows | Export-Csv -LiteralPath $daily -NoTypeInformation -Encoding UTF8
+          # The rejected child deliberately writes a terminating error; capture
+          # stderr to a private file instead of making the parent CI fail.
+          $negErr=Join-Path $env:RUNNER_TEMP 'weekly-negative-stderr.txt'
+          $negOut=Join-Path $env:RUNNER_TEMP 'weekly-negative-stdout.txt'
+          $negative=Start-Process -FilePath powershell.exe -ArgumentList @(
+            '-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+            '-File',$file,'-RootDirectory',$dir,'-ExportNow'
+          ) -Wait -PassThru -RedirectStandardError $negErr -RedirectStandardOutput $negOut
+          if($negative.ExitCode -eq 0){throw 'Unsafe report row was accepted'}
+          Remove-Item -LiteralPath $negErr,$negOut -Force -ErrorAction SilentlyContinue
           $global:LASTEXITCODE=0
           Write-Host 'C545D_WEEKLY_OBSERVER_WIN51_CI_PASS,scope=detached,weekly_zip=1,synthetic_secret_denied=1,real_recorder_unmodified=1,release_HOLD=1'
