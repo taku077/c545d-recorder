@@ -1,0 +1,33 @@
+name: C545D GIO 466 realloc group original numeric artifact offline replay
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/analyze_c545d_gio_etw_realloc_saved_ci.py'
+      - '.github/workflows/c545d-gio-etw-realloc-saved-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  exact-archive-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject any unproven owner/lifetime/release claims using source fixtures
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_etw_realloc_saved_ci.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-gio-etw-source-cohort-numeric-only
+          repository: taku077/c545d-recorder
+          run-id: 45133754345
+          github-token: ${{ github.token }}
+          path: artifacts/original_numeric
+      - name: Verify full 1166 group numeric accounting from the ORIGINAL Windows run
+        run: |
+          set -euo pipefail
+          python3 tests/analyze_c545d_gio_etw_realloc_saved_ci.py --folder artifacts/original_numeric
+          echo 'C545D_GIO_REALLOC_ARCHIVE_CI_PASS,source_run=45133754345,realloc_group_count=31,residual=466,new_windows_runs=0,real_host_untouched=1,release=HOLD'
