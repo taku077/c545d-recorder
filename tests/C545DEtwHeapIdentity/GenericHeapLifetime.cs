@@ -18,6 +18,9 @@ internal sealed class GenericHeapLifetime
     private readonly Dictionary<Key, Block> live = new();
     private readonly Dictionary<Key, Pending> pending = new();
     private long seq;
+    internal int ProvenOriginalAllocations { get; private set; }
+    internal int ProvenReallocationOrigins { get; private set; }
+    internal int ProvenLogicalFrees { get; private set; }
     internal int AllocCount { get; private set; }
     internal int ReallocCount { get; private set; }
     internal int FreeCount { get; private set; }
@@ -54,13 +57,15 @@ internal sealed class GenericHeapLifetime
         // If the allocator truly reused a freed address, the old object
         // cannot subsequently be reassigned to a ReAlloc event. Any such
         // later event fails closed as an orphan.
-        if (pending.Remove(key))
+        if (pending.Remove(key,out var retired))
         {
             FreeCount++;
+            if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
             AddressReuse++;
         }
         live.Add(key,new Block(size,proof,seq,0));
         AllocCount++;
+        if(proof==OriginProof.SyntheticFixture)ProvenOriginalAllocations++;
     }
 
     internal void Realloc(ulong heap, ulong oldAddress, ulong newAddress,
@@ -95,6 +100,7 @@ internal sealed class GenericHeapLifetime
         live.Add(after,new Block(newSize,original.Proof,original.Birth,
                                  original.Reallocations+1));
         ReallocCount++;
+        if(original.Proof==OriginProof.SyntheticFixture)ProvenReallocationOrigins++;
         if (oldAddress==newAddress) ReallocInplace++; else ReallocMoved++;
     }
 
@@ -117,6 +123,8 @@ internal sealed class GenericHeapLifetime
     internal void FinalizePending()
     {
         FreeCount=checked(FreeCount+pending.Count);
+        foreach(var item in pending.Values)
+            if(item.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
         pending.Clear();
     }
 
@@ -131,9 +139,10 @@ internal sealed class GenericHeapLifetime
         var key=new Key(heap,address);
         if (live.ContainsKey(key))
             throw new ArgumentException("foreign_allocation_overlaps_selected_live");
-        if (pending.Remove(key))
+        if (pending.Remove(key,out var retired))
         {
             FreeCount++;
+            if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
             AddressReuse++;
             ReuseByUntrackedSource++;
         }
@@ -150,9 +159,10 @@ internal sealed class GenericHeapLifetime
         if (live.ContainsKey(oldKey) || pending.ContainsKey(oldKey) ||
             live.ContainsKey(newKey))
             throw new ArgumentException("untracked_realloc_overlaps_selected_identity");
-        if (pending.Remove(newKey))
+        if (pending.Remove(newKey,out var retired))
         {
             FreeCount++;
+            if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
             AddressReuse++;
             ReuseByUntrackedSource++;
         }
@@ -200,6 +210,9 @@ internal sealed class GenericHeapLifetime
         // never implied. Production gate remains HOLD unconditionally.
         return "C545D_ETW_GENERIC_HEAP_LIFETIME,"+
             $"observed_original_alloc={AllocCount},linked_realloc={ReallocCount},"+
+            $"fixture_proven_original_alloc={ProvenOriginalAllocations},"+
+            $"fixture_proven_origin_realloc={ProvenReallocationOrigins},"+
+            $"fixture_proven_origin_freed={ProvenLogicalFrees},"+
             $"finalized_free={FreeCount},live_count={snap.Count},"+
             $"live_request_bytes={snap.Bytes},reallocated_live={snap.Reallocated},"+
             $"unresolved_origin_live={snap.Unresolved},"+
@@ -239,6 +252,8 @@ internal sealed class GenericHeapLifetime
         Expect(done.Count==0 && done.Bytes==0 && a.FreeCount==6 &&
                a.ReallocCount==2 && a.AllocCount==6);
         Expect(a.Summary(true,true,true).Contains("live_count=0"));
+        Expect(a.ProvenOriginalAllocations==3 && a.ProvenReallocationOrigins==1 &&
+               a.ProvenLogicalFrees==3);
         // A reused address starts a new allocation epoch; cannot be
         // used later as evidence for the old object's reallocation.
         var reused=new GenericHeapLifetime();
@@ -256,6 +271,7 @@ internal sealed class GenericHeapLifetime
         reusedOther.FinalizePending();
         Expect(reusedOther.FreeCount==1 &&
                reusedOther.ReuseByUntrackedSource==1 &&
+               reusedOther.ProvenLogicalFrees==1 &&
                reusedOther.Snapshot().Count==0);
         Action[] bad={
             () => new GenericHeapLifetime().Alloc(0,1,100,OriginProof.Unresolved),
