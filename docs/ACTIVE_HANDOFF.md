@@ -3,16 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5ea2e480fdf42a8a063054912dd9170becdf3178`
-- **PR updated at (UTC):** `2026-11-23T11:54:35Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5ea2e480fdf42a8a063054912dd9170becdf3178/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `21e10b37cfb18e2c3d0cf18baf9e2ea081099299`
+- **PR updated at (UTC):** `2026-11-23T11:54:57Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/21e10b37cfb18e2c3d0cf18baf9e2ea081099299/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45169372418](https://github.com/taku077/c545d-recorder/actions/runs/45169372418) |
-| C545D mixed-size real ETW heap lifetime calibration | in_progress | [#45169368240](https://github.com/taku077/c545d-recorder/actions/runs/45169368240) |
+| C545D active development handoff auto-refresh | in_progress | [#45169426862](https://github.com/taku077/c545d-recorder/actions/runs/45169426862) |
+| C545D isolated HeapReAlloc zero-Alloc outstanding stack semantics | in_progress | [#45169421774](https://github.com/taku077/c545d-recorder/actions/runs/45169421774) |
+| C545D mixed-size real ETW heap lifetime calibration | in_progress | [#45169421721](https://github.com/taku077/c545d-recorder/actions/runs/45169421721) |
 
 ## Current development findings from the active PR
 
