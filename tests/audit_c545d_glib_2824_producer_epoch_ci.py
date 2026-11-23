@@ -86,7 +86,7 @@ def verify_source(app: str, key: str, header: str) -> str:
     # The header has a public watch function and *no* public unwatch.
     if header.count("g_win32_registry_key_watch") < 2:
         raise ValueError("public_watch_interface_missing")
-    if app.find("static void\nwatch_keys (void)\n{") > app.find("static void\nkeys_updated ("):
+    if app.find("static void\nwatch_keys (void)\n{") < app.find("static void\nkeys_updated ("):
         raise ValueError("rearm_source_order_ambiguous")
     # The order inside callback is important: source can rearm before
     # signalling new worker demand. No barrier exists in this callback.
