@@ -72,6 +72,12 @@ int wmain(void) {
             b[i]=NULL;
         }
     }
+    /* Keep the process ALIVE after its six explicit final HeapFree calls.
+     * The controller acknowledges freed.signal, stops/reads ETW while the
+     * fixture is still running, then sends terminate.signal. This avoids
+     * conflating process-teardown heap events with real application frees.
+     */
+    if (!signal_file(L"freed.signal") || !await_file(L"terminate.signal")) return 17;
     printf("C545D_GENERIC_NATIVE_FIXTURE,alloc24=1,realloc6=1,free24=1,held_final0=1,real_GIO_tested=0,raw_pointers_logged=0\n");
     return 0;
 }
