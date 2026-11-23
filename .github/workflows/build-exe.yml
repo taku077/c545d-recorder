@@ -13,9 +13,12 @@ on:
       - 'README.txt'
       - 'EXE_START_HERE.txt'
   push:
-    branches: [main]
+    branches: [main, 'investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'src/C545D.Launcher/**'
+      - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - 'START_WEEKLY_OBSERVER.cmd'
+      - 'EXPORT_WEEKLY_REPORT.cmd'
       - '.github/workflows/build-exe.yml'
       - '*.ps1'
       - '*.vbs'
@@ -120,7 +123,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $bundle = 'dist/C545D_Recorder'
           New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','START_SEI_FILTER_DIAGNOSTIC.cmd','README.txt')
+          $required = @('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','START_SEI_FILTER_DIAGNOSTIC.cmd','START_WEEKLY_OBSERVER.cmd','EXPORT_WEEKLY_REPORT.cmd','README.txt')
           foreach ($item in $required) {
             if (-not (Test-Path -LiteralPath $item -PathType Leaf)) { throw "Missing $item" }
             Copy-Item -LiteralPath $item -Destination $bundle -Force
@@ -128,10 +131,30 @@ jobs:
           $privatePlugins=Join-Path $bundle 'plugins'
           New-Item -ItemType Directory -Force -Path $privatePlugins | Out-Null
           Copy-Item (Join-Path $env:RUNNER_TEMP 'c545d-plugins\gstc545dsei.dll') -Destination $privatePlugins -Force
+          $diagnostics=Join-Path $bundle 'diagnostics'
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+          Copy-Item -LiteralPath 'diagnostics/C545D-WeeklyObserver.ps1' -Destination $diagnostics -Force
           Copy-Item 'src/C545D.Launcher/bin/Release/C545D_Recorder.exe' -Destination $bundle
           Copy-Item 'EXE_START_HERE.txt' -Destination $bundle
           Compress-Archive -Path "$bundle/*" -DestinationPath 'dist/C545D_Recorder_EXE_Win10_x64.zip' -Force
           Write-Host 'ZIP generated with native C# WinForms and unchanged recording worker sources.'
+      - name: Verify detached weekly observer in the packaged candidate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle='dist/C545D_Recorder'
+          $source=(Resolve-Path (Join-Path $bundle 'diagnostics/C545D-WeeklyObserver.ps1')).Path
+          foreach($cmd in @('START_WEEKLY_OBSERVER.cmd','EXPORT_WEEKLY_REPORT.cmd')){
+            if(-not(Test-Path (Join-Path $bundle $cmd))){throw 'Weekly monitor launcher missing from ZIP'}
+            $data=[IO.File]::ReadAllText((Join-Path $bundle $cmd))
+            if($data -notmatch 'C545D-WeeklyObserver.ps1' -or
+               $data -match '(?i)taskkill|wpr\.exe|RegWrite'){
+              throw 'Weekly companion launcher violates isolation contract'
+            }
+          }
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'Packaged weekly observer selftest failed'}
+          Write-Host 'C545D_PACKAGED_WEEKLY_OBSERVER_PASS,separate_process=1,first_72h=1,weekly=7d,raw_ETW_disabled=1,release_HOLD=1'
       - name: Guard private hidden console and safe EOS stop semantics
         shell: powershell
         run: |
