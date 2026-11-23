@@ -6,6 +6,8 @@ on:
       - 'tests/patch_c545d_gio_active_two_epoch_ci.py'
       - 'tests/audit_c545d_gio_active_two_epoch_ci.py'
       - 'tests/audit_c545d_gio_active_worker_epochs_ci.py'
+      - 'tests/Invoke-C545DGioActiveEpochEtwCI.ps1'
+      - 'tests/patch_c545d_gio_etw_preinit_source_ci.py'
       - 'tests/gio_appinfo_key_handle_probe.c'
       - '.github/workflows/c545d-gio-active-two-epoch-preflight.yml'
   workflow_dispatch:
@@ -43,4 +45,32 @@ jobs:
           py tests/patch_c545d_gio_active_two_epoch_ci.py $dest 2>&1 | Out-Null
           if($LASTEXITCODE -eq 0){throw 'Overlay was not rejected on second application'}
           $global:LASTEXITCODE=0  # Intentional rejection is the passing negative test.
+          $tokens=$null;$parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DGioActiveEpochEtwCI.ps1).Path,
+            [ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -ne 0){throw 'Active GIO ETW controller syntax invalid'}
+          # Both independent overlays must compose on one disposable source,
+          # preserving the start-before-GIO and stop-after-settled fences.
+          $composeDir=Join-Path $env:RUNNER_TEMP 'active-gio-source-compose'
+          New-Item -ItemType Directory -Path $composeDir -ErrorAction Stop | Out-Null
+          $comp=Join-Path $composeDir 'c545d_gio_preinit_probe.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $comp
+          py tests/patch_c545d_gio_etw_preinit_source_ci.py $comp --until-settled
+          if($LASTEXITCODE -ne 0){throw 'Preinit ETW fenced probe source incompatible'}
+          py tests/patch_c545d_gio_active_two_epoch_ci.py $comp
+          if($LASTEXITCODE -ne 0){throw 'Active two-epoch probe cannot compose with preinit fence'}
+          $full=Get-Content $comp -Raw
+          if($full.IndexOf('L"preinit_ready.signal"') -lt 0 -or
+             $full.IndexOf('L"trace_armed.signal"') -lt 0 -or
+             $full.IndexOf('L"postsettle_ready.signal"') -lt 0 -or
+             $full.IndexOf('C545D_CI_ACTIVE_EPOCH') -lt 0 -or
+             -not($full.IndexOf('L"preinit_ready.signal"') -lt
+                  $full.IndexOf('monitor = g_app_info_monitor_get();') -and
+                  $full.IndexOf('monitor = g_app_info_monitor_get();') -lt
+                  $full.IndexOf('L"postsettle_ready.signal"'))){
+            throw 'Unsafe or incomplete active source phase/fence ordering'
+          }
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_COMPOSED_SOURCE_PASS,preinit_ETW_fence=1,postsettle_ETW_fence=1,source_mode=cycles2,PowerShell_parsed=1,host_untouched=1,release_HOLD=1'
+
           Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_OFFLINE_GATE_PASS,source_only=1,cycle2=1,monotonic_qpc_cpu_field=1,host_untouched=1,release_HOLD=1'
