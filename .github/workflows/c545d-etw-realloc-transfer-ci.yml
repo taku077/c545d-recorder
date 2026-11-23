@@ -1,0 +1,44 @@
+name: C545D isolated HeapReAlloc zero-Alloc outstanding stack semantics
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/c545d_etw_realloc_transfer_ci.c'
+      - 'tests/analyze_c545d_etw_realloc_transfer_ci.py'
+      - 'tests/Invoke-C545DEtwReallocCalibration.ps1'
+      - '.github/workflows/c545d-etw-realloc-transfer-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  realloc-calibration:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Reject unsafe realloc fixture, parser and PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/analyze_c545d_etw_realloc_transfer_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'HeapReAlloc source fixture parser failed'}
+          py tests/analyze_c545d_etw_stack_coverage_bounds_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Xperf coverage-bounds source fixtures failed'}
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DEtwReallocCalibration.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if(@($errors).Count -ne 0){throw 'Disposable realloc controller PowerShell syntax failed'}
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1 -SelfTest
+          if(-not $?){throw 'Realloc capture safety fixture failed'}
+          Write-Host 'C545D_REALLOC_SOURCE_PREFLIGHT_PASS,negative_fixtures=1,raw_ETL_uploaded=0,real_host_untouched=1'
+      - name: Run one synthetic realloc source ETW experiment, no GIO or host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Invoke-C545DEtwReallocCalibration.ps1
+          if(-not $? -or $LASTEXITCODE -ne 0){throw 'Synthetic realloc source-lifetime experiment incomplete'}
+          Write-Host 'C545D_REALLOC_WINDOWS_CI_PASS,synthetic_only=1,source_GIO=0,raw_uploaded=0,real_camera_untested=1'
