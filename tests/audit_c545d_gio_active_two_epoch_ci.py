@@ -43,7 +43,12 @@ def audit(raw: str) -> dict[str, int]:
                 }[kind]):
                     # Outside the three selected points: reject malformed but
                     # ignore valid alternative phases such as after_cleanup.
-                    if not re.fullmatch(r"[A-Za-z0-9_,]+", line):
+                    if not re.fullmatch(r"[A-Za-z0-9_,]+", line) or (
+                        line.startswith(("GIO_VM,baseline,", "GIO_VM,cycle,",
+                                         "GIO_PROBE,baseline,", "GIO_PROBE,cycle,",
+                                         "C545D_CI_ACTIVE_EPOCH,baseline,",
+                                         "C545D_CI_ACTIVE_EPOCH,cycle,"))
+                    ):
                         raise Gap("malformed_numeric_probe_line")
                 continue
             phase, cycle = match.group(1), int(match.group(2))
