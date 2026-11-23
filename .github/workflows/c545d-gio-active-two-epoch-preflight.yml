@@ -36,4 +36,5 @@ jobs:
           }
           py tests/patch_c545d_gio_active_two_epoch_ci.py $dest 2>&1 | Out-Null
           if($LASTEXITCODE -eq 0){throw 'Overlay was not rejected on second application'}
+          $global:LASTEXITCODE=0  # Intentional rejection is the passing negative test.
           Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_OFFLINE_GATE_PASS,source_only=1,cycle2=1,monotonic_qpc_cpu_field=1,host_untouched=1,release_HOLD=1'
