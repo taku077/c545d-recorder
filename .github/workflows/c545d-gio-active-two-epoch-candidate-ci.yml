@@ -83,6 +83,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'GAppInfoMonitor worker source patch failed'}
           py tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
           if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
+          py tests/patch_c545d_gio_displayname_frame_ci.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Exact WinRT DisplayName getter-frame source overlay not verified'}
           py tests/patch_glib_appinfo_phase_trace_ci.py --selftest
           if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
           py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
