@@ -9,7 +9,7 @@ using System.Linq;
 
 internal sealed class GenericHeapLifetime
 {
-    internal enum OriginProof { Unresolved = 0, SyntheticFixture = 1 }
+    internal enum OriginProof { Unresolved = 0, SyntheticFixture = 1, VerifiedGioMethod = 2 }
 
     private readonly record struct Key(ulong Heap, ulong Address);
     private readonly record struct Block(long Bytes, OriginProof Proof, long Birth, int Reallocations);
@@ -18,6 +18,9 @@ internal sealed class GenericHeapLifetime
     private readonly Dictionary<Key, Block> live = new();
     private readonly Dictionary<Key, Pending> pending = new();
     private long seq;
+    internal int GioMethodOriginalAllocations { get; private set; }
+    internal int GioMethodLinkedReallocations { get; private set; }
+    internal int GioMethodLogicalFrees { get; private set; }
     internal int ProvenOriginalAllocations { get; private set; }
     internal int ProvenReallocationOrigins { get; private set; }
     internal int ProvenLogicalFrees { get; private set; }
@@ -61,11 +64,13 @@ internal sealed class GenericHeapLifetime
         {
             FreeCount++;
             if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
+            if(retired.Value.Proof==OriginProof.VerifiedGioMethod)GioMethodLogicalFrees++;
             AddressReuse++;
         }
         live.Add(key,new Block(size,proof,seq,0));
         AllocCount++;
         if(proof==OriginProof.SyntheticFixture)ProvenOriginalAllocations++;
+        if(proof==OriginProof.VerifiedGioMethod)GioMethodOriginalAllocations++;
     }
 
     internal void Realloc(ulong heap, ulong oldAddress, ulong newAddress,
@@ -101,6 +106,7 @@ internal sealed class GenericHeapLifetime
                                  original.Reallocations+1));
         ReallocCount++;
         if(original.Proof==OriginProof.SyntheticFixture)ProvenReallocationOrigins++;
+        if(original.Proof==OriginProof.VerifiedGioMethod)GioMethodLinkedReallocations++;
         if (oldAddress==newAddress) ReallocInplace++; else ReallocMoved++;
     }
 
@@ -125,6 +131,7 @@ internal sealed class GenericHeapLifetime
         FreeCount=checked(FreeCount+pending.Count);
         foreach(var item in pending.Values)
             if(item.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
+            if(item.Value.Proof==OriginProof.VerifiedGioMethod)GioMethodLogicalFrees++;
         pending.Clear();
     }
 
@@ -143,6 +150,7 @@ internal sealed class GenericHeapLifetime
         {
             FreeCount++;
             if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
+            if(retired.Value.Proof==OriginProof.VerifiedGioMethod)GioMethodLogicalFrees++;
             AddressReuse++;
             ReuseByUntrackedSource++;
         }
@@ -163,6 +171,7 @@ internal sealed class GenericHeapLifetime
         {
             FreeCount++;
             if(retired.Value.Proof==OriginProof.SyntheticFixture)ProvenLogicalFrees++;
+            if(retired.Value.Proof==OriginProof.VerifiedGioMethod)GioMethodLogicalFrees++;
             AddressReuse++;
             ReuseByUntrackedSource++;
         }
@@ -211,6 +220,9 @@ internal sealed class GenericHeapLifetime
         return "C545D_ETW_GENERIC_HEAP_LIFETIME,"+
             $"observed_original_alloc={AllocCount},linked_realloc={ReallocCount},"+
             $"fixture_proven_original_alloc={ProvenOriginalAllocations},"+
+            $"gio_method_original_alloc={GioMethodOriginalAllocations},"+
+            $"gio_method_realloc={GioMethodLinkedReallocations},"+
+            $"gio_method_freed={GioMethodLogicalFrees},"+
             $"fixture_proven_origin_realloc={ProvenReallocationOrigins},"+
             $"fixture_proven_origin_freed={ProvenLogicalFrees},"+
             $"finalized_free={FreeCount},live_count={snap.Count},"+
@@ -273,6 +285,16 @@ internal sealed class GenericHeapLifetime
                reusedOther.ReuseByUntrackedSource==1 &&
                reusedOther.ProvenLogicalFrees==1 &&
                reusedOther.Snapshot().Count==0);
+        var gioOnly=new GenericHeapLifetime();
+        gioOnly.Alloc(11,51,4096,OriginProof.VerifiedGioMethod);
+        gioOnly.Free(11,51);
+        gioOnly.Realloc(11,51,52,4096,8192);
+        gioOnly.Free(11,52);
+        gioOnly.FinalizePending();
+        Expect(gioOnly.GioMethodOriginalAllocations==1 &&
+               gioOnly.GioMethodLinkedReallocations==1 &&
+               gioOnly.GioMethodLogicalFrees==1 &&
+               gioOnly.ProvenOriginalAllocations==0);
         Action[] bad={
             () => new GenericHeapLifetime().Alloc(0,1,100,OriginProof.Unresolved),
             () => new GenericHeapLifetime().Alloc(1,0,100,OriginProof.Unresolved),
@@ -300,7 +322,7 @@ internal sealed class GenericHeapLifetime
             catch (ArgumentException) {denied=true;}
             Expect(denied);
         }
-        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=3,negative=18,"+
+        Console.WriteLine("C545D_ETW_GENERIC_HEAP_SELFTEST_PASS,positive=4,negative=18,"+
             "arbitrary_sizes=1,source_class_no_size_guess=1,orphan_realloc_denied=1,"+
             "source_gio_untested=1,release_HOLD=1,raw_addresses_uploaded=0");
     }
