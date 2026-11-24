@@ -17,7 +17,8 @@ param(
   [ValidateSet(0,1000,5000)][int]$CiPreStopDelayMs=0,
   [string]$CiMetadataProbeExe,
   [string]$CiMetadataProbeSha256,
-  [switch]$CiNativeController
+  [switch]$CiNativeController,
+  [string]$CiPackagedZip
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -39,6 +40,20 @@ $liveNamerClosed=0;$liveRenameCount=0
 $gui=$null;$guiStopMarker='';$guiQuitMarker='';$guiStarted=0;$guiStop=0;$guiExit=0
 $namerOwned=$null;$namerExit=-999
 $workerExitMismatch=0;$mediaVerified=0
+$packaged=[bool]$CiPackagedZip
+$packagedExeHash=''
+$packageRoot=$null
+function Invoke-PackagedButton([string]$action){
+  $helper=(Resolve-Path 'tests/Invoke-C545DPackagedButtonCI.ps1').Path
+  $driver=Start-Process -FilePath $ps -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+    '-File',('"'+$helper+'"'),'-TargetPid',$gui.Id,'-Action',$action,'-Stage',('"'+$stage+'"')) -PassThru -WindowStyle Hidden
+  try{
+    if(-not $driver.WaitForExit(18000) -or $driver.ExitCode -ne 0){throw 'PACKAGED_BUTTON_NOT_INVOKED'}
+  }finally{
+    if(-not $driver.HasExited){$driver.Kill();[void]$driver.WaitForExit(5000)}
+    $driver.Dispose()
+  }
+}
 try {
   if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
      -not $env:RUNNER_TEMP){throw 'NOT_DISPOSABLE_WINDOWS_CI'}
@@ -77,6 +92,32 @@ try {
   New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null
   [IO.File]::WriteAllText((Join-Path $stage '.c545d-ci-owned'),'CI_MIRROR_ONLY_NOT_FOR_EXECUTION')
   $owned=$true
+  if($packaged){
+    if($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or -not $CiNativeController){throw 'PACKAGED_HOST_GUARD'}
+    $phase='PACKAGED_IDENTITY'
+    $packageRoot=Join-Path $stage 'original-package'
+    Expand-Archive -LiteralPath $CiPackagedZip -DestinationPath $packageRoot
+    $identity=Get-Content -LiteralPath (Join-Path $packageRoot 'BUILD_IDENTITY.json') -Raw|ConvertFrom-Json
+    if($identity.source_commit -cne '2dc4212131eb7a367564e260bcaf9d35dc6271bd' -or $identity.metadata_default_enabled -ne 0 -or
+       $identity.host_runtime_verified -ne 0){throw 'PACKAGED_COMMIT_MISMATCH'}
+    foreach($name in @('C545D_Recorder.exe','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1',
+      'diagnostics/C545D-WeeklyObserver.ps1','plugins/gstc545dsei.dll','diagnostics/C545DClosedProbeV04.cs',
+      'diagnostics/C545DMetadataJournalV04.cs','diagnostics/C545DMetadataWriterV04.cs',
+      'diagnostics/C545D-MetadataClassifierV04.ps1','diagnostics/C545D-MetadataIntegrationV04.ps1')){
+      $item=Join-Path $packageRoot $name
+      if((Get-FileHash -LiteralPath $item).Hash -cne $identity.files.$name){throw 'PACKAGED_FILE_HASH'}
+      $snapshot[$item]=(Get-FileHash -LiteralPath $item).Hash
+    }
+    foreach($name in @('Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1',
+      'C545D_App.ps1','C545D_SettingsBridge.ps1','RecoverPending.ps1','C545D_Start.vbs',
+      'diagnostics/C545DClosedProbeV04.cs','diagnostics/C545DMetadataJournalV04.cs','diagnostics/C545DMetadataWriterV04.cs',
+      'diagnostics/C545D-MetadataClassifierV04.ps1','diagnostics/C545D-MetadataIntegrationV04.ps1')){
+      if((Get-FileHash -LiteralPath (Join-Path $packageRoot $name)).Hash -cne (Get-FileHash -LiteralPath $name).Hash){throw 'PACKAGED_BACKEND_DIFFERS'}
+    }
+    $packagedExeHash=$identity.files.'C545D_Recorder.exe'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'C545D_Recorder.exe') -Destination $stage
+    if((Get-FileHash -LiteralPath (Join-Path $stage 'C545D_Recorder.exe')).Hash -cne $packagedExeHash){throw 'PACKAGED_EXE_COPY_HASH'}
+  }
   $bin=Join-Path $stage 'bin'
   New-Item -ItemType Directory -Path $bin | Out-Null
   foreach($exe in @('gst-launch-1.0.exe','gst-inspect-1.0.exe','gst-discoverer-1.0.exe')){
@@ -134,7 +175,7 @@ try {
   $phase='ENV'
   foreach($key in @('PATH','LOCALAPPDATA','GST_PLUGIN_SCANNER','GST_REGISTRY',
       'GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0',
-      'GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0','C545D_METADATA_V04','C545D_METADATA_PROBE_SHA256')){
+      'GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0','C545D_METADATA_V04','C545D_METADATA_PROBE_SHA256','C545D_SEI_AU_FILTER')){
     $prior[$key]=[Environment]::GetEnvironmentVariable($key,'Process')
   }
   $env:PATH="$bin;$sdkBin;$($prior['PATH'])"
@@ -161,8 +202,20 @@ try {
   $env:GST_PLUGIN_SYSTEM_PATH=''
   $env:GST_PLUGIN_SYSTEM_PATH_1_0=Join-Path $SdkRoot 'lib\gstreamer-1.0'
   $localData=Join-Path $stage 'ci-localappdata'
+  if($packaged){
+    # Exact native EXE uses the Windows known folder, not an environment-only redirect.
+    # Only a disposable hosted runner, never overwrite any existing configuration.
+    $localData=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if(-not $localData -or $localData -ine $prior['LOCALAPPDATA']){throw 'PACKAGED_PROFILE_MISMATCH'}
+    $p=Get-Item -LiteralPath $localData -Force
+    if(-not $p.PSIsContainer -or ($p.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'PACKAGED_PROFILE_UNSAFE'}
+    $env:C545D_SEI_AU_FILTER='off'
+  }
   $config=Join-Path $localData 'C545D_GStreamer'
-  New-Item -ItemType Directory -Path $config -Force | Out-Null
+  if($packaged -and (Test-Path -LiteralPath $config)){throw 'PACKAGED_PROFILE_EXISTS'}
+  New-Item -ItemType Directory -Path $config -ErrorAction Stop | Out-Null
+  if($packaged){[IO.File]::WriteAllText((Join-Path $config '.ci-disposable-profile'),'SYNTHETIC_ONLY')}
+
   @{
     camera_ip='127.0.0.1'
     camera_user='CI_SYNTHETIC_NO_AUTH'
@@ -408,14 +461,15 @@ $encrypted=ConvertFrom-SecureString $pass
         Copy-Item -LiteralPath $src -Destination (Join-Path $stage $name)
         if((Get-FileHash -LiteralPath (Join-Path $stage $name)).Hash -cne $snapshot[$src]){throw 'NATIVE_BACKEND_MIRROR'}
       }
-      & $nativeBuild -Stage $stage
+      if(-not $packaged){& $nativeBuild -Stage $stage}
       $secret=Join-Path $config 'camera_password.dpapi'
       if(Test-Path -LiteralPath $secret){throw 'NATIVE_SECRET_EXISTS'}
       $fake=ConvertTo-SecureString 'CI_SYNTHETIC_NOT_REAL' -AsPlainText -Force
       [IO.File]::WriteAllText($secret,(ConvertFrom-SecureString $fake),[Text.Encoding]::ASCII)
       [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-bootstrap-ok'),'DPAPI_PRIVATE')
       $phase='GUI_START'
-      $gui=Start-Process -FilePath (Join-Path $stage 'C545D_Native_CI_ONLY.exe') -WorkingDirectory $stage -PassThru
+      $guiExe=if($packaged){'C545D_Recorder.exe'}else{'C545D_Native_CI_ONLY.exe'}
+      $gui=Start-Process -FilePath (Join-Path $stage $guiExe) -WorkingDirectory $stage -PassThru
     }else{
     $gui=Start-Process -FilePath $ps -ArgumentList @(
       '-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass',
@@ -427,6 +481,22 @@ $encrypted=ConvertFrom-SecureString $pass
   }
   $sessionFile=Join-Path $stage 'ci-gui-session'
   $ciGuiFailure=Join-Path $stage 'ci-gui-failure'
+  if($packaged){
+    $phase='PACKAGED_START_BUTTON'
+    Invoke-PackagedButton 'start'
+    $child=$null
+    for($i=0;$i -lt 100;$i++){
+      if($gui.HasExited){throw 'PACKAGED_GUI_EXIT'}
+      $found=@(Get-CimInstance Win32_Process -Filter ("ParentProcessId = "+$gui.Id) |
+        Where-Object {$_.ExecutablePath -ieq $ps -and $_.CommandLine -and
+          $_.CommandLine.IndexOf((Join-Path $stage 'RecordGUIWorker.ps1'),[StringComparison]::OrdinalIgnoreCase) -ge 0})
+      if($found.Count -gt 1){throw 'PACKAGED_WORKER_AMBIGUOUS'}
+      if($found.Count -eq 1){$child=$found[0];break}
+      Start-Sleep -Milliseconds 100
+    }
+    if(-not $child -or $child.CommandLine -notmatch '-SessionId\s+([a-f0-9]{32})(?:\s|$)'){throw 'PACKAGED_WORKER_SESSION'}
+    [IO.File]::WriteAllText($sessionFile,($Matches[1]+','+$child.ProcessId))
+  }
   for($i=0;$i -lt 200;$i++){
     if($gui.HasExited -or (Test-Path -LiteralPath $ciGuiFailure -PathType Leaf)){break}
     if(Test-Path -LiteralPath $sessionFile -PathType Leaf){break}
@@ -592,6 +662,20 @@ $encrypted=ConvertFrom-SecureString $pass
   $ctrlCStopwatch=[Diagnostics.Stopwatch]::StartNew()
   [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-request-stop'),'CI_ONLY_STOP_CLICK')
   $guiStopMarker=Join-Path $stage 'ci-gui-stop-ok'
+  if($packaged){
+    $phase='PACKAGED_STOP_BUTTON'
+    Invoke-PackagedButton 'stop'
+    $nativeLog=Join-Path $config 'Logs\Stop_Control.log'
+    for($i=0;$i -lt 100;$i++){
+      if(Test-Path -LiteralPath $nativeLog){
+        $logText=[IO.File]::ReadAllText($nativeLog)
+        if($logText.Contains('CTRL_C_EVENT delivered. Waiting for -e EOS.')){
+          [IO.File]::WriteAllText($guiStopMarker,'STOP_MARKER_AND_GUI_CTRL_C');break
+        }
+      }
+      Start-Sleep -Milliseconds 100
+    }
+  }
   for($i=0;$i -lt 140;$i++){
     if($gui.HasExited -or (Test-Path -LiteralPath $ciGuiFailure)){break}
     if(Test-Path -LiteralPath $guiStopMarker -PathType Leaf){break}
@@ -778,6 +862,11 @@ $encrypted=ConvertFrom-SecureString $pass
     $phase='GUI_QUIT_BUTTON_CLICK'
     [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-allow-quit'),'VERIFIED_EOS_AND_MP4')
     $guiQuitMarker=Join-Path $stage 'ci-gui-quit-ok'
+    if($packaged){
+      $phase='PACKAGED_QUIT_BUTTON'
+      Invoke-PackagedButton 'quit'
+      [IO.File]::WriteAllText($guiQuitMarker,'WINFORMS_QUIT_CLICKED')
+    }
     if(-not $gui.WaitForExit(22000)){throw 'GUI_CI_QUIT_TIMEOUT'}
     $guiExit=[int]((Test-Path -LiteralPath $guiQuitMarker -PathType Leaf) -and
       [IO.File]::ReadAllText($guiQuitMarker) -ceq 'WINFORMS_QUIT_CLICKED')
@@ -829,7 +918,10 @@ $encrypted=ConvertFrom-SecureString $pass
     throw 'GUI_STOP_POLICY_WORKER_EXIT'
   }
   Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
-  if($CiNativeController){
+  if($packaged){
+    if((Get-FileHash -LiteralPath (Join-Path $stage 'C545D_Recorder.exe')).Hash -cne $packagedExeHash){throw 'PACKAGED_EXE_CHANGED'}
+    Write-Output "C545D_PACKAGED_EXE_RTSP_CI_PASS,exact_exe=1,external_buttons=1,synthetic_backend_mirror=1,metadata_enabled=$([int]$ciMetaEnabled),renamed=$liveRenameCount,all_decoded=$mp4Decoded,watcher_closed=$liveNamerClosed,real_camera=0,install_approved=0"
+  }elseif($CiNativeController){
     Write-Output "C545D_NATIVE_CONTROLLER_MIRROR_CI_PASS,gui_buttons=1,dpapi_bridge=1,metadata_enabled=$([int]$ciMetaEnabled),renamed=$liveRenameCount,all_decoded=$mp4Decoded,watcher_closed=$liveNamerClosed,root_redirected=1,packaged_binary=0,real_camera=0,install_approved=0"
   }
   $phase='PASS'
