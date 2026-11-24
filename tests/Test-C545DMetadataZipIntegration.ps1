@@ -1,67 +1,20 @@
-# CI-only: compare actual v0.3 observer ZIP to isolated v0.4 candidate.
+# CI-only: compare frozen v0.3 baseline with actual v0.4 observer source.
+param([Parameter(Mandatory=$true)][string]$BaselineObserver)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $root=Join-Path $env:RUNNER_TEMP ('metadata-zip-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 try{
-    $observer=Join-Path $repo 'diagnostics/C545D-WeeklyObserver.ps1'
-    $source=[IO.File]::ReadAllText($observer)
-    $adapter=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'C545D-MetadataReportPrototype.ps1'))
-    $journalSource=Join-Path $PSScriptRoot 'C545DMetadataJournalPrototype.cs'
-    $writerSource=Join-Path $PSScriptRoot 'C545DMetadataWriterPrototype.cs'
+    $observer=$BaselineObserver
+    $candidateFile=Join-Path $repo 'diagnostics/C545D-WeeklyObserver.ps1'
+    $journalSource=Join-Path $repo 'diagnostics/C545DMetadataJournalV04.cs'
+    $writerSource=Join-Path $repo 'diagnostics/C545DMetadataWriterV04.cs'
     Add-Type -Path @($journalSource,$writerSource)
     $journal=Join-Path $root 'journal'
     $logs=Join-Path $root 'logs'
     $receiptRoot=Join-Path $root 'receipts'
     $metrics=Join-Path $root 'observer'
     foreach($dir in @($journal,$logs,$metrics,$receiptRoot)){New-Item -ItemType Directory -Path $dir | Out-Null}
-    $nl=[Environment]::NewLine
-    function Replace-Once([string]$text,[string]$old,[string]$new){
-        if(([regex]::Matches($text,[regex]::Escape($old))).Count -ne 1){throw 'OBSERVER_SOURCE_ANCHOR_DRIFT'}
-        $text.Replace($old,$new)
-    }
-    $candidate=Replace-Once $source '  [switch]$SelfTest,' ('  [string]$MetadataJournalRoot,'+$nl+'  [string]$MetadataJournalSource,'+$nl+'  [string]$WriterReceiptRoot,'+$nl+'  [string]$WriterSource,'+$nl+'  [switch]$SelfTest,')
-    $candidate=Replace-Once $candidate '$version=''0.3.0''' '$version=''0.4.0'''
-    $candidate=Replace-Once $candidate 'function New-SafeBundle(' ($adapter+$nl+'function New-SafeBundle(')
-    $anchor=' $worker=Read-WorkerSessions $RecorderLogDirectory $begin $end'
-    $candidate=Replace-Once $candidate $anchor ($anchor+$nl+' $writerReport=Read-C545DWriterReport $WriterReceiptRoot $MetadataJournalSource $WriterSource $begin $end'+$nl+' $metadata=Read-C545DMetadataReport $MetadataJournalRoot $MetadataJournalSource $begin $end $media')
-    $manifestFields=@'
-     writer_receipt_source_status=$writerReport.status
-     writer_completed_runs=$writerReport.completed
-     writer_unfinished_or_active_runs=$writerReport.unfinished
-     writer_invalid_slots=$writerReport.invalid
-     writer_busy_slots=$writerReport.busy
-     writer_event_coverage='not_proven'
-     writer_counter_scope='whole_run_not_report_window'
-     metadata_journal_source_status=$metadata.status
-     metadata_journal_invalid_slots=$metadata.invalid_slots
-     metadata_journal_busy_slots=$metadata.busy_slots
-     metadata_journal_saturated_slots=$metadata.saturated_slots
-     metadata_journal_recovered_slots=$metadata.recovered_slots
-     metadata_event_count=$metadata.rows.Count
-     metadata_profile_match_count=$metadata.matches
-     metadata_profile_mismatch_count=$metadata.mismatches
-     metadata_unknown_count=$metadata.unknown
-     metadata_rename_count_difference=$metadata.count_difference
-     metadata_event_coverage='not_proven'
-     metadata_time_semantics='publication_utc_not_exact_rename_time'
-     camera_composition='not_collected';av_sync='not_collected';full_media_decode='not_collected'
-'@
-    $anchor='     recorder_version=''not_collected'''
-    $candidate=Replace-Once $candidate $anchor ($anchor+$nl+$manifestFields)
-    $anchor='   $metric=Join-Path $work ''process_metrics.csv'''
-    $insert=@'
-   $writerFile=Join-Path $work 'diagnostic_writer_runs.csv'
-   Write-C545DWriterCsv $writerReport $writerFile
-   $metadataFile=Join-Path $work 'mp4_metadata.csv'
-   Write-C545DMetadataCsv $metadata $metadataFile
-   $summary['metadata_event_count']=$metadata.rows.Count
-   $summary['metadata_coverage']='not_proven'
-'@
-    $candidate=Replace-Once $candidate $anchor ($insert+$nl+$anchor)
-    $candidate=Replace-Once $candidate 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,' 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,$metadataFile,$writerFile,'
-    $candidateFile=Join-Path $root 'observer-v04-ci.ps1'
-    [IO.File]::WriteAllText($candidateFile,$candidate,(New-Object Text.UTF8Encoding($true)))
     $now=[datetime]::UtcNow.AddMinutes(-10)
     # First session spans report boundary; counters must not be attributed to this week.
     $finished=[C545DWriterReceipts]::Start($receiptRoot,$now.AddDays(-8))
@@ -72,7 +25,7 @@ try{
     if($null -eq $corrupt){throw 'WRITER_FIXTURE_CORRUPT'}
     [IO.File]::AppendAllText((Join-Path $receiptRoot 'writer_002.dat'),'PRIVATE_SECRET_923')
     function Add-Fixture([string]$status,[datetime]$t){
-        $row=New-Object 'C545DMetadataJournalPrototype+Row'
+        $row=New-Object 'C545DMetadataJournalV04+Row'
         $row.Utc=$t;$row.Status=$status
         $row.DurationMs=3600123;$row.VideoTracks=1;$row.AudioTracks=1;$row.Width=2560;$row.Height=720
         $row.FpsNum=15;$row.FpsDen=1;$row.SampleRate=48000;$row.Channels=1;$row.H264=1;$row.Aac=1
@@ -81,7 +34,7 @@ try{
             $row.DurationMs=-1;$row.VideoTracks=-1;$row.AudioTracks=-1;$row.Width=-1;$row.Height=-1
             $row.FpsNum=-1;$row.FpsDen=-1;$row.SampleRate=-1;$row.Channels=-1;$row.H264=-1;$row.Aac=-1
         }
-        if([C545DMetadataJournalPrototype]::Append($journal,$row) -ne 'saved'){throw 'FIXTURE_SAVE_FAILED'}
+        if([C545DMetadataJournalV04]::Append($journal,$row) -ne 'saved'){throw 'FIXTURE_SAVE_FAILED'}
     }
     Add-Fixture 'profile_match_metadata_only' $now
     Add-Fixture 'profile_mismatch' $now.AddSeconds(1)
@@ -92,7 +45,7 @@ try{
     function Run-Export([string]$script,[string]$tag,[bool]$new){
         $argsList=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,
           '-RootDirectory',$metrics,'-RecorderLogDirectory',$logs,'-ExportNow')
-        if($new){$argsList+=@('-MetadataJournalRoot',$journal,'-MetadataJournalSource',$journalSource,'-WriterReceiptRoot',$receiptRoot,'-WriterSource',$writerSource)}
+        if($new){$argsList+=@('-MetadataJournalRoot',$journal,'-WriterReceiptRoot',$receiptRoot)}
         $before=@(Get-ChildItem (Join-Path $metrics 'reports') -Filter '*.zip' -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
         & powershell.exe @argsList | Out-Null
         if($LASTEXITCODE -ne 0){throw ('OBSERVER_CHILD_FAILED_'+$tag)}
@@ -155,7 +108,7 @@ try{
     Assert-Eq $m.metadata_journal_invalid_slots 1 'CORRUPT_SLOT'
     Assert-Eq $m.metadata_rename_count_difference 'not_classified' 'CORRUPT_DIFFERENCE'
     Assert-Eq $m.renamed_closed_mp4_count 4 'LEGACY_REPORT_RETAINS'
-    $recovery=[C545DMetadataJournalPrototype]::RecoverTornTail($journal,$now)
+    $recovery=[C545DMetadataJournalV04]::RecoverTornTail($journal,$now)
     Assert-Eq $recovery 'recovered_loss_possible' 'RECOVERY_SUCCESS'
     $recovered=Run-Export $candidateFile 'recovered' $true
     $m=Get-Content (Join-Path $recovered 'manifest.json') -Raw|ConvertFrom-Json
@@ -179,6 +132,19 @@ try{
     Assert-Eq $m.writer_receipt_source_status 'not_found' 'WRITER_MISSING'
     Assert-Eq $m.writer_event_coverage 'not_proven' 'WRITER_MISSING_UNKNOWN'
     Assert-Eq @(Import-Csv (Join-Path $missing 'diagnostic_writer_runs.csv')).Count 0 'WRITER_EMPTY_CSV'
+    # Missing compiled reader sources must not prevent old report export.
+    $noModules=Join-Path $root 'no-modules'
+    New-Item -ItemType Directory -Path $noModules|Out-Null
+    $noReader=Join-Path $noModules 'C545D-WeeklyObserver.ps1'
+    Copy-Item -LiteralPath $candidateFile -Destination $noReader
+    foreach($dir in @($journal,$receiptRoot)){New-Item -ItemType Directory -Path $dir|Out-Null}
+    $unavailable=Run-Export $noReader 'reader-unavailable' $true
+    $m=Get-Content (Join-Path $unavailable 'manifest.json') -Raw|ConvertFrom-Json
+    Assert-Eq $m.metadata_journal_source_status 'reader_unavailable' 'READER_UNAVAILABLE'
+    Assert-Eq $m.writer_receipt_source_status 'reader_unavailable' 'WRITER_READER_UNAVAILABLE'
+    Assert-Eq $m.renamed_closed_mp4_count 4 'READER_UNAVAILABLE_LEGACY'
+    Assert-Eq @(Get-ChildItem $unavailable -File).Count 7 'READER_UNAVAILABLE_FILES'
+    Write-Host 'C545D_V04_ACTUAL_OBSERVER_PASS,actual_source=1,reader_missing_fallback=1,legacy_report_retained=1'
     Write-Host 'C545D_WRITER_ZIP_PASS,completed=1,unfinished_unknown=1,corrupt_excluded=1,missing_unknown=1,whole_run_only=1,privacy=1'
     Write-Host 'C545D_METADATA_ZIP_INTEGRATION_PASS,baseline_files=5,candidate_files=7,legacy_csv_parity=3,profile_match=1,profile_mismatch=1,unknown=1,count_gap=1,equal_not_proof=1,corrupt_excluded=1,missing_unknown=1,privacy=1,host_modified=0'
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
