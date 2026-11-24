@@ -3,17 +3,17 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `355486b1473b732f05117e9dae4a384f11f23357`
-- **PR updated at (UTC):** `2026-11-24T11:14:06Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/355486b1473b732f05117e9dae4a384f11f23357/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b122119f432dec7f6c8dfea8991b5cc1b61a9e04`
+- **PR updated at (UTC):** `2026-11-24T11:14:40Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b122119f432dec7f6c8dfea8991b5cc1b61a9e04/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45382298775](https://github.com/taku077/c545d-recorder/actions/runs/45382298775) |
-| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#45382295716](https://github.com/taku077/c545d-recorder/actions/runs/45382295716) |
-| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#45382294807](https://github.com/taku077/c545d-recorder/actions/runs/45382294807) |
+| C545D active development handoff auto-refresh | in_progress | [#45382387638](https://github.com/taku077/c545d-recorder/actions/runs/45382387638) |
+| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#45382380465](https://github.com/taku077/c545d-recorder/actions/runs/45382380465) |
+| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#45382380276](https://github.com/taku077/c545d-recorder/actions/runs/45382380276) |
 
 ## Current development findings from the active PR
 
