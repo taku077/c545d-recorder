@@ -156,6 +156,19 @@ public static class C545DMetadataJournalPrototype {
          catch(IOException){return "busy_or_io_error";}
          catch{return "storage_error";}
     }
+    // At most one recovery attempt and one additional append. Never retry busy/IO.
+    // Failed full-prefix validation leaves the original slot untouched.
+    public static string AppendRecovering(string root,Row row){
+        string first=Append(root,row);
+        if(first!="source_invalid")return first;
+        string recovery=RecoverTornTail(root,row.Utc.Date);
+        if(recovery=="recovered_loss_possible"){
+            string again=Append(root,row);
+            return again=="saved"?"saved_after_recovery":"recovered_append_"+again;
+        }
+        if(recovery=="not_recoverable"||recovery=="not_torn_tail")return "corrupt_slot_preserved";
+        return "recovery_"+recovery;
+    }
     public static Snapshot ReadWindow(string root,DateTime begin,DateTime end){
         var result=new Snapshot();
         if(!IsDay(begin)||!IsDay(end)||end<=begin||(end-begin).TotalDays>31){result.Status="window_invalid";return result;}
