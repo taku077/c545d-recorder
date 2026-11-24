@@ -6,6 +6,7 @@ on:
       - 'tests/C545DMetadataJournalPrototype.cs'
       - 'tests/C545DMetadataWriterPrototype.cs'
       - 'tests/Test-C545DMetadataWriter.ps1'
+      - 'tests/Test-C545DWriterReceipts.ps1'
       - '.github/workflows/c545d-metadata-writer-ci.yml'
   workflow_dispatch:
 permissions:
@@ -21,3 +22,6 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           & ./tests/Test-C545DMetadataWriter.ps1
+
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./tests/Test-C545DWriterReceipts.ps1
+          if($LASTEXITCODE -ne 0){throw 'WRITER_RECEIPTS_FAILED'}
