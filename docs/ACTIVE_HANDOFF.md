@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45390864914](https://github.com/taku077/c545d-recorder/actions/runs/45390864914) |
+| Windows native EXE controller (stage 2) | in_progress | [#45390858697](https://github.com/taku077/c545d-recorder/actions/runs/45390858697) |
 
 ## Current development findings from the active PR
 
