@@ -64,7 +64,7 @@ function Run-Arm([string]$name,[bool]$enabled){
     $env:LOCALAPPDATA=$local
     $env:C545D_METADATA_V04=$null;$env:C545D_METADATA_PROBE_SHA256=$null
     if($enabled){$env:C545D_METADATA_V04='1';$env:C545D_METADATA_PROBE_SHA256=$probeHash}
-    $proc=$null;$job=$null
+    $proc=$null;$job=$null;$traceId=$null
     try{
         Assert-Equal (Get-Command ffprobe.exe -ErrorAction Stop).Source $ProbeExe 'DIRECT_PROBE'
         $psi=New-Object Diagnostics.ProcessStartInfo
@@ -87,6 +87,12 @@ function Run-Arm([string]$name,[bool]$enabled){
         $job.Attach($proc.Handle)
         $before=$job.Read()
         Assert-Equal $before.Total 1 'INITIAL_JOB_COUNT'
+        # Independent kernel-backed WMI start events. Capture all names only
+        # in memory, then resolve descendants by event time and parent PID.
+        # Never publish raw events, command lines, PID or unrelated names.
+        $traceId='C545D_CI_ProcStart_'+[guid]::NewGuid().ToString('N')
+        Register-WmiEvent -Class Win32_ProcessStartTrace -SourceIdentifier $traceId -ErrorAction Stop|Out-Null
+        Start-Sleep -Milliseconds 300
         $proc.Refresh()
         $cpuFirst=$proc.TotalProcessorTime.Ticks
         $privateFirst=$proc.PrivateMemorySize64;$handlesFirst=$proc.HandleCount
@@ -120,15 +126,43 @@ function Run-Arm([string]$name,[bool]$enabled){
         $privatePeak=[Math]::Max($privatePeak,$privateLast)
         $handlesPeak=[Math]::Max($handlesPeak,$handlesLast)
         $batch=$job.Read()
-        Assert-Equal $batch.Total ($segments+1) 'EXACT_ONE_CHILD_PER_SEGMENT'
+        $batchEndMs=$clock.ElapsedMilliseconds
+        # Let queued WMI events arrive after the batch. Keep batch CPU
+        # boundary unchanged and do not include this diagnostic settle time.
+        Start-Sleep -Milliseconds 1200
+        $traceEvents=@(Get-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue |
+            Sort-Object { [uint64]$_.SourceEventArgs.NewEvent.TIME_CREATED })
+        $descendants=New-Object 'System.Collections.Generic.HashSet[uint32]'
+        [void]$descendants.Add([uint32]$proc.Id)
+        $probeStarts=0;$conhostStarts=0;$otherStarts=0;$directProbes=0;$allConhost=0
+        foreach($ev in $traceEvents){
+            $e=$ev.SourceEventArgs.NewEvent
+            $image=[string]$e.ProcessName
+            if($image -ieq 'conhost.exe'){$allConhost++}
+            if(-not $descendants.Contains([uint32]$e.ParentProcessID)){continue}
+            [void]$descendants.Add([uint32]$e.ProcessID)
+            if($image -ieq 'ffprobe.exe'){
+                $probeStarts++
+                if([uint32]$e.ParentProcessID -eq [uint32]$proc.Id){$directProbes++}
+            }elseif($image -ieq 'conhost.exe'){$conhostStarts++}
+            else{$otherStarts++}
+        }
+        $unreconciled=[long]$batch.Total-1-$probeStarts-$conhostStarts-$otherStarts
+        Write-Host ('C545D_NAMER_OVERHEAD_PROCESS_TRACE,arm='+$name+',job_total='+$batch.Total+
+            ',direct_ffprobe='+$directProbes+',descendant_ffprobe='+$probeStarts+',descendant_conhost='+$conhostStarts+
+            ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',runner_conhost='+$allConhost+',active='+$batch.Active)
+        Assert-Equal $probeStarts $segments 'PROBE_TRACE_COUNT'
+        Assert-Equal $directProbes $segments 'DIRECT_PROBE_TRACE_COUNT'
+        Assert-Equal $otherStarts 0 'UNEXPECTED_DESCENDANTS'
+        Assert-Equal $unreconciled 0 'JOB_COUNT_RECONCILIATION'
         Assert-Equal $batch.Active 1 'ONLY_HELPER_REMAINS'
-        $batchMs=$clock.ElapsedMilliseconds
+        $batchMs=$batchEndMs
         [IO.File]::WriteAllText($stop,'CI_TEST')
         if(-not $proc.WaitForExit(20000)){throw 'NAMER_OVERHEAD_STOP'}
         Assert-Equal $proc.ExitCode 0 'EXIT'
         if(-not $stdout.Wait(1000) -or -not $stderr.Wait(1000)){throw 'NAMER_OVERHEAD_PIPE'}
         $final=$job.Read()
-        Assert-Equal $final.Total ($segments+1) 'FINAL_PROCESS_COUNT'
+        Assert-Equal $final.Total $batch.Total 'FINAL_PROCESS_COUNT'
         $files=@(Get-ChildItem -LiteralPath $output -File)
         Assert-Equal $files.Count $segments 'FILES'
         foreach($file in $files){
@@ -161,6 +195,10 @@ function Run-Arm([string]$name,[bool]$enabled){
     }finally{
         if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
         if($job){$job.Dispose()}
+        if($traceId){
+            Unregister-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue
+            Get-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue | Remove-Event -ErrorAction SilentlyContinue
+        }
         foreach($k in $old.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')}
     }
 }
@@ -168,4 +206,4 @@ Run-Arm 'a1' $false
 Run-Arm 'b1' $true
 Run-Arm 'b2' $true
 Run-Arm 'a2' $false
-Write-Host 'C545D_NAMER_OVERHEAD_ABBA_PASS,arms=4,segments_per_arm=8,same_runner=1,actual_namer=1,real_probe=1,tree_cpu=1,exact_probe_process_count=1,short_fixture_only=1,real_camera=0,install_approved=0'
+Write-Host 'C545D_NAMER_OVERHEAD_ABBA_PASS,arms=4,segments_per_arm=8,same_runner=1,actual_namer=1,real_probe=1,tree_cpu=1,exact_probe_process_count=1,job_count_reconciled=1,short_fixture_only=1,real_camera=0,install_approved=0'
