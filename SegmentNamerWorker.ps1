@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [Parameter(Mandatory=$true)][int]$OwnerProcessId,
     [Parameter(Mandatory=$true)][string]$ReadyFile,
-    [Parameter(Mandatory=$true)][string]$StopFile
+    [Parameter(Mandatory=$true)][string]$StopFile,
+    [switch]$EnableMetadataDiagnostics,
+    [string]$MetadataProbeSha256
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'SegmentNamer.ps1')
@@ -58,6 +60,15 @@ $lastAttempt=New-Object 'System.Collections.Generic.Dictionary[string,datetime]'
 $closingSince=$null
 $loopCount=0
 try {
+    if($EnableMetadataDiagnostics){
+        $metaState='initialization_failed'
+        try{
+            . (Join-Path $PSScriptRoot 'diagnostics/C545D-MetadataIntegrationV04.ps1')
+            . (Join-Path $PSScriptRoot 'diagnostics/C545D-MetadataClassifierV04.ps1')
+            $metaState=Initialize-C545DMetadataV04 $OutputDirectory $MetadataProbeSha256
+        }catch{}
+        Write-C545DNamerLog ('Metadata v0.4 initialization: '+$metaState)
+    }
     $events=New-Object C545DFileEvents $OutputDirectory
     [System.IO.File]::WriteAllText($ReadyFile, (Get-Date -Format 'o'))
     Write-C545DNamerLog ('EVENT WATCHER READY; folder=' + $OutputDirectory + '; ownerPID=' + $OwnerProcessId)
@@ -118,6 +129,9 @@ catch {
 }
 finally {
     if ($events) { $events.Dispose() }
+    if($EnableMetadataDiagnostics -and $script:C545DMetadataWriterV04){
+        try{[void](Stop-C545DMetadataV04)}catch{}
+    }
     try { Remove-Item -LiteralPath $ReadyFile -Force -ErrorAction SilentlyContinue } catch { }
     try { Remove-Item -LiteralPath $StopFile -Force -ErrorAction SilentlyContinue } catch { }
     Write-C545DNamerLog 'Event watcher exited.'
