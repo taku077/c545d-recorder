@@ -3,18 +3,25 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `0bdcf92d3250971a84738641ac105e35fdcd9c9e`
-- **PR updated at (UTC):** `2026-11-24T11:14:53Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/0bdcf92d3250971a84738641ac105e35fdcd9c9e/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `08ba3fac5d797255f86e07dacb810bed35dbfe63`
+- **PR updated at (UTC):** `2026-11-24T11:15:21Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/08ba3fac5d797255f86e07dacb810bed35dbfe63/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45382420218](https://github.com/taku077/c545d-recorder/actions/runs/45382420218) |
-| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#45382416077](https://github.com/taku077/c545d-recorder/actions/runs/45382416077) |
+| C545D active development handoff auto-refresh | in_progress | [#45382496468](https://github.com/taku077/c545d-recorder/actions/runs/45382496468) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-24 JST — **independent watcher observation PASS; actual PowerShell WinForms metadata ON/OFF dual RTSP matrix committed**
+
+- Resumed at exact PR #62/main ACTIVE_HANDOFF `5df3acfdaa1b525786c6b9275dbf183d0e94c81a`. User confirmed initial reusable development/diagnostic infrastructure is worth the preparation and approved continued development as agreed; no need to rush by skipping safety gates. Preserve scope and iterative release cycle.
+- Verified [#45381600466 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45381600466) job 138401742868 actual C545D_V04_ACTUAL_NAMER_PASS arms=8. New C545D_LIFECYCLE_OBSERVATION normal and stalled both pending=1,shutdown=1,watcher_error=0,log_write_error=0,final_log=1,shutdown_log=1; writer normal accepted/saved=2 elapsed=5ms, stalled accepted=2 saved=0 unconfirmed elapsed=251ms; final renamed, media hashes 2/arm, prototype lifecycle PASS. Prior two FINAL_EVENT timeouts not reproduced; cause not established, independent observation now avoids relying on concurrent log reads. No production change or real EOS proof in this fixture.
+- Reused actual PowerShell GUI button/dual synthetic RTSP/EOS harness tests/Assert-C545DWinFormsRealRTSPCI.ps1 [b122119f](https://github.com/taku077/c545d-recorder/commit/b122119f432dec7f6c8dfea8991b5cc1b61a9e04) (supersedes malformed intermediate test insertion 355486b1; do not use intermediate CI). Optional parameters for direct ffprobe and SHA, process-only inherited opt-in, clear env for default OFF, copy/hash-check five actual diagnostic module sources in private mirror; preserve original GUI handlers, recording, rename, decode and owned cleanup gates. After actual watcher exits, enabled arm requires journal profile-match row for every renamed fragment, final receipt counts exactly equal with zero rejects/fails/recovery and released lease; OFF asserts no diagnostic storage. No production code changes. [0bdcf92d](https://github.com/taku077/c545d-recorder/commit/0bdcf92d3250971a84738641ac105e35fdcd9c9e) .github/workflows/c545d-winforms-real-rtsp-eos-ci.yml runs separate ON/OFF Windows runner jobs, pins FFmpeg 7.1.1 archive SHA from already verified metadata CI, direct binary SHA, requires enabled marker independently of existing EOS/decode markers. **Latest matrix not verified**; inspect both exact commit jobs and sanitized errors, correct failures. Separate runners are not controlled overhead A/B; native EXE GUI path not covered. No real Tapo/real hour split. 
+- Next: verify final matrix first, then native GUI enabled test and controlled overhead including actual naming helper/ffprobe rather than only gst/recorder worker, bounded global retention/rollback. Prior watcher timeout root cause remains unresolved but current gate now has independent observations; avoid endless extra prototypes. Track B existing measurements unchanged, no new root-cause claim.
+- Safety: PR #62 draft, release HOLD, install_approved=0, live_test_authorized=0; real Windows10 recording unchanged; metadata default OFF. No manual user operation.
 
 ### UPDATE 2026-11-24 JST — **release scope freeze; previous recording regressions and separated lifecycle PASS; independent CI watcher observation committed**
 
