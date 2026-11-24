@@ -118,6 +118,22 @@ jobs:
 
           & ./tests/Test-C545DNamerSingleProbe.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
 
-          & ./tests/Test-C545DNamerWriterLifecycle.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
+      - name: Verify actual release candidate activation and fallback
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'c545d-closed-metadata-fixtures'
+          $probe=Join-Path $env:RUNNER_TEMP 'c545d-ffmpeg-7.1.1\ffmpeg-7.1.1-full_build\bin\ffprobe.exe'
+          & ./tests/Test-C545DV04ActualNamer.ps1 -FixtureDirectory $dir -ProbeExe $probe
 
-          & ./tests/Test-C545DV04ActualNamer.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
+      - name: Verify prototype watcher lifecycle independently
+        if: success() || failure()
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'c545d-closed-metadata-fixtures'
+          $probe=Join-Path $env:RUNNER_TEMP 'c545d-ffmpeg-7.1.1\ffmpeg-7.1.1-full_build\bin\ffprobe.exe'
+          if(-not(Test-Path -LiteralPath (Join-Path $dir '2026-11-24_12-00_12-01.mp4')) -or -not(Test-Path -LiteralPath $probe)){
+            throw 'LIFECYCLE_FIXTURE_UNAVAILABLE'
+          }
+          & ./tests/Test-C545DNamerWriterLifecycle.ps1 -FixtureDirectory $dir -ProbeExe $probe
