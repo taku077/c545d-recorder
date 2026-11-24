@@ -3,22 +3,19 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1fbfaef226ab0c655c11865f6925d196798c3569`
-- **PR updated at (UTC):** `2026-11-24T10:57:18Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1fbfaef226ab0c655c11865f6925d196798c3569/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `cdd072676ab9956edf7d568f13da60f6cabf98fe`
+- **PR updated at (UTC):** `2026-11-24T10:57:38Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/cdd072676ab9956edf7d568f13da60f6cabf98fe/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45379631756](https://github.com/taku077/c545d-recorder/actions/runs/45379631756) |
-| C545D original in-stream MP4 event namer with dual synthetic RTSP CI ONLY | in_progress | [#45379623274](https://github.com/taku077/c545d-recorder/actions/runs/45379623274) |
-| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#45379623270](https://github.com/taku077/c545d-recorder/actions/runs/45379623270) |
-| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#45379623268](https://github.com/taku077/c545d-recorder/actions/runs/45379623268) |
-| C545D accelerated splitmux MP4 segments dual localhost RTSP CI ONLY | in_progress | [#45379623267](https://github.com/taku077/c545d-recorder/actions/runs/45379623267) |
-| C545D closed media metadata prototype (CI only) | in_progress | [#45379623264](https://github.com/taku077/c545d-recorder/actions/runs/45379623264) |
-| Windows native EXE controller (stage 2) | in_progress | [#45379623158](https://github.com/taku077/c545d-recorder/actions/runs/45379623158) |
-| C545D genuine WinForms button event dispatch (no RTSP CI ONLY) | in_progress | [#45379623153](https://github.com/taku077/c545d-recorder/actions/runs/45379623153) |
+| C545D active development handoff auto-refresh | in_progress | [#45379679287](https://github.com/taku077/c545d-recorder/actions/runs/45379679287) |
+| C545D detached weekly companion Windows 10 PowerShell 5.1 | in_progress | [#45379673272](https://github.com/taku077/c545d-recorder/actions/runs/45379673272) |
+| C545D metadata ZIP integration (CI only) | in_progress | [#45379673246](https://github.com/taku077/c545d-recorder/actions/runs/45379673246) |
+| C545D closed media metadata prototype (CI only) | in_progress | [#45379673201](https://github.com/taku077/c545d-recorder/actions/runs/45379673201) |
+| Windows native EXE controller (stage 2) | in_progress | [#45379673196](https://github.com/taku077/c545d-recorder/actions/runs/45379673196) |
 
 ## Current development findings from the active PR
 
