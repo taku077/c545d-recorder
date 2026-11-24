@@ -151,10 +151,8 @@ function Run-Arm([string]$name,[bool]$enabled){
         Write-Host ('C545D_NAMER_OVERHEAD_PROCESS_TRACE,arm='+$name+',job_total='+$batch.Total+
             ',direct_ffprobe='+$directProbes+',descendant_ffprobe='+$probeStarts+',descendant_conhost='+$conhostStarts+
             ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',runner_conhost='+$allConhost+',active='+$batch.Active)
-        Assert-Equal $probeStarts $segments 'PROBE_TRACE_COUNT'
-        Assert-Equal $directProbes $segments 'DIRECT_PROBE_TRACE_COUNT'
-        Assert-Equal $otherStarts 0 'UNEXPECTED_DESCENDANTS'
-        Assert-Equal $unreconciled 0 'JOB_COUNT_RECONCILIATION'
+        $traceQualified=($probeStarts -eq $segments -and $directProbes -eq $segments -and
+            $otherStarts -eq 0 -and $unreconciled -eq 0)
         Assert-Equal $batch.Active 1 'ONLY_HELPER_REMAINS'
         $batchMs=$batchEndMs
         [IO.File]::WriteAllText($stop,'CI_TEST')
@@ -191,7 +189,8 @@ function Run-Arm([string]$name,[bool]$enabled){
             ',tree_cpu_ms='+$jobCpu+',helper_cpu_ms='+$helperCpu+',tree_processes='+$batch.Total+
             ',private_first_b='+$privateFirst+',private_last_b='+$privateLast+',private_sample_peak_b='+$privatePeak+
             ',handles_first='+$handlesFirst+',handles_last='+$handlesLast+',handles_sample_peak='+$handlesPeak+
-            ',media_hashes='+$segments+',real_camera=0')
+            ',media_hashes='+$segments+',trace_qualified='+[int]$traceQualified+',real_camera=0')
+        if(-not $traceQualified){throw 'NAMER_OVERHEAD_PROCESS_TRACE_UNQUALIFIED'}
     }finally{
         if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
         if($job){$job.Dispose()}
@@ -202,8 +201,15 @@ function Run-Arm([string]$name,[bool]$enabled){
         foreach($k in $old.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')}
     }
 }
-Run-Arm 'a1' $false
-Run-Arm 'b1' $true
-Run-Arm 'b2' $true
-Run-Arm 'a2' $false
+$failed=0
+foreach($name in @('a1','b1','b2','a2')){
+    try{Run-Arm $name ($name.StartsWith('b'))}
+    catch{
+        $failed++
+        $reason=[string]$_.Exception.Message
+        if($reason -cnotmatch '^NAMER_OVERHEAD_[A-Z_]+(?: actual=-?\d+ expected=-?\d+)?$'){$reason='UNCLASSIFIED'}
+        Write-Host ('C545D_NAMER_OVERHEAD_ARM_FAIL,arm='+$name+',reason='+$reason)
+    }
+}
+if($failed -ne 0){throw ('NAMER_OVERHEAD_ABBA_UNQUALIFIED failed_arms='+$failed)}
 Write-Host 'C545D_NAMER_OVERHEAD_ABBA_PASS,arms=4,segments_per_arm=8,same_runner=1,actual_namer=1,real_probe=1,tree_cpu=1,exact_probe_process_count=1,job_count_reconciled=1,short_fixture_only=1,real_camera=0,install_approved=0'
