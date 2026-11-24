@@ -28,6 +28,7 @@ try{
      metadata_journal_invalid_slots=$metadata.invalid_slots
      metadata_journal_busy_slots=$metadata.busy_slots
      metadata_journal_saturated_slots=$metadata.saturated_slots
+     metadata_journal_recovered_slots=$metadata.recovered_slots
      metadata_event_count=$metadata.rows.Count
      metadata_profile_match_count=$metadata.matches
      metadata_profile_mismatch_count=$metadata.mismatches
@@ -121,6 +122,19 @@ try{
     Assert-Eq $m.metadata_journal_invalid_slots 1 'CORRUPT_SLOT'
     Assert-Eq $m.metadata_rename_count_difference 'not_classified' 'CORRUPT_DIFFERENCE'
     Assert-Eq $m.renamed_closed_mp4_count 4 'LEGACY_REPORT_RETAINS'
+    $recovery=[C545DMetadataJournalPrototype]::RecoverTornTail($journal,$now)
+    Assert-Eq $recovery 'recovered_loss_possible' 'RECOVERY_SUCCESS'
+    $recovered=Run-Export $candidateFile 'recovered' $true
+    $m=Get-Content (Join-Path $recovered 'manifest.json') -Raw|ConvertFrom-Json
+    Assert-Eq $m.metadata_event_count 4 'RECOVERED_ROWS'
+    Assert-Eq $m.metadata_journal_recovered_slots 1 'RECOVERED_MARKER'
+    Assert-Eq $m.metadata_journal_source_status 'partial_or_unavailable' 'RECOVERED_PARTIAL'
+    Assert-Eq $m.metadata_rename_count_difference 'not_classified' 'RECOVERY_COUNT_UNKNOWN'
+    Assert-Eq $m.metadata_event_coverage 'not_proven' 'RECOVERY_NOT_PROOF'
+    foreach($file in @(Get-ChildItem $recovered -File)){
+        if([IO.File]::ReadAllText($file.FullName) -match 'PRIVATE_SECRET|rtsp://|C:\\private\\'){throw 'RECOVERED_ZIP_SECRET_LEAK'}
+    }
+    Write-Host 'C545D_METADATA_ZIP_RECOVERY_PASS,rows=4,recovered_slots=1,coverage_not_proven=1,count_unclassified=1,privacy=1'
     Remove-Item -LiteralPath $journal -Recurse -Force
     $missing=Run-Export $candidateFile 'missing' $true
     $m=Get-Content (Join-Path $missing 'manifest.json') -Raw|ConvertFrom-Json
