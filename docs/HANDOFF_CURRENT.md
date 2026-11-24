@@ -2,6 +2,14 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-24 JST — **frozen candidate delivery and concrete Japanese single-session acceptance ready**
+
+- Resumed exact PR #62/main ACTIVE_HANDOFF HEAD ed57c216df20522886503600e95e56d3ba582c3b. User accepted ~458MiB, then asked to proceed with preparation. Verified frozen artifact 14921025945 present at [#45395330523](https://github.com/taku077/c545d-recorder/actions/runs/45395330523), name c545d-frozen-rc-unapproved-2dc42121, expiry 2026-12-24 21:37:57 JST. Inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, unchanged source 2dc42121. No new compilation or repeat qualification. GitHub signed-in Actions artifact is the prepared delivery route, not a published Releases asset.
+- [b5cda2a2](https://github.com/taku077/c545d-recorder/commit/b5cda2a291b76859ca5d6978380b11d594cdec05) adds docs/C545D_INITIAL_RC_DELIVERY_ACCEPTANCE_JA_20261124.md: actual verified download and inner ZIP hash, separate folder, one authorized normal old->new switch, preserve old app/DPAPI/settings/runtime/recordings, keep existing SEI choice (exact recording CI SEI OFF; startup ON/OFF checked), default metadata OFF/no new ffprobe or experimental GIO DLL, start detached observer after recording, natural first hourly close and one normal EOS/restart, no deliberate RTSP disconnect or repeated multi-hour test, manual ZIP optional only if useful, first 72h then 7d ongoing reports, retain existing observer schedule if present, rollback and failure limits. Read actual packaged START_WEEKLY_OBSERVER.cmd/EXPORT_WEEKLY_REPORT.cmd and observer state/cadence code. Existing automatic observer restart not implemented. User can download/inspect without stopping recording. No manual measurement until explicit trial authorization.
+- Next actual step: present ready candidate and request only specific authorization for planned real-camera switch/one integrated acceptance; do not create more preparation/test loops. If approved, guide minimal actions, retain existing old folder and observe first finalized segment/normal EOS; upload first scheduled ZIP. Track B can continue independently. No public Release created, no host change; release HOLD, install_approved=0, live_test_authorized=0, PR draft.
+
+
+
 ### UPDATE 2026-11-24 21:45 JST — **user accepted approximately 458 MiB storage budget; frozen candidate retained**
 
 - User explicitly accepted the proposed approximately 458 MiB limit for initial limited release preparation, preferring headroom. Current nominal combined limits 458.14 MiB (200 CSV + 256 reports/workspace + 2 journal + 128KiB receipt + 12KiB state), logical owned files only; not physical allocation or recorder logs. Supersedes earlier 200 MiB overall proposal. No quota/source changes or recompile required. Capacity maintenance/fail-safe limits unchanged.
