@@ -3,18 +3,25 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `afb4a0e796df8ff71acb2644a1f4c0205e98627f`
-- **PR updated at (UTC):** `2026-11-24T04:19:06Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/afb4a0e796df8ff71acb2644a1f4c0205e98627f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `459bdc9275c067699f47835d02b04659ec091cb1`
+- **PR updated at (UTC):** `2026-11-24T04:19:38Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/459bdc9275c067699f47835d02b04659ec091cb1/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45325547720](https://github.com/taku077/c545d-recorder/actions/runs/45325547720) |
-| C545D closed media metadata prototype (CI only) | in_progress | [#45325543948](https://github.com/taku077/c545d-recorder/actions/runs/45325543948) |
+| C545D active development handoff auto-refresh | in_progress | [#45325607540](https://github.com/taku077/c545d-recorder/actions/runs/45325607540) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-24 JST — **closed-MP4 metadata classifier prototype committed; new Windows CI result not yet verified; v0.3 remains latest packaged observer**
+
+- **Active PR #62** at resume HEAD `c347cd2b04ae62b99ffd89bb7b8e13b38c90b2fa` matched main ACTIVE_HANDOFF. Independently checked actual job steps for [v0.3 Windows CI #45238100524 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45238100524), [integrated EXE #45238186656 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45238186656), [handoff #45238870944 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45238870944). Re-read failed job #45237863719 log: exact `Unexpected/missing report files` from obsolete four-file expectation; superseded by passing five-file check. Do not repeat.
+- **New source committed (CI-only):** [188a1382](https://github.com/taku077/c545d-recorder/commit/188a138239abc2eadcbded6e145ef52225ea7627) `tests/C545D-ClosedMetadataPrototype.ps1` parses bounded ffprobe JSON, classifies one H264 2560x720 15fps video track and one AAC mono48kHz audio track, duration milliseconds, numeric-only/enum evidence. Fifteen synthetic positive/negative fixtures defined. Crucial correction: production Record.ps1 composites both cameras BEFORE x264enc, so expected video track count is **one**, NOT two. Metadata is not proof of both camera pictures, actual A/V sync, complete decode, 192kbps target, or exact 3600s duration. Short final/EOS segments not automatically defective. No raw filename/RTSP data emitted.
+- **New Windows CI workflow committed:** [afb4a0e7](https://github.com/taku077/c545d-recorder/commit/afb4a0e796df8ff71acb2644a1f4c0205e98627f) `.github/workflows/c545d-closed-metadata-prototype-ci.yml` generates three disposable cases (valid composite-profile MP4, no-audio MP4, broken MP4) and checks real ffprobe plus classifier fixture cases on Windows2022. [Workflow](https://github.com/taku077/c545d-recorder/actions/workflows/c545d-closed-metadata-prototype-ci.yml). **New CI conclusion NOT verified**, connector commit-workflow endpoint is PR-event-filtered and returned no runs; web Actions view unavailable at time of writing. Check actual push workflow run/jobs/logs before declaring PASS; if necessary find its run ID via Actions UI/API. No actual camera, recording directory, host installation, or shipping diagnostic update.
+- **Next AI-only steps:** verify new CI, correct any specific failure, then build a trustworthy post-successful-rename local-only probe feed. Existing SegmentNamer.ps1 uses exclusive read/write open as readiness gate, optional duration probe, then successful Move-Item; its existing duration subprocess waits before reading stdout and never drains stderr, so do not extend that pattern blindly. Do not enumerate/probe active or arbitrary MP4; use explicitly trusted output root, reject reparse/escape paths, ensure non-writer read lease and strict timeout/async stream drain/bounded output, test locked file, malicious path, missing probe, malformed output, timeout, no audio, and no interference with rename/recording. Consider reusing a single metadata probe rather than repeated full-file decode; keep composition and synchronization unknown unless measured independently. Official [ffprobe](https://ffmpeg.org/ffprobe.html), [splitmuxsink](https://gstreamer.freedesktop.org/documentation/multifile/splitmuxsink.html). Next recorder/build fingerprint and schema compatibility, storage caps, rollback. Track B source-owner work remains pending (+64/+32 retained blocks, prior #45220933192); no new Track B measurement this turn.
+- **Safety:** `install_approved=0`, `live_test_authorized=0`, release HOLD. v0.3.0 remains latest packaged observer; prototype is not integrated. User PC untouched, preserve stream1 left/stream6 right, 2560x720 15fps, x264 medium Q24, AAC mono48k192kbps target, avdec_h264, hourly MP4/EOS. No manual long-run/WPR/UMDH request. Prior v0.3 and all older evidence below.
 
 ### UPDATE 2026-11-24 JST — **v0.3 detached recorder session EOS/reconnect summaries added; Windows CI + EXE bundle PASS; no host install**
 
