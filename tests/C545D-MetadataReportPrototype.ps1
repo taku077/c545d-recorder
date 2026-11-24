@@ -3,7 +3,7 @@
 function Read-C545DMetadataReport([string]$journal,[string]$source,[datetime]$begin,[datetime]$end,$namer){
     $rows=New-Object 'System.Collections.Generic.List[object]'
     $result=[pscustomobject]@{
-        status='not_found';rows=$rows;invalid_slots=0;busy_slots=0;saturated_slots=0
+        status='not_found';rows=$rows;invalid_slots=0;busy_slots=0;saturated_slots=0;recovered_slots=0
         matches=0;mismatches=0;unknown=0;count_difference='not_classified'
         coverage='not_proven'
     }
@@ -15,6 +15,7 @@ function Read-C545DMetadataReport([string]$journal,[string]$source,[datetime]$be
             $result.invalid_slots=$snap.InvalidSlots
             $result.busy_slots=$snap.BusySlots
             $result.saturated_slots=$snap.SaturatedSlots
+            $result.recovered_slots=$snap.RecoveredSlots
             foreach($r in $snap.Rows){
                 $rows.Add([pscustomobject][ordered]@{
                     publication_utc=UtcText $r.Utc
