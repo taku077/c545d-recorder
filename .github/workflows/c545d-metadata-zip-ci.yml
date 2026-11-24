@@ -1,0 +1,24 @@
+name: C545D metadata ZIP integration (CI only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545DMetadataJournalPrototype.cs'
+      - 'tests/C545D-MetadataReportPrototype.ps1'
+      - 'tests/Test-C545DMetadataZipIntegration.ps1'
+      - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - '.github/workflows/c545d-metadata-zip-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  zip:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare v0.3 and additive v0.4 report on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Test-C545DMetadataZipIntegration.ps1
