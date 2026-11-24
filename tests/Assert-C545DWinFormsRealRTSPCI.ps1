@@ -16,7 +16,8 @@ param(
   [ValidateSet(8)][int]$CiSplitSeconds=8,
   [ValidateSet(0,1000,5000)][int]$CiPreStopDelayMs=0,
   [string]$CiMetadataProbeExe,
-  [string]$CiMetadataProbeSha256
+  [string]$CiMetadataProbeSha256,
+  [switch]$CiNativeController
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -262,6 +263,7 @@ try {
   }
   if(-not $serverReady){throw 'FINITE_RTSP_NOT_READY'}
   $phase='GUI_BOOTSTRAP'
+  if(-not $CiNativeController){
   $uiSourceText=[IO.File]::ReadAllText($guiSource)
   $uiAnchor='[void][System.Windows.Forms.Application]::Run($form)'
   if([regex]::Matches($uiSourceText,[regex]::Escape($uiAnchor)).Count -ne 1){
@@ -347,6 +349,9 @@ $script:ciWinFormsTime.Start()
   # Retain BOM for WinPS5.1 Japanese messages (otherwise ACP decoding).
   [IO.File]::WriteAllText((Join-Path $stage 'C545D_App.ps1'),$guiPrivate,
     (New-Object System.Text.UTF8Encoding($true)))
+  }else{
+    Copy-Item -LiteralPath $guiSource -Destination (Join-Path $stage 'C545D_App.ps1')
+  }
   foreach($path in @($namerSource,$namerWorkerSource)){
     $target=Join-Path $stage ([IO.Path]::GetFileName($path))
     Copy-Item -LiteralPath $path -Destination $target
@@ -390,10 +395,33 @@ $encrypted=ConvertFrom-SecureString $pass
   $previousModulePath=[Environment]::GetEnvironmentVariable('PSModulePath','Process')
   try {
     [Environment]::SetEnvironmentVariable('PSModulePath',$null,'Process')
+    if($CiNativeController){
+      $phase='NATIVE_CONTROLLER_BUILD'
+      $nativeBuild=(Resolve-Path 'tests/New-C545DNativeControllerMirrorCI.ps1').Path
+      foreach($name in @('Program.cs','RecorderForm.cs')){
+        $src=(Resolve-Path (Join-Path 'src/C545D.Launcher' $name)).Path
+        $snapshot[$src]=(Get-FileHash -LiteralPath $src).Hash
+      }
+      foreach($name in @('C545D_SettingsBridge.ps1','RecoverPending.ps1','C545D_Start.vbs')){
+        $src=(Resolve-Path $name).Path
+        $snapshot[$src]=(Get-FileHash -LiteralPath $src).Hash
+        Copy-Item -LiteralPath $src -Destination (Join-Path $stage $name)
+        if((Get-FileHash -LiteralPath (Join-Path $stage $name)).Hash -cne $snapshot[$src]){throw 'NATIVE_BACKEND_MIRROR'}
+      }
+      & $nativeBuild -Stage $stage
+      $secret=Join-Path $config 'camera_password.dpapi'
+      if(Test-Path -LiteralPath $secret){throw 'NATIVE_SECRET_EXISTS'}
+      $fake=ConvertTo-SecureString 'CI_SYNTHETIC_NOT_REAL' -AsPlainText -Force
+      [IO.File]::WriteAllText($secret,(ConvertFrom-SecureString $fake),[Text.Encoding]::ASCII)
+      [IO.File]::WriteAllText((Join-Path $stage 'ci-gui-bootstrap-ok'),'DPAPI_PRIVATE')
+      $phase='GUI_START'
+      $gui=Start-Process -FilePath (Join-Path $stage 'C545D_Native_CI_ONLY.exe') -WorkingDirectory $stage -PassThru
+    }else{
     $gui=Start-Process -FilePath $ps -ArgumentList @(
       '-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass',
       '-File',('"'+$bootstrap+'"')
     ) -WorkingDirectory $stage -WindowStyle Hidden -PassThru
+    }
   } finally {
     [Environment]::SetEnvironmentVariable('PSModulePath',$previousModulePath,'Process')
   }
@@ -801,6 +829,9 @@ $encrypted=ConvertFrom-SecureString $pass
     throw 'GUI_STOP_POLICY_WORKER_EXIT'
   }
   Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
+  if($CiNativeController){
+    Write-Output "C545D_NATIVE_CONTROLLER_MIRROR_CI_PASS,gui_buttons=1,dpapi_bridge=1,metadata_enabled=$([int]$ciMetaEnabled),renamed=$liveRenameCount,all_decoded=$mp4Decoded,watcher_closed=$liveNamerClosed,root_redirected=1,packaged_binary=0,real_camera=0,install_approved=0"
+  }
   $phase='PASS'
 } catch {
   $known=@('CI_METADATA_PROBE_IDENTITY','CI_METADATA_PROBE_RESOLUTION','CI_METADATA_PARTIAL_OPTIN','CI_METADATA_MODULE_CHANGED','CI_METADATA_FILE_COUNT','CI_METADATA_ROW_COUNT','CI_METADATA_PROFILE','CI_METADATA_RECEIPT','CI_METADATA_DEFAULT_OFF_CHANGED','NOT_DISPOSABLE_WINDOWS_CI','UNSAFE_CI_TEMP','REFERENCE_NOT_PINNED',
