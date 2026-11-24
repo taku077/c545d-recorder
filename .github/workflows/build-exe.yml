@@ -194,6 +194,75 @@ jobs:
              $i.report_window_attribution -ne 'not_proven' -or $i.loaded_runtime_identity -ne 'not_collected' -or
              $i.authenticity -ne 'not_proven'){throw 'PACKAGE_IDENTITY_REPORT_INVALID'}
           Write-Host 'C545D_PACKAGED_IDENTITY_REPORT_PASS,actual_package=1,matched=12,commit_match=1,history_not_proven=1,loaded_runtime_not_collected=1'
+      - name: Verify runtime identity against actual isolated GStreamer processes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $observer=(Resolve-Path 'dist/C545D_Recorder/diagnostics/C545D-WeeklyObserver.ps1').Path
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $gst=Join-Path $sdk 'bin\gst-launch-1.0.exe'
+          $env:PATH=(Join-Path $sdk 'bin')+';'+$env:PATH
+          $env:GST_PLUGIN_PATH=''
+          $env:GST_PLUGIN_SYSTEM_PATH=Join-Path $sdk 'lib\gstreamer-1.0'
+          $env:GST_REGISTRY=Join-Path $env:RUNNER_TEMP 'runtime-identity-fixture-registry.bin'
+          if(@(Get-Process -Name 'gst-launch-1.0' -ErrorAction SilentlyContinue).Count){throw 'RUNTIME_FIXTURE_OTHER_PROCESS'}
+          $root=Join-Path $env:RUNNER_TEMP 'runtime-identity-fixture'
+          New-Item -ItemType Directory -Path $root | Out-Null
+          function Export-Identity([string]$tag){
+            $dir=Join-Path $root $tag
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $observer -RootDirectory $dir -RecorderLogDirectory (Join-Path $dir 'missing-logs') -MetadataJournalRoot (Join-Path $dir 'missing-journal') -WriterReceiptRoot (Join-Path $dir 'missing-receipts') -ExportNow | Out-Null
+            if($LASTEXITCODE -ne 0){throw 'RUNTIME_EXPORT_FAILED'}
+            $zip=@(Get-ChildItem (Join-Path $dir 'reports') -Filter '*.zip' -File)
+            if($zip.Count -ne 1){throw 'RUNTIME_ZIP_COUNT'}
+            $unpack=Join-Path $dir 'unpacked'
+            Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $unpack
+            $m=Get-Content (Join-Path $unpack 'manifest.json') -Raw|ConvertFrom-Json
+            $i=$m.runtime_identity
+            if($i.mapped_bytes_identity -ne 'not_collected' -or $i.recorder_ownership -ne 'not_proven' -or
+               $i.report_window_attribution -ne 'not_proven'){throw 'RUNTIME_OVERCLAIM'}
+            $serialized=$i|ConvertTo-Json -Depth 5 -Compress
+            if($serialized -match '[A-Za-z]:\\|rtsp://|[0-9A-Fa-f]{64}'){throw 'RUNTIME_PRIVACY'}
+            return $i
+          }
+          function Start-Fixture {
+            $psi=New-Object Diagnostics.ProcessStartInfo
+            $psi.FileName=$gst
+            $psi.Arguments='-q videotestsrc is-live=true ! video/x-raw,width=32,height=32,framerate=5/1 ! fakesink sync=true'
+            $psi.UseShellExecute=$false;$psi.CreateNoWindow=$true
+            $p=[Diagnostics.Process]::Start($psi);$null=$p.Handle
+            return $p
+          }
+          $a=$null;$b=$null
+          try{
+            $empty=Export-Identity 'empty'
+            if($empty.status -ne 'no_process' -or $empty.process_count -ne 0){throw 'RUNTIME_EMPTY'}
+            $a=Start-Fixture
+            $clock=[Diagnostics.Stopwatch]::StartNew()
+            do{
+                if($a.HasExited){throw 'RUNTIME_FIXTURE_EXIT'}
+                Start-Sleep -Milliseconds 250
+                $a.Refresh()
+                $mods=@($a.Modules|ForEach-Object ModuleName)
+            }while(($mods -notcontains 'glib-2.0-0.dll' -or $mods -notcontains 'gobject-2.0-0.dll') -and $clock.ElapsedMilliseconds -lt 15000)
+            if($mods -notcontains 'glib-2.0-0.dll' -or $mods -notcontains 'gobject-2.0-0.dll'){throw 'RUNTIME_FIXTURE_MODULES'}
+            Start-Sleep -Milliseconds 1000
+            $live=Export-Identity 'unique'
+            if($live.status -ne 'observed' -or $live.process_count -ne 1 -or
+                $live.modules.'glib-2.0-0.dll' -ne 'observed_disk_reference_match' -or
+                $live.modules.'gobject-2.0-0.dll' -ne 'observed_disk_reference_match' -or
+                $live.observed_modules -lt 2 -or $live.matched_disk_files -lt 2){throw ('RUNTIME_UNIQUE_'+$live.status)}
+            $b=Start-Fixture
+            Start-Sleep -Seconds 2
+            if($a.HasExited -or $b.HasExited){throw 'RUNTIME_FIXTURE_EXIT'}
+            $ambiguous=Export-Identity 'ambiguous'
+            if($ambiguous.status -ne 'ambiguous_process' -or $ambiguous.process_count -ne 2 -or
+                $ambiguous.observed_modules -ne 0 -or $ambiguous.matched_disk_files -ne 0){throw 'RUNTIME_AMBIGUOUS'}
+            Write-Host ('C545D_LIVE_RUNTIME_IDENTITY_PASS,actual_gstreamer=1,observed_modules='+$live.observed_modules+',matched_disk_files='+$live.matched_disk_files+',no_process=1,ambiguous=1,privacy=1,mapped_bytes_not_collected=1,real_camera=0')
+          }finally{
+            foreach($p in @($a,$b)){
+                if($p){try{if(-not $p.HasExited){$p.Kill();[void]$p.WaitForExit(3000)}}finally{$p.Dispose()}}
+            }
+          }
       - name: Verify detached weekly observer in the packaged candidate
         shell: powershell
         run: |
