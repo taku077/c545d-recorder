@@ -3,18 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `53d51b3f2d7a4bce36fdfd39833384cab71196b5`
-- **PR updated at (UTC):** `2026-11-24T12:29:41Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/53d51b3f2d7a4bce36fdfd39833384cab71196b5/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3d022037f662464a8d7bc9a57da739ebc16c2c3e`
+- **PR updated at (UTC):** `2026-11-24T12:30:08Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3d022037f662464a8d7bc9a57da739ebc16c2c3e/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#45394046526](https://github.com/taku077/c545d-recorder/actions/runs/45394046526) |
-| C545D exact packaged EXE external buttons synthetic RTSP CI ONLY | in_progress | [#45394036553](https://github.com/taku077/c545d-recorder/actions/runs/45394036553) |
+| Same-SHA CI not found | unknown | - |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-24 JST — **existing GUI regressions 7/7 PASS; exact EXE UIA failed before recording, external HWND retry committed**
+
+- Resumed exact PR #62/main ACTIVE_HANDOFF HEAD `f1e8d8beedd7082fc9caf6ccd60b0f85d5762446`. [#45393494152 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45393494152) at a84157ad all 4 PowerShell/native-mirror metadata ON/OFF jobs PASS. [#45393494084 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45393494084) all 3 EOS split-boundary timing jobs (0/1000/5000ms) PASS. No regression observed in those synthetic fixtures.
+- [#45393532303 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/45393532303) and [#45393571112 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/45393571112) both exact packaged EXE arms failed. Actual logs jobs 138443181799/138443182589/138443318341 report PACKAGED_START_BUTTON, line 51, RuntimeException, worker_exit=259 sentinel, media_verified=0, mp4_files=0. Package hash and prior staging gates passed; external UIA helper did not return success, exact reason unknown (original helper lacked phase-level evidence); no inference of recorder defect or success. Native source labels and stop log checked against actual code.
+- [474fa06e](https://github.com/taku077/c545d-recorder/commit/474fa06e9923be000e69a628c7166fa2e349ad07) changes only CI helper to enumerate owned WinForms top-level HWND and child BUTTON class, retrieve exact UTF16 caption with bounded WM_GETTEXT, verify same PID/session/path/visible/enabled/child relationship, send one bounded BM_CLICK; never retry after attempted click/timeout. [Microsoft BM_CLICK](https://learn.microsoft.com/windows/win32/controls/bm-click), [WM_GETTEXT](https://learn.microsoft.com/windows/win32/winmsg/wm-gettext), [SendMessageTimeoutW](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw). No global keyboard/mouse input, no injected code, exact EXE bytes unchanged. BM_CLICK delivery alone is not proof of handler success: existing independent worker ownership, stop log, EOS/decode and process exit predicates remain mandatory. [b5eef108](https://github.com/taku077/c545d-recorder/commit/b5eef10874dc652453bcee8f994f3e3fc4b4dbe1) and [53d51b3f](https://github.com/taku077/c545d-recorder/commit/53d51b3f2d7a4bce36fdfd39833384cab71196b5) add allowlisted scalar phase/main/buttons/matched/enabled/sent/winerr evidence and workflow trigger. New CI result unverified; inspect latest exact workflow at 53d51b3f, not previous UIA jobs. If external desktop unavailable, classify observer limitation rather than endlessly tuning; never substitute mirror PASS for exact EXE PASS. Remaining rollback and release policy not completed.
+- PR #62 draft, release HOLD, install_approved=0, live_test_authorized=0, metadata default OFF; no real host change/manual operations; previous observer/capacity PASS and Track B unchanged.
 
 ### UPDATE 2026-11-24 JST — **observer ABBA 8/8 and receipt capacity PASS; exact packaged EXE external button CI committed**
 
