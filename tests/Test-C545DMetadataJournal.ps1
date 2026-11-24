@@ -1,0 +1,81 @@
+# CI-only; synthetic event journal test, no camera or media access.
+$ErrorActionPreference='Stop'
+Add-Type -Path (Join-Path $PSScriptRoot 'C545DMetadataJournalPrototype.cs')
+$root=Join-Path $env:RUNNER_TEMP ('c545d-meta-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $root | Out-Null
+function Assert-Eq($a,$b,[string]$tag){if($a -cne $b){throw ('JOURNAL_ASSERT_'+$tag+' actual='+$a+' expected='+$b)}}
+function New-Row([datetime]$t){
+    $row=New-Object 'C545DMetadataJournalPrototype+Row'
+    $row.Utc=$t;$row.Status='profile_match_metadata_only';$row.DurationMs=3600123
+    $row.VideoTracks=1;$row.AudioTracks=1;$row.Width=2560;$row.Height=720
+    $row.FpsNum=15;$row.FpsDen=1;$row.SampleRate=48000;$row.Channels=1;$row.H264=1;$row.Aac=1
+    return $row
+}
+function Save-Row($row){[C545DMetadataJournalPrototype]::Append($root,$row)}
+function Get-Snapshot([datetime]$b,[datetime]$e){[C545DMetadataJournalPrototype]::ReadWindow($root,$b,$e)}
+$start=[datetime]::new(2026,10,1,0,0,0,[DateTimeKind]::Utc)
+try{
+    Assert-Eq (Get-Snapshot $start $start.AddDays(1)).Status 'no_events_coverage_unverified' 'EMPTY'
+    # 40 days of simulated hourly events, no wall-clock wait.
+    for($d=0;$d -lt 40;$d++){
+        for($h=0;$h -lt 24;$h++){
+            Assert-Eq (Save-Row (New-Row $start.AddDays($d).AddHours($h))) 'saved' 'HOURLY'
+        }
+    }
+    $files=@(Get-ChildItem -LiteralPath $root -File)
+    Assert-Eq $files.Count 32 'FIXED_SLOTS'
+    $latest=$start.AddDays(40)
+    $week=Get-Snapshot $latest.AddDays(-7) $latest
+    Assert-Eq $week.Rows.Count 168 'LAST_WEEK'
+    Assert-Eq $week.Status 'coverage_unverified' 'NO_OVERCLAIM'
+    Assert-Eq (Get-Snapshot $latest.AddDays(-31) $latest).Rows.Count 744 '31DAY_WINDOW'
+    Assert-Eq (Save-Row (New-Row $start)) 'clock_rollback' 'STALE_WRITE'
+    $bad=New-Row $latest
+    $bad.Status='rtsp://synthetic:PRIVATE_SECRET@192.0.2.1/stream6'
+    Assert-Eq (Save-Row $bad) 'invalid_row' 'SECRET'
+    $bad=New-Row $latest;$bad.Width=1280
+    Assert-Eq (Save-Row $bad) 'invalid_row' 'FALSE_PROFILE'
+    $unavailable=New-Row $latest
+    $unavailable.Status='probe_unavailable';$unavailable.DurationMs=-1
+    $unavailable.VideoTracks=-1;$unavailable.AudioTracks=-1;$unavailable.Width=-1;$unavailable.Height=-1
+    $unavailable.FpsNum=-1;$unavailable.FpsDen=-1;$unavailable.SampleRate=-1;$unavailable.Channels=-1;$unavailable.H264=-1;$unavailable.Aac=-1
+    Assert-Eq (Save-Row $unavailable) 'saved' 'UNKNOWN'
+    for($i=1;$i -lt 256;$i++){Assert-Eq (Save-Row (New-Row $latest.AddSeconds($i))) 'saved' 'FILL'}
+    Assert-Eq (Save-Row (New-Row $latest.AddSeconds(257))) 'capacity_reached' 'CAP'
+    $day=Get-Snapshot $latest $latest.AddDays(1)
+    Assert-Eq $day.Rows.Count 256 'CAP_ROWS'
+    Assert-Eq $day.SaturatedSlots 1 'CAP_VISIBLE'
+    Assert-Eq $day.Status 'partial_or_unavailable' 'CAP_COVERAGE'
+    Assert-Eq $day.Rows[0].Status 'probe_unavailable' 'UNKNOWN_ROUNDTRIP'
+    $slot=@(Get-ChildItem -LiteralPath $root -File | Where-Object {
+        [IO.File]::ReadAllText($_.FullName).StartsWith('C545D_META_V1|'+$latest.ToString('yyyyMMdd'))
+    })
+    Assert-Eq $slot.Count 1 'CURRENT_SLOT'
+    $hash=(Get-FileHash -LiteralPath $slot[0].FullName).Hash
+    $lock=[IO.File]::Open($slot[0].FullName,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{
+        Assert-Eq (Save-Row (New-Row $latest)) 'busy_or_io_error' 'BUSY_WRITER'
+        $busy=Get-Snapshot $latest $latest.AddDays(1)
+        Assert-Eq $busy.BusySlots 1 'BUSY_READER'
+        Assert-Eq $busy.Status 'partial_or_unavailable' 'BUSY_COVERAGE'
+    }finally{$lock.Dispose()}
+    Assert-Eq (Get-FileHash -LiteralPath $slot[0].FullName).Hash $hash 'BUSY_UNCHANGED'
+    $total=0L
+    foreach($file in @(Get-ChildItem -LiteralPath $root -File)){
+        $total+=$file.Length
+        if($file.Length -gt 65536 -or [IO.File]::ReadAllText($file.FullName) -match 'rtsp|PRIVATE_SECRET|192\.0\.2\.1'){throw 'JOURNAL_PRIVACY_OR_CAP'}
+    }
+    if($total -gt 2097152){throw 'JOURNAL_TOTAL_CAP'}
+    # Simulate interrupted append / malicious data. Do not export partial slot.
+    [IO.File]::AppendAllText($slot[0].FullName,'incomplete')
+    $corrupt=Get-Snapshot $latest $latest.AddDays(1)
+    Assert-Eq $corrupt.InvalidSlots 1 'CORRUPT_SLOT'
+    Assert-Eq $corrupt.Rows.Count 0 'CORRUPT_NO_ROWS'
+    Assert-Eq $corrupt.Status 'partial_or_unavailable' 'CORRUPT_COVERAGE'
+    Assert-Eq (Save-Row (New-Row $latest)) 'source_invalid' 'CORRUPT_WRITE_DENIED'
+    $junction=$root+'-junction'
+    New-Item -ItemType Junction -Path $junction -Target $root | Out-Null
+    try{Assert-Eq ([C545DMetadataJournalPrototype]::Append($junction,(New-Row $latest))) 'root_rejected' 'REPARSE'}
+    finally{[IO.Directory]::Delete($junction)}
+    Write-Host ('C545D_METADATA_JOURNAL_PASS,simulated_days=40,hourly_writes=960,slots=32,week_rows=168,day_cap=256,byte_cap=2097152,actual_bytes='+$total+',busy=1,corrupt=1,clock_rollback=1,privacy=1,coverage_unverified=1,host_modified=0')
+}finally{Remove-Item -LiteralPath $root -Recurse -Force}
