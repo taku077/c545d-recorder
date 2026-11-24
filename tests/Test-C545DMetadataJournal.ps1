@@ -73,6 +73,36 @@ try{
     Assert-Eq $corrupt.Rows.Count 0 'CORRUPT_NO_ROWS'
     Assert-Eq $corrupt.Status 'partial_or_unavailable' 'CORRUPT_COVERAGE'
     Assert-Eq (Save-Row (New-Row $latest)) 'source_invalid' 'CORRUPT_WRITE_DENIED'
+    # Recovery is explicit: only a complete validated prefix and incomplete tail.
+    $recoverDay=$latest.AddDays(1)
+    Assert-Eq (Save-Row (New-Row $recoverDay)) 'saved' 'RECOVERY_FIRST'
+    Assert-Eq (Save-Row (New-Row $recoverDay.AddHours(1))) 'saved' 'RECOVERY_SECOND'
+    $recoverySlot=@(Get-ChildItem -LiteralPath $root -File | Where-Object {
+        [IO.File]::ReadAllText($_.FullName).StartsWith('C545D_META_V1|'+$recoverDay.ToString('yyyyMMdd'))
+    })[0].FullName
+    $intact=[IO.File]::ReadAllText($recoverySlot)
+    [IO.File]::AppendAllText($recoverySlot,'20261110T020000.000')
+    $tornHash=(Get-FileHash $recoverySlot).Hash
+    $lock=[IO.File]::Open($recoverySlot,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay)) 'busy_or_io_error' 'RECOVERY_BUSY'}
+    finally{$lock.Dispose()}
+    Assert-Eq (Get-FileHash $recoverySlot).Hash $tornHash 'RECOVERY_BUSY_UNCHANGED'
+    Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay.AddDays(-32))) 'not_recoverable' 'RECOVERY_WRONG_DAY'
+    Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay)) 'recovered_loss_possible' 'RECOVERY_SUCCESS'
+    Assert-Eq ([IO.File]::ReadAllText($recoverySlot)) ($intact.Replace('C545D_META_V1|','C545D_META_R1|')) 'RECOVERY_PREFIX_EXACT'
+    $restored=Get-Snapshot $recoverDay $recoverDay.AddDays(1)
+    Assert-Eq $restored.Rows.Count 2 'RECOVERY_ROWS'
+    Assert-Eq $restored.RecoveredSlots 1 'RECOVERY_MARKER'
+    Assert-Eq $restored.Status 'partial_or_unavailable' 'RECOVERY_COVERAGE'
+    Assert-Eq (Save-Row (New-Row $recoverDay.AddHours(2))) 'saved' 'RECOVERY_APPEND'
+    Assert-Eq (Get-Snapshot $recoverDay $recoverDay.AddDays(1)).Rows.Count 3 'RECOVERY_CONTINUE'
+    Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay)) 'not_torn_tail' 'RECOVERY_IDEMPOTENT'
+    # Refuse a malformed complete row followed by a torn fragment.
+    [IO.File]::AppendAllText($recoverySlot,('bad-complete'+[char]10+'torn'))
+    $badHash=(Get-FileHash $recoverySlot).Hash
+    Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay)) 'not_recoverable' 'RECOVERY_BAD_PREFIX'
+    Assert-Eq (Get-FileHash $recoverySlot).Hash $badHash 'RECOVERY_BAD_PREFIX_UNCHANGED'
+    Write-Host 'C545D_JOURNAL_TORN_TAIL_PASS,complete_rows_preserved=2,append_after_recovery=1,loss_marker=1,locked_unchanged=1,wrong_day_denied=1,corrupt_prefix_denied=1,idempotent=1,real_power_cut=0'
     $junction=$root+'-junction'
     New-Item -ItemType Junction -Path $junction -Target $root | Out-Null
     try{Assert-Eq ([C545DMetadataJournalPrototype]::Append($junction,(New-Row $latest))) 'root_rejected' 'REPARSE'}
