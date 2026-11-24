@@ -147,7 +147,7 @@ jobs:
           $identityFiles=@('C545D_Recorder.exe','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1',
             'diagnostics/C545D-WeeklyObserver.ps1','plugins/gstc545dsei.dll')
           $identityFiles+=@($metadataModules|ForEach-Object {'diagnostics/'+$_})
-          $identity=[ordered]@{schema_version=1;source_commit=$env:GITHUB_SHA;observer_version='0.3.0';
+          $identity=[ordered]@{schema_version=1;source_commit=$env:GITHUB_SHA;observer_version='0.4.0';
             metadata_candidate_version='0.4.0';metadata_default_enabled=0;host_runtime_verified=0;files=[ordered]@{}}
           foreach($file in $identityFiles){
             $identity.files[$file]=(Get-FileHash -LiteralPath (Join-Path $bundle $file) -Algorithm SHA256).Hash
