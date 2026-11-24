@@ -17,6 +17,7 @@ on:
     paths:
       - 'src/C545D.Launcher/**'
       - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - 'tests/Test-C545DObserverOverheadCI.ps1'
       - 'diagnostics/C545D*V04*'
       - 'START_WEEKLY_OBSERVER.cmd'
       - 'EXPORT_WEEKLY_REPORT.cmd'
@@ -280,6 +281,12 @@ jobs:
           & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $source -SelfTest
           if($LASTEXITCODE -ne 0){throw 'Packaged weekly observer selftest failed'}
           Write-Host 'C545D_PACKAGED_WEEKLY_OBSERVER_PASS,separate_process=1,first_72h=1,weekly=7d,raw_ETW_disabled=1,release_HOLD=1'
+      - name: Measure actual ZIP observer ON OFF overhead in disposable runner
+        if: github.ref == 'refs/heads/investigate/c545d-status-only-monitor-20261120'
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & tests/Test-C545DObserverOverheadCI.ps1 -BundleZip (Resolve-Path 'dist/C545D_Recorder_EXE_Win10_x64.zip').Path -SdkRoot (Join-Path $env:RUNNER_TEMP 'gst-1.28.8')
       - name: Guard private hidden console and safe EOS stop semantics
         shell: powershell
         run: |
