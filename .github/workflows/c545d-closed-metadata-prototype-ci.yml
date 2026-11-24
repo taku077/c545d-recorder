@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/C545D-ClosedMetadataPrototype.ps1'
+      - 'tests/C545DClosedProbePrototype.cs'
       - '.github/workflows/c545d-closed-metadata-prototype-ci.yml'
   workflow_dispatch:
 permissions:
@@ -51,3 +52,52 @@ jobs:
           if((Read-Fixture $bad).metadata_status -ne 'probe_failed'){throw 'BROKEN_CONTAINER_ACCEPTED'}
           $global:LASTEXITCODE=0
           Write-Host 'C545D_CLOSED_METADATA_FIXTURES_PASS,valid=1,no_audio_rejected=1,invalid_container_rejected=1,real_camera=0,composition_proven=0,release_HOLD=1'
+
+          # CI-only closed-file gate; never invoke for actual user recordings.
+          Add-Type -Path (Resolve-Path tests/C545DClosedProbePrototype.cs).Path
+          $leaf='2026-11-24_12-00_12-01.mp4'
+          $final=Join-Path $dir $leaf
+          Move-Item -LiteralPath $ok -Destination $final
+          $before=(Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash
+          function Assert-Probe($result,[string]$status,[int]$started){
+            if($result.Status -ne $status -or $result.Started -ne $started){
+              throw ('CLOSED_PROBE_UNEXPECTED_STATUS='+$result.Status+';expected='+$status)
+            }
+            if($started -eq 1 -and $result.ChildExited -ne 1){throw 'CHILD_CLEANUP_UNCONFIRMED'}
+            if($status -ne 'ok' -and $result.Json -ne ''){throw 'RAW_ERROR_OUTPUT_RETAINED'}
+          }
+          $p=[C545DClosedProbePrototype]::ProbeFinalized($dir,$leaf,$true,$ffprobe.Source,4000)
+          Assert-Probe $p 'ok' 1
+          if((ConvertTo-C545DMetadataEvidence $p.Json $p.ExitCode).metadata_status -ne 'profile_match_metadata_only'){throw 'LEASED_METADATA_INVALID'}
+          Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$leaf,$false,$ffprobe.Source,4000)) 'no_rename_evidence' 0
+          foreach($name in @('..\'+$leaf,'C545D_PENDING_20261124_120000_12345678_00001.mp4',$leaf+':stream','https://example.invalid/a.mp4')){
+            Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$name,$true,$ffprobe.Source,4000)) 'name_rejected' 0
+          }
+          Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized('\\example.invalid\share',$leaf,$true,$ffprobe.Source,4000)) 'root_rejected' 0
+          Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$leaf,$true,(Join-Path $dir 'ffprobe.exe'),4000)) 'probe_unavailable' 0
+          Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,'2026-11-24_13-00_13-01.mp4',$true,$ffprobe.Source,4000)) 'missing_file' 0
+          $lock=[IO.File]::Open($final,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+          try{
+            Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$leaf,$true,$ffprobe.Source,4000)) 'file_busy_or_unavailable' 0
+          }finally{$lock.Dispose()}
+          $junction=Join-Path $dir 'junction'
+          New-Item -ItemType Junction -Path $junction -Target $dir -ErrorAction Stop | Out-Null
+          try{
+            Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($junction,$leaf,$true,$ffprobe.Source,4000)) 'root_rejected' 0
+          }finally{[IO.Directory]::Delete($junction)}
+          if((Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash -ne $before){throw 'MEDIA_CHANGED'}
+          # Direct subprocess tests: both pipes exceed ordinary pipe capacity,
+          # no unbounded capture, no blocking WaitForExit before draining.
+          $ps=(Get-Command powershell.exe).Source
+          function Run-Synthetic([string]$code,[int]$ms){
+            $b64=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
+            [C545DClosedProbePrototype]::RunBounded($ps,('-NoProfile -NonInteractive -EncodedCommand '+$b64),$ms)
+          }
+          $dual=Run-Synthetic '[Console]::Out.Write(("x"*40000));[Console]::Error.Write(("y"*40000));exit 0' 5000
+          Assert-Probe $dual 'ok' 1
+          if($dual.Json.Length -ne 40000){throw 'STDOUT_TRUNCATED'}
+          Assert-Probe (Run-Synthetic '[Console]::Out.Write(("x"*100000));exit 0' 5000) 'output_limit' 1
+          Assert-Probe (Run-Synthetic '[Console]::Error.Write(("x"*100000));exit 0' 5000) 'output_limit' 1
+          Assert-Probe (Run-Synthetic 'Start-Sleep -Seconds 20;exit 0' 1000) 'timeout' 1
+          Assert-Probe (Run-Synthetic 'exit 7' 5000) 'probe_failed' 1
+          Write-Host 'C545D_CLOSED_PROBE_SAFETY_PASS,real_fixture=1,locked=1,path_rejections=5,junction=1,media_hash_unchanged=1,dual_pipe=1,overflow=2,timeout=1,child_cleanup=1,host_modified=0'
