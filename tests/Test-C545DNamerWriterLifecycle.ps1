@@ -30,7 +30,7 @@ $script:C545DProbeSearched=$true
 Add-Type -Path (Join-Path $PSScriptRoot 'C545DClosedProbePrototype.cs')
 Add-Type -Path @((Join-Path $PSScriptRoot 'C545DMetadataJournalPrototype.cs'),(Join-Path $PSScriptRoot 'C545DMetadataWriterPrototype.cs'))
 $script:diagnosticGate=New-Object Threading.ManualResetEventSlim($env:C545D_CI_STALL -ne '1')
-$script:diagnosticWriter=New-Object C545DMetadataWriterPrototype($env:C545D_CI_JOURNAL,$script:diagnosticGate)
+$script:diagnosticWriter=New-Object C545DMetadataWriterPrototype($env:C545D_CI_JOURNAL,$script:diagnosticGate,$env:C545D_CI_RECEIPTS)
 function Publish-C545DTestEvidence($row){
     $entry=New-Object 'C545DMetadataJournalPrototype+Row'
     $entry.Utc=[datetime]::UtcNow;$entry.Status=$row.metadata_status
@@ -81,13 +81,15 @@ function Run-Arm([bool]$stall){
     $arm=Join-Path $root ('arm_'+[int]$stall)
     $folder=Join-Path $arm 'output';$journal=Join-Path $arm 'journal'
     $private=Join-Path $arm 'local'
-    foreach($d in @($folder,$journal,$private)){New-Item -ItemType Directory -Path $d -Force|Out-Null}
+    $receipt=Join-Path $arm 'receipts'
+    foreach($d in @($folder,$journal,$private,$receipt)){New-Item -ItemType Directory -Path $d -Force|Out-Null}
     $ready=Join-Path $arm 'ready';$stop=Join-Path $arm 'stop'
     $stdout=Join-Path $arm 'stdout';$stderr=Join-Path $arm 'stderr'
     $oldLocal=$env:LOCALAPPDATA
     $env:LOCALAPPDATA=$private
     $env:C545D_CI_STALL=[string][int]$stall
     $env:C545D_CI_JOURNAL=$journal
+    $env:C545D_CI_RECEIPTS=$receipt
     $env:C545D_CI_DIRECT_PROBE=$ProbeExe
     $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $scriptPath=Join-Path $stage 'SegmentNamerWorker.ps1'
@@ -155,6 +157,42 @@ function Run-Arm([bool]$stall){
             Assert-Eq $jfiles.Count 1 'NORMAL_JOURNAL'
             Assert-Eq @(Get-Content -LiteralPath $jfiles[0].FullName).Count 3 'NORMAL_ROWS'
         }
+        $receipts=@(Get-ChildItem -LiteralPath $receipt -File)
+        Assert-Eq $receipts.Count 1 'RECEIPT_FILE'
+        $receiptLines=@(Get-Content -LiteralPath $receipts[0].FullName)
+        if($receiptLines[0] -cnotmatch '^C545D_WRITER_V1\|\d{8}T\d{6}\.\d{7}Z\|[0-9a-f]{32},stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
+    }finally{
+        if($locked){$locked.Dispose()}
+        if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
+        $env:LOCALAPPDATA=$oldLocal
+        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_RECEIPTS,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
+    }
+}
+Run-Arm $false
+Run-Arm $true
+if([IO.File]::ReadAllText((Join-Path $repo 'SegmentNamer.ps1')) -cne $originalNamer -or
+   [IO.File]::ReadAllText((Join-Path $repo 'SegmentNamerWorker.ps1')) -cne $originalWorker){throw 'PRODUCTION_SOURCE_CHANGED'}
+Write-Host 'C545D_NAMER_WRITER_LIFECYCLE_PASS,arms=2,actual_watcher=1,locked_final_after_stop=1,normal_saved=2,stalled_unconfirmed=2,source_unchanged=1,real_eos=0,real_camera=0,host_modified=0'
+){throw 'RECEIPT_HEADER'}
+        if($stall){Assert-Eq $receiptLines.Count 1 'UNFINISHED_RECEIPT'}
+        else{
+            Assert-Eq $receiptLines.Count 2 'FINAL_RECEIPT'
+            if($receiptLines[1] -cnotmatch '^END\|\d{8}T\d{6}\.\d{7}Z\|2\|0\|2\|0\|0,stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
+    }finally{
+        if($locked){$locked.Dispose()}
+        if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
+        $env:LOCALAPPDATA=$oldLocal
+        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
+    }
+}
+Run-Arm $false
+Run-Arm $true
+if([IO.File]::ReadAllText((Join-Path $repo 'SegmentNamer.ps1')) -cne $originalNamer -or
+   [IO.File]::ReadAllText((Join-Path $repo 'SegmentNamerWorker.ps1')) -cne $originalWorker){throw 'PRODUCTION_SOURCE_CHANGED'}
+Write-Host 'C545D_NAMER_WRITER_LIFECYCLE_PASS,arms=2,actual_watcher=1,locked_final_after_stop=1,normal_saved=2,stalled_unconfirmed=2,source_unchanged=1,real_eos=0,real_camera=0,host_modified=0'
+){throw 'RECEIPT_TOTALS'}
+        }
+        Write-Host ('C545D_NAMER_WRITER_RECEIPT_ARM_PASS,stall='+[int]$stall+',start=1,final='+[int](-not $stall))
         Write-Host ('C545D_NAMER_WRITER_ARM_PASS,stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
     }finally{
         if($locked){$locked.Dispose()}
