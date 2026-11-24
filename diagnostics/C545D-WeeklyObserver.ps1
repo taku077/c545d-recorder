@@ -1,10 +1,12 @@
-# C545D diagnostic companion v0.3.0: Windows 10 / PowerShell 5.1.
+# C545D diagnostic companion v0.4.0: Windows 10 / PowerShell 5.1.
 # Separate, read-only and low-frequency. No recorder injection or restart.
 [CmdletBinding()]
 param(
   [ValidateRange(10,600)][int]$IntervalSeconds=60,
   [string]$RootDirectory=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\WeeklyObserver'),
   [string]$RecorderLogDirectory=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\Logs'),
+  [string]$MetadataJournalRoot=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\MetadataV04\journal'),
+  [string]$WriterReceiptRoot=(Join-Path $env:LOCALAPPDATA 'C545D_GStreamer\MetadataV04\receipts'),
   [switch]$SelfTest,
   [switch]$Once,
   [switch]$ExportNow
@@ -12,7 +14,7 @@ param(
 $ErrorActionPreference='Stop'
 $culture=[Globalization.CultureInfo]::InvariantCulture
 $utf8=New-Object Text.UTF8Encoding($false)
-$version='0.3.0'
+$version='0.4.0'
 $schema='1'
 $columns=@('schema_version','utc_time','status','pid','start_utc',
  'private_bytes','working_set_bytes','handle_count','thread_count',
@@ -310,11 +312,119 @@ function Read-WorkerSessions([string]$directory,[datetime]$begin,[datetime]$end)
  }
  return $result
 }
+
+# Load exactly once, only when report sources exist. No sampling-loop compilation.
+$script:metadataReportLoadAttempted=$false
+function Initialize-MetadataReportTypes {
+    if(-not $script:metadataReportLoadAttempted){
+        $script:metadataReportLoadAttempted=$true
+        try{
+            Add-Type -Path @((Join-Path $PSScriptRoot 'C545DMetadataJournalV04.cs'),(Join-Path $PSScriptRoot 'C545DMetadataWriterV04.cs')) -ErrorAction Stop
+        }catch{}
+    }
+    return [bool](('C545DMetadataJournalV04' -as [type]) -and ('C545DWriterReceipts' -as [type]))
+}
+
+# Read-only v0.4 report adapter.
+# Source is typed bounded journal; never copy raw journal bytes into ZIP.
+function Read-C545DMetadataReport([string]$journal,[datetime]$begin,[datetime]$end,$namer){
+    $rows=New-Object 'System.Collections.Generic.List[object]'
+    $result=[pscustomobject]@{
+        status='not_found';rows=$rows;invalid_slots=0;busy_slots=0;saturated_slots=0;recovered_slots=0
+        matches=0;mismatches=0;unknown=0;count_difference='not_classified'
+        coverage='not_proven'
+    }
+    if($journal -and (Test-Path -LiteralPath $journal -PathType Container)){
+        try{
+            if(-not (Initialize-MetadataReportTypes)){throw 'METADATA_READER_UNAVAILABLE'}
+            $snap=[C545DMetadataJournalV04]::ReadWindow($journal,$begin.ToUniversalTime(),$end.ToUniversalTime())
+            $result.status=$snap.Status
+            $result.invalid_slots=$snap.InvalidSlots
+            $result.busy_slots=$snap.BusySlots
+            $result.saturated_slots=$snap.SaturatedSlots
+            $result.recovered_slots=$snap.RecoveredSlots
+            foreach($r in $snap.Rows){
+                $rows.Add([pscustomobject][ordered]@{
+                    publication_utc=UtcText $r.Utc
+                    metadata_status=$r.Status;duration_ms=$r.DurationMs
+                    video_tracks=$r.VideoTracks;audio_tracks=$r.AudioTracks
+                    width=$r.Width;height=$r.Height;fps_num=$r.FpsNum;fps_den=$r.FpsDen
+                    sample_rate=$r.SampleRate;channels=$r.Channels
+                    video_h264=$r.H264;audio_aac=$r.Aac
+                })
+                if($r.Status -eq 'profile_match_metadata_only'){$result.matches++}
+                elseif($r.Status -eq 'profile_mismatch'){$result.mismatches++}
+                else{$result.unknown++}
+            }
+            # Aggregate only. Count agreement is not per-event identity or proof
+            # of complete coverage, especially near the reporting boundary.
+            if($namer.status -eq 'complete' -and $snap.Status -in @('coverage_unverified','no_events_coverage_unverified')){
+                $result.count_difference=[int]$namer.renamed-$rows.Count
+            }
+        }catch{
+            $result.status='reader_unavailable';$rows.Clear()
+            $result.matches=0;$result.mismatches=0;$result.unknown=0
+            $result.count_difference='not_classified'
+        }
+    }
+    return $result
+}
+function Write-C545DMetadataCsv($metadata,[string]$path){
+    $fields=@('publication_utc','metadata_status','duration_ms','video_tracks','audio_tracks',
+      'width','height','fps_num','fps_den','sample_rate','channels','video_h264','audio_aac')
+    if($metadata.rows.Count -gt 0){
+        $metadata.rows | Select-Object -Property $fields |
+          Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8
+    }else{
+        [IO.File]::WriteAllText($path,($fields -join ',')+[Environment]::NewLine,$utf8)
+    }
+}
+
+# Whole-run counters only, never interpreted as exact totals inside report dates.
+function Read-C545DWriterReport([string]$root,[datetime]$begin,[datetime]$end){
+    $rows=New-Object 'System.Collections.Generic.List[object]'
+    $r=[pscustomobject]@{status='not_found';rows=$rows;completed=0;unfinished=0;invalid=0;busy=0}
+    if(-not $root -or -not(Test-Path -LiteralPath $root -PathType Container)){return $r}
+    try{
+        if(-not (Initialize-MetadataReportTypes)){throw 'METADATA_READER_UNAVAILABLE'}
+        $s=[C545DWriterReceipts]::ReadWindow($root,$begin.ToUniversalTime(),$end.ToUniversalTime())
+        $r.status=$s.Status;$r.completed=$s.CompletedRuns;$r.unfinished=$s.UnfinishedRuns
+        $r.invalid=$s.InvalidSlots;$r.busy=$s.BusySlots
+        foreach($e in $s.Rows){
+            $state='unfinished_or_active';$endText='';$accepted='unknown';$rejected='unknown'
+            $saved='unknown';$failed='unknown';$recovered='unknown'
+            if($e.Final){
+                $state='final_counters_saved';$endText=UtcText $e.EndUtc
+                $accepted=$e.Accepted;$rejected=$e.Rejected;$saved=$e.Saved;$failed=$e.Failed;$recovered=$e.Recovered
+            }
+            $rows.Add([pscustomobject][ordered]@{
+                start_utc=UtcText $e.StartUtc;end_utc=$endText;state=$state
+                accepted=$accepted;rejected=$rejected;saved=$saved;failed=$failed;recovered=$recovered
+                counter_scope='whole_run_not_report_window'
+            })
+        }
+    }catch{
+        $r.status='reader_unavailable';$rows.Clear()
+        $r.completed=0;$r.unfinished=0;$r.invalid=0;$r.busy=0
+    }
+    return $r
+}
+function Write-C545DWriterCsv($report,[string]$path){
+    $fields=@('start_utc','end_utc','state','accepted','rejected','saved','failed','recovered','counter_scope')
+    if($report.rows.Count -gt 0){
+        $report.rows | Select-Object -Property $fields | Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8
+    }else{
+        [IO.File]::WriteAllText($path,($fields -join ',')+[Environment]::NewLine,$utf8)
+    }
+}
+
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
  $rows=Read-ValidRows $root $begin $end
  $media=Read-NamerEvents $RecorderLogDirectory $begin $end
  $worker=Read-WorkerSessions $RecorderLogDirectory $begin $end
+ $writerReport=Read-C545DWriterReport $WriterReceiptRoot $begin $end
+ $metadata=Read-C545DMetadataReport $MetadataJournalRoot $begin $end $media
  $dir=Join-Path $root 'reports'
  New-Item -ItemType Directory -Path $dir -Force|Out-Null
  $work=Join-Path $dir ('work_'+[guid]::NewGuid().ToString('N'))
@@ -329,6 +439,26 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
    $manifest=[ordered]@{
      schema_version=1;diagnostics_version=$version
      recorder_version='not_collected'
+     writer_receipt_source_status=$writerReport.status
+     writer_completed_runs=$writerReport.completed
+     writer_unfinished_or_active_runs=$writerReport.unfinished
+     writer_invalid_slots=$writerReport.invalid
+     writer_busy_slots=$writerReport.busy
+     writer_event_coverage='not_proven'
+     writer_counter_scope='whole_run_not_report_window'
+     metadata_journal_source_status=$metadata.status
+     metadata_journal_invalid_slots=$metadata.invalid_slots
+     metadata_journal_busy_slots=$metadata.busy_slots
+     metadata_journal_saturated_slots=$metadata.saturated_slots
+     metadata_journal_recovered_slots=$metadata.recovered_slots
+     metadata_event_count=$metadata.rows.Count
+     metadata_profile_match_count=$metadata.matches
+     metadata_profile_mismatch_count=$metadata.mismatches
+     metadata_unknown_count=$metadata.unknown
+     metadata_rename_count_difference=$metadata.count_difference
+     metadata_event_coverage='not_proven'
+     metadata_time_semantics='publication_utc_not_exact_rename_time'
+     camera_composition='not_collected';av_sync='not_collected';full_media_decode='not_collected'
      utc_from=UtcText $begin;utc_until=UtcText $end;mode=$reason
      expected_sample_interval_seconds=60
      actual_samples=$samples.Count;valid_process_samples=$okay
@@ -368,6 +498,12 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      worker_session_incomplete_count=$worker.incomplete_sessions
      next_instrumentation_gap='actual_mp4_AV_duration_and_precise_EOS_times_not_proven_by_session_log'
    }
+   $writerFile=Join-Path $work 'diagnostic_writer_runs.csv'
+   Write-C545DWriterCsv $writerReport $writerFile
+   $metadataFile=Join-Path $work 'mp4_metadata.csv'
+   Write-C545DMetadataCsv $metadata $metadataFile
+   $summary['metadata_event_count']=$metadata.rows.Count
+   $summary['metadata_coverage']='not_proven'
    $metric=Join-Path $work 'process_metrics.csv'
    if($samples.Count){
      $samples | Select-Object -Property $columns | Export-Csv -LiteralPath $metric -NoTypeInformation -Encoding UTF8
@@ -402,7 +538,7 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
       (ConvertTo-Json $manifest -Depth 4 -Compress),$utf8)
    [IO.File]::WriteAllText((Join-Path $work 'summary.json'),
       (ConvertTo-Json $summary -Depth 4 -Compress),$utf8)
-   Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,(Join-Path $work 'manifest.json'),
+   Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,$metadataFile,$writerFile,(Join-Path $work 'manifest.json'),
      (Join-Path $work 'summary.json')) -DestinationPath $partial -CompressionLevel Optimal -ErrorAction Stop
    if(-not(Test-Path $partial)){throw 'ZIP_NOT_CREATED'}
    Move-Item -LiteralPath $partial -Destination $output -ErrorAction Stop
@@ -480,6 +616,8 @@ function Test-Observer {
    $logFixture=Join-Path $root 'fake_namer_logs'
    New-Item -ItemType Directory -Path $logFixture -Force | Out-Null
    $script:RecorderLogDirectory=$logFixture
+   $script:MetadataJournalRoot=Join-Path $root 'missing_journal'
+   $script:WriterReceiptRoot=Join-Path $root 'missing_receipts'
    $t=$now.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss',$culture)
    [IO.File]::WriteAllLines((Join-Path $logFixture 'Filename_Rename.log'),@(
      ($t+'  Renamed (closed): PRIVATE_SECRET_923.mp4 -> rtsp://secret@host/stream1'),
@@ -516,6 +654,11 @@ function Test-Observer {
    $unpacked=Join-Path $root 'unpacked'
    Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
    $meta=Get-Content (Join-Path $unpacked 'manifest.json') -Raw | ConvertFrom-Json
+   if(@(Get-ChildItem $unpacked -File).Count -ne 7 -or
+      $meta.metadata_journal_source_status -ne 'not_found' -or
+      $meta.writer_receipt_source_status -ne 'not_found' -or
+      $meta.metadata_event_coverage -ne 'not_proven' -or
+      $meta.writer_event_coverage -ne 'not_proven'){throw 'SELFTEST_V04_MISSING_SOURCE'}
    $metric=Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw
    $mediaCsv=Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw
    $workerCsv=Get-Content (Join-Path $unpacked 'recorder_sessions.csv') -Raw
