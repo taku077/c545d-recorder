@@ -8,6 +8,7 @@ on:
       - 'tests/C545D-MetadataReportPrototype.ps1'
       - 'tests/Test-C545DMetadataZipIntegration.ps1'
       - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - 'diagnostics/C545D*V04*'
       - '.github/workflows/c545d-metadata-zip-ci.yml'
   workflow_dispatch:
 permissions:
@@ -22,4 +23,9 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          & ./tests/Test-C545DMetadataZipIntegration.ps1
+          $baseline=Join-Path $env:RUNNER_TEMP 'C545D-WeeklyObserver-v03.ps1'
+          git fetch --no-tags --depth=1 origin 027707608a467ab065397e7b70bbb152bdda735c
+          if($LASTEXITCODE -ne 0){throw 'BASELINE_FETCH_FAILED'}
+          git show '027707608a467ab065397e7b70bbb152bdda735c:diagnostics/C545D-WeeklyObserver.ps1' | Set-Content -LiteralPath $baseline -Encoding UTF8
+          if($LASTEXITCODE -ne 0){throw 'BASELINE_READ_FAILED'}
+          & ./tests/Test-C545DMetadataZipIntegration.ps1 -BaselineObserver $baseline
