@@ -161,7 +161,11 @@ jobs:
           $expectedMeta=if($env:C545D_CI_META_ARM -ceq 'on'){1}else{0}
           if($metaMatches.Count -ne $expectedMeta){throw 'CI_METADATA_ARM_NOT_QUALIFIED'}
           foreach($m in $metaMatches){Write-Host $m}
-          $nativeMatches=@($rows|Where-Object {([string]$_) -cmatch '^C545D_NATIVE_CONTROLLER_MIRROR_CI_PASS,gui_buttons=1,dpapi_bridge=1,metadata_enabled=[01],renamed=[3-8],all_decoded=1,watcher_closed=1,root_redirected=1,packaged_binary=0,real_camera=0,install_approved=0
+          $nativeMatches=@($rows|Where-Object {([string]$_) -cmatch '^C545D_NATIVE_CONTROLLER_MIRROR_CI_PASS,gui_buttons=1,dpapi_bridge=1,metadata_enabled=[01],renamed=[3-8],all_decoded=1,watcher_closed=1,root_redirected=1,packaged_binary=0,real_camera=0,install_approved=0$'})
+          if($env:C545D_CI_CONTROLLER -ceq 'native-mirror'){
+            if($nativeMatches.Count -ne 1 -or $nativeMatches[0] -notmatch ('metadata_enabled='+$expectedMeta+',')){throw 'NATIVE_CONTROLLER_NOT_QUALIFIED'}
+          }elseif($nativeMatches.Count -ne 0){throw 'UNEXPECTED_NATIVE_CONTROLLER'}
+          foreach($m in $nativeMatches){Write-Host $m}
           if($testExit -ne 0 -or $matches.Count -ne 1 -or $namerMatches.Count -ne 1){
             throw 'Actual WinForms GUI button event + original recorder plus 4 MP4 and EOS not qualified'
           }
@@ -173,25 +177,6 @@ jobs:
         if: success()
         with:
           name: c545d-winforms-real-recording-CI-only-numeric-${{ matrix.controller }}-${{ matrix.metadata }}
-          path: artifacts/numeric/gui_winforms_real_recording_ci.txt
-          if-no-files-found: error
-          retention-days: 7
-})
-          if($env:C545D_CI_CONTROLLER -ceq 'native-mirror'){
-            if($nativeMatches.Count -ne 1 -or $nativeMatches[0] -notmatch ('metadata_enabled='+$expectedMeta+',')){throw 'NATIVE_CONTROLLER_NOT_QUALIFIED'}
-          }elseif($nativeMatches.Count -ne 0){throw 'UNEXPECTED_NATIVE_CONTROLLER'}
-          foreach($m in $nativeMatches){Write-Host $m}
-          if($testExit -ne 0 -or $matches.Count -ne 1 -or $namerMatches.Count -ne 1){
-            throw 'Actual WinForms GUI button event + original recorder plus 4 MP4 and EOS not qualified'
-          }
-          New-Item -ItemType Directory artifacts/numeric -Force | Out-Null
-          (@($matches[0],$namerMatches[0]) + $metaMatches) | Set-Content artifacts/numeric/gui_winforms_real_recording_ci.txt -Encoding ascii
-          Write-Host $matches[0]
-          Write-Host $namerMatches[0]
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: c545d-winforms-real-recording-CI-only-numeric-${{ matrix.metadata }}
           path: artifacts/numeric/gui_winforms_real_recording_ci.txt
           if-no-files-found: error
           retention-days: 7
