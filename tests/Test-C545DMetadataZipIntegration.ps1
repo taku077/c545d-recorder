@@ -144,6 +144,62 @@ try{
     Assert-Eq $m.writer_receipt_source_status 'reader_unavailable' 'WRITER_READER_UNAVAILABLE'
     Assert-Eq $m.renamed_closed_mp4_count 4 'READER_UNAVAILABLE_LEGACY'
     Assert-Eq @(Get-ChildItem $unavailable -File).Count 7 'READER_UNAVAILABLE_FILES'
+    # Synthetic package layout: verify exact 12 fixed file identities, never execute fixtures.
+    $package=Join-Path $root 'identity-package'
+    $diag=Join-Path $package 'diagnostics'
+    $plugin=Join-Path $package 'plugins'
+    foreach($d in @($package,$diag,$plugin)){New-Item -ItemType Directory -Path $d|Out-Null}
+    $packagedObserver=Join-Path $diag 'C545D-WeeklyObserver.ps1'
+    Copy-Item -LiteralPath $candidateFile -Destination $packagedObserver
+    $names=@('C545D_Recorder.exe','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1',
+        'diagnostics/C545D-WeeklyObserver.ps1','plugins/gstc545dsei.dll','diagnostics/C545DClosedProbeV04.cs',
+        'diagnostics/C545DMetadataJournalV04.cs','diagnostics/C545DMetadataWriterV04.cs',
+        'diagnostics/C545D-MetadataClassifierV04.ps1','diagnostics/C545D-MetadataIntegrationV04.ps1')
+    $identity=[ordered]@{schema_version=1;source_commit=('a'*40);observer_version='0.4.0';
+        metadata_candidate_version='0.4.0';metadata_default_enabled=0;host_runtime_verified=0;files=[ordered]@{}}
+    foreach($name in $names){
+        $p=Join-Path $package $name
+        if($p -ne $packagedObserver){[IO.File]::WriteAllText($p,'synthetic identity fixture')}
+        $identity.files[$name]=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash
+    }
+    $identityPath=Join-Path $package 'BUILD_IDENTITY.json'
+    function Save-Identity {$identity|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $identityPath -Encoding UTF8}
+    Save-Identity
+    $valid=Run-Export $packagedObserver 'identity-valid' $true
+    $i=(Get-Content (Join-Path $valid 'manifest.json') -Raw|ConvertFrom-Json).package_identity
+    Assert-Eq $i.status 'manifest_hashes_match' 'IDENTITY_MATCH'
+    Assert-Eq $i.checked_files 12 'IDENTITY_CHECKED'
+    Assert-Eq $i.matched_files 12 'IDENTITY_MATCHED'
+    Assert-Eq $i.source_commit ('a'*40) 'IDENTITY_COMMIT'
+    Assert-Eq $i.report_window_attribution 'not_proven' 'IDENTITY_HISTORY_UNKNOWN'
+    Assert-Eq $i.loaded_runtime_identity 'not_collected' 'IDENTITY_RUNTIME_UNKNOWN'
+    Assert-Eq $i.authenticity 'not_proven' 'IDENTITY_NOT_SIGNATURE'
+    [IO.File]::AppendAllText((Join-Path $package 'Record.ps1'),'changed')
+    $changed=Run-Export $packagedObserver 'identity-changed' $true
+    $i=(Get-Content (Join-Path $changed 'manifest.json') -Raw|ConvertFrom-Json).package_identity
+    Assert-Eq $i.status 'hash_mismatch' 'IDENTITY_MISMATCH'
+    Assert-Eq $i.matched_files 11 'IDENTITY_MISMATCH_COUNT'
+    Assert-Eq $i.source_commit 'unknown' 'IDENTITY_NO_WRONG_COMMIT'
+    $identity.source_commit='PRIVATE_SECRET_923'
+    Save-Identity
+    $badId=Run-Export $packagedObserver 'identity-invalid' $true
+    $raw=Get-Content (Join-Path $badId 'manifest.json') -Raw
+    Assert-Eq ($raw|ConvertFrom-Json).package_identity.status 'manifest_rejected' 'IDENTITY_INVALID'
+    if($raw -match 'PRIVATE_SECRET'){throw 'IDENTITY_SECRET_LEAK'}
+    $identity.source_commit=('a'*40)
+    $identity.files.Remove('Record.ps1')
+    $identity.files['../PRIVATE_SECRET_923']=('b'*64)
+    Save-Identity
+    $unsafe=Run-Export $packagedObserver 'identity-unsafe-name' $true
+    $raw=Get-Content (Join-Path $unsafe 'manifest.json') -Raw
+    Assert-Eq ($raw|ConvertFrom-Json).package_identity.status 'manifest_rejected' 'IDENTITY_PATH_REJECTED'
+    if($raw -match 'PRIVATE_SECRET'){throw 'IDENTITY_NAME_LEAK'}
+    Remove-Item -LiteralPath $identityPath
+    $absent=Run-Export $packagedObserver 'identity-missing' $true
+    $m=Get-Content (Join-Path $absent 'manifest.json') -Raw|ConvertFrom-Json
+    Assert-Eq $m.package_identity.status 'not_found' 'IDENTITY_MISSING'
+    Assert-Eq $m.renamed_closed_mp4_count 4 'IDENTITY_LEGACY_RETAINED'
+    Write-Host 'C545D_PACKAGE_IDENTITY_REPORT_PASS,matched=12,mismatch=1,invalid_commit=1,unsafe_name=1,missing=1,legacy_retained=1,history_not_proven=1,runtime_not_collected=1'
     Write-Host 'C545D_V04_ACTUAL_OBSERVER_PASS,actual_source=1,reader_missing_fallback=1,legacy_report_retained=1'
     Write-Host 'C545D_WRITER_ZIP_PASS,completed=1,unfinished_unknown=1,corrupt_excluded=1,missing_unknown=1,whole_run_only=1,privacy=1'
     Write-Host 'C545D_METADATA_ZIP_INTEGRATION_PASS,baseline_files=5,candidate_files=7,legacy_csv_parity=3,profile_match=1,profile_mismatch=1,unknown=1,count_gap=1,equal_not_proof=1,corrupt_excluded=1,missing_unknown=1,privacy=1,host_modified=0'
