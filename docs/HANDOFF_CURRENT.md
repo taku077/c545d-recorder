@@ -2,6 +2,15 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-24 21:45 JST — **user accepted approximately 458 MiB storage budget; frozen candidate retained**
+
+- User explicitly accepted the proposed approximately 458 MiB limit for initial limited release preparation, preferring headroom. Current nominal combined limits 458.14 MiB (200 CSV + 256 reports/workspace + 2 journal + 128KiB receipt + 12KiB state), logical owned files only; not physical allocation or recorder logs. Supersedes earlier 200 MiB overall proposal. No quota/source changes or recompile required. Capacity maintenance/fail-safe limits unchanged.
+- Updated operational checklist [a126f35a](https://github.com/taku077/c545d-recorder/commit/a126f35a9f107c71ba6cc21a8c62b54845a9a754), current gateboard [ad9af8a2](https://github.com/taku077/c545d-recorder/commit/ad9af8a29b7eda26c3d476c4a199273d093da8e5), agreed parallel policy [ba9d00de](https://github.com/taku077/c545d-recorder/commit/ba9d00ded2aad4c81facfd4747c020f60d2a9e23).
+- Verified frozen artifact 14921025945 still present, expiry 2026-12-24 12:37:57 UTC; exact candidate source 2dc4212131eb7a367564e260bcaf9d35dc6271bd, inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, freeze CI #45395330523 PASS. Do not rebuild just for documentation. No experimental GIO DLL in this ZIP.
+- Next: prepare concrete limited-release delivery and single integrated real-camera acceptance/rollback plan using existing baseline and frozen package; distinguish capacity approval from explicit install/live-test authorization. No repeat of qualified tests unless changed code/evidence. Continue Track B independently. PR #62 draft, release HOLD until applicable approval, install_approved=0, live_test_authorized=0, no host modification or manual action requested this turn.
+
+
+
 ### UPDATE 2026-11-24 JST — **exact validated RC ZIP frozen; final gate ledger updated; approval and real-camera acceptance remain**
 
 - Resumed exact PR #62/main ACTIVE_HANDOFF HEAD `cb11e0ea946dd68eb9e12c77f540d2fa6662d26b`. API comparison 2dc42121...cb11e0ea: 15 commits, eight changed paths all CI/tests/docs, no packaged source changes. Verified rollback #45394631702 success and original artifact 14919487050 present.
