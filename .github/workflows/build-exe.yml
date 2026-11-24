@@ -175,6 +175,25 @@ jobs:
             if($err.Count){throw 'PACKAGED_METADATA_PARSE_FAILED'}
           }
           Write-Host 'C545D_V04_OPTIONAL_MODULE_PACKAGE_PASS,hashes_verified=1,compiled=1,default_off=1,host_runtime_verified=0,release_HOLD=1'
+      - name: Verify actual packaged observer exports current build identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $observer=(Resolve-Path 'dist/C545D_Recorder/diagnostics/C545D-WeeklyObserver.ps1').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'packaged-build-identity-report'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $observer -RootDirectory $dir -RecorderLogDirectory (Join-Path $dir 'missing-logs') -MetadataJournalRoot (Join-Path $dir 'missing-journal') -WriterReceiptRoot (Join-Path $dir 'missing-receipts') -ExportNow
+          if($LASTEXITCODE -ne 0){throw 'PACKAGE_IDENTITY_EXPORT_FAILED'}
+          $zip=@(Get-ChildItem (Join-Path $dir 'reports') -Filter '*.zip' -File)
+          if($zip.Count -ne 1){throw 'PACKAGE_IDENTITY_ZIP_MISSING'}
+          $unpack=Join-Path $dir 'unpacked'
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $unpack
+          $m=Get-Content (Join-Path $unpack 'manifest.json') -Raw|ConvertFrom-Json
+          $i=$m.package_identity
+          if($i.status -ne 'manifest_hashes_match' -or $i.source_commit -ne $env:GITHUB_SHA -or
+             $i.checked_files -ne 12 -or $i.matched_files -ne 12 -or
+             $i.report_window_attribution -ne 'not_proven' -or $i.loaded_runtime_identity -ne 'not_collected' -or
+             $i.authenticity -ne 'not_proven'){throw 'PACKAGE_IDENTITY_REPORT_INVALID'}
+          Write-Host 'C545D_PACKAGED_IDENTITY_REPORT_PASS,actual_package=1,matched=12,commit_match=1,history_not_proven=1,loaded_runtime_not_collected=1'
       - name: Verify detached weekly observer in the packaged candidate
         shell: powershell
         run: |
