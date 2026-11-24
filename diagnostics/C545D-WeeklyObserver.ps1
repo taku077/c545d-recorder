@@ -496,6 +496,103 @@ function Read-PackageIdentity {
     return $r
 }
 
+# Read-only export-time observation of a uniquely named GStreamer process.
+# A process name alone is NOT proof of recorder ownership. Hashes refer to
+# files at reported module paths, not bytes mapped in the live process.
+function Read-GStreamerRuntimeIdentity {
+    $pins=[ordered]@{
+        'gio-2.0-0.dll'='A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'
+        'glib-2.0-0.dll'='CAF29CFC1467E3A3E5E91F0F649BD7A501107D9B3C32A2866B08E2ECFA209E3E'
+        'gobject-2.0-0.dll'='811DAB4B420E520D91AC3FE5202975CC90CAF2C53EF2F8F0FCE8F8588A735C7A'
+        'gmodule-2.0-0.dll'='86BE81A7011EC07E1992CE7A742AD881A80AE38583BBCFFBF973498D4748DAC5'
+        'intl-8.dll'='2EF6A23F712FD7B9BF72B2FEF1A1FD5CDE27BA88F7D164E9E6DE18936C1F51B0'
+        'z-1.dll'='B84851F9084247F466C076EE993BD5A92F3462466C4877B5C4ECC4125743A060'
+    }
+    $r=[ordered]@{status='unknown';observed_utc=UtcText ([datetime]::UtcNow);
+        scope='export_time_unique_process_name_only';recorder_ownership='not_proven';
+        report_window_attribution='not_proven';mapped_bytes_identity='not_collected';
+        sdk_reference='gstreamer-1.0-msvc-x86_64-1.28.8';process_count=0;
+        executable_version_on_disk='unknown';observed_modules=0;matched_disk_files=0;modules=[ordered]@{}}
+    foreach($name in $pins.Keys){$r.modules[$name]='unknown'}
+    $found=@();$again=@()
+    try{
+        if(-not [Environment]::Is64BitProcess){$r.status='requires_64bit_observer';return $r}
+        $found=@([Diagnostics.Process]::GetProcessesByName('gst-launch-1.0'))
+        $r.process_count=$found.Count
+        if($found.Count -eq 0){$r.status='no_process';return $r}
+        if($found.Count -ne 1){$r.status='ambiguous_process';return $r}
+        $p=$found[0];$start=$p.StartTime.ToUniversalTime().Ticks
+        $p.Refresh()
+        $exe=$p.MainModule.FileName
+        if([IO.Path]::GetFileName($exe) -ine 'gst-launch-1.0.exe' -or
+           -not(Test-IdentityLocalPath (Split-Path -Parent $exe))){
+            $r.status='executable_path_rejected';return $r
+        }
+        $exeInfo=Get-Item -LiteralPath $exe -ErrorAction Stop
+        if(($exeInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $exeInfo.Length -gt 67108864){
+            $r.status='executable_rejected';return $r
+        }
+        $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+        $version=('{0}.{1}.{2}.{3}' -f $v.FileMajorPart,$v.FileMinorPart,$v.FileBuildPart,$v.FilePrivatePart)
+        $initial=@{}
+        $mods=@($p.Modules)
+        if($mods.Count -gt 4096){$r.status='module_limit';return $r}
+        foreach($name in $pins.Keys){
+            $hits=@($mods|Where-Object {$_.ModuleName -ieq $name})
+            if($hits.Count -gt 1){$r.status='ambiguous_module';return $r}
+            if($hits.Count -eq 1){$initial[$name]=$hits[0].FileName}
+        }
+        $states=[ordered]@{};$matched=0;$total=0L
+        foreach($name in $pins.Keys){
+            $states[$name]='not_observed'
+            if(-not $initial.ContainsKey($name)){continue}
+            $states[$name]='observed_disk_unavailable'
+            try{
+                $path=$initial[$name]
+                if([IO.Path]::GetFileName($path) -ine $name -or
+                   -not(Test-IdentityLocalPath (Split-Path -Parent $path))){continue}
+                $item=Get-Item -LiteralPath $path -ErrorAction Stop
+                if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                   $item.Length -gt 67108864){continue}
+                $total+=$item.Length
+                if($total -gt 134217728){continue}
+                $len=$item.Length;$write=$item.LastWriteTimeUtc
+                $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+                $after=Get-Item -LiteralPath $path -ErrorAction Stop
+                if($after.Length -ne $len -or $after.LastWriteTimeUtc -ne $write){continue}
+                if($hash -ieq $pins[$name]){$states[$name]='observed_disk_reference_match';$matched++}
+                else{$states[$name]='observed_disk_reference_mismatch'}
+            }catch{}
+        }
+        # Recheck process identity and the target module paths after IO.
+        $again=@([Diagnostics.Process]::GetProcessesByName('gst-launch-1.0'))
+        if($again.Count -ne 1 -or $again[0].Id -ne $p.Id -or
+           $again[0].StartTime.ToUniversalTime().Ticks -ne $start -or $p.HasExited){
+            $r.status='process_changed';return $r
+        }
+        $p.Refresh()
+        if($p.MainModule.FileName -ine $exe){$r.status='process_changed';return $r}
+        $final=@($p.Modules)
+        if($final.Count -gt 4096){$r.status='module_limit';return $r}
+        foreach($name in $pins.Keys){
+            $hits=@($final|Where-Object {$_.ModuleName -ieq $name})
+            if($initial.ContainsKey($name)){
+                if($hits.Count -ne 1 -or $hits[0].FileName -ine $initial[$name]){
+                    $r.status='modules_changed';return $r
+                }
+            }elseif($hits.Count -ne 0){$r.status='modules_changed';return $r}
+        }
+        if($p.HasExited){$r.status='process_changed';return $r}
+        $r.status='observed'
+        $r.modules=$states;$r.observed_modules=$initial.Count;$r.matched_disk_files=$matched
+        if($version -match '^\d{1,5}\.\d{1,5}\.\d{1,5}\.\d{1,5}$' -and $version -ne '0.0.0.0'){
+            $r.executable_version_on_disk=$version
+        }
+    }catch{$r.status='observation_unavailable'}
+    finally{foreach($p0 in @($found)+@($again)){try{$p0.Dispose()}catch{}}}
+    return $r
+}
+
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
  $rows=Read-ValidRows $root $begin $end
@@ -518,6 +615,7 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
      schema_version=1;diagnostics_version=$version
      recorder_version='not_collected'
      package_identity=(Read-PackageIdentity)
+     runtime_identity=(Read-GStreamerRuntimeIdentity)
      writer_receipt_source_status=$writerReport.status
      writer_completed_runs=$writerReport.completed
      writer_unfinished_or_active_runs=$writerReport.unfinished
