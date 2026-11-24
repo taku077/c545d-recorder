@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | queued | [#45329669517](https://github.com/taku077/c545d-recorder/actions/runs/45329669517) |
+| C545D bounded diagnostic writer (CI only) | in_progress | [#45329665410](https://github.com/taku077/c545d-recorder/actions/runs/45329665410) |
 
 ## Current development findings from the active PR
 
