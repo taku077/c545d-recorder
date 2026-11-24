@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/c545d-packaged-exe-rtsp-ci.yml'
       - 'tests/Invoke-C545DPackagedButtonCI.ps1'
+      - 'tests/Assert-C545DWinFormsRealRTSPCI.ps1'
   workflow_dispatch:
 permissions:
   contents: read
@@ -136,6 +137,9 @@ jobs:
                ([string]$row) -cmatch '^C545D_GUI_BOOTSTRAP_DIAG,phase=[A-Za-z_]+,worker_exited=[01],worker_exit=-?[0-9]+,dummy_secret_exists=[01],ready_exists=[01],control_dir_exists=[01],transcript_count=[0-9]+,mp4_count=[0-9]+,worker_cpu_ms=[0-9]+,ready_candidate_count=[0-9]+,ready_candidate_pid_match=[01],ready_candidate_name_match=[01],log_worker_pid_match=[01],log_session_match=[01],log_has_recording=[01],log_returned=[01],real_camera=0$'){
               Write-Host $row
             }
+          }
+          foreach($row in $rows){
+            if(([string]$row) -cmatch '^C545D_PACKAGED_BUTTON_DIAG,action=(start|stop|quit),phase=[A-Z]+,main=[0-9]+,buttons=[0-9]+,matched=[0-9]+,enabled=[01],sent=-?[01],winerr=[0-9]+$'){Write-Host $row}
           }
           # If recording fails, expose only coarse phase/reason; no camera credentials.
           foreach($row in $rows){
