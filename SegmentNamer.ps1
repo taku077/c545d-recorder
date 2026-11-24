@@ -102,7 +102,26 @@ function Invoke-C545DRenameOne([string]$FullPath, [string]$OutputDirectory) {
         finally { if ($handle) { $handle.Dispose() } }
 
         # Verify MP4 indexing before rename when ffprobe is available.
+        $metaObservationV04=$null
+        $metaProbeV04=$null
+        if($script:C545DMetadataWriterV04){
+            try{$metaProbeV04=Get-C545DMetadataProbeV04 $root}catch{}
+        }
+        if($metaProbeV04){
+            $duration=$null
+            try{
+                $metaObservationV04=[C545DClosedProbeV04]::ProbeRenameCandidate($root,$name,$true,$metaProbeV04,4000)
+                if($metaObservationV04.Status -eq 'ok'){
+                    $doc=ConvertFrom-Json -InputObject $metaObservationV04.Json -ErrorAction Stop
+                    $d=0.0
+                    if([double]::TryParse([string]$doc.format.duration,
+                        [Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,
+                        [ref]$d) -and $d -gt 0 -and -not [double]::IsInfinity($d)){$duration=$d}
+                }
+            }catch{}
+        }else{
         $duration=Get-C545DDuration $file.FullName
+        }
         if ((Get-C545DProbeExe) -and $null -eq $duration) { return 'pending' }
         $file.Refresh()
         $begin=$file.CreationTime
@@ -119,6 +138,9 @@ function Invoke-C545DRenameOne([string]$FullPath, [string]$OutputDirectory) {
         # Move within the same directory: no media stream is decoded or re-encoded.
         Move-Item -LiteralPath $file.FullName -Destination $dest -ErrorAction Stop
         Write-C545DNamerLog ('Renamed (closed): ' + $name + ' -> ' + (Split-Path -Leaf $dest))
+        if($script:C545DMetadataWriterV04){
+            try{Publish-C545DMetadataV04 $metaObservationV04}catch{}
+        }
         return 'done'
     }
     catch {
