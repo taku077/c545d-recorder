@@ -3,19 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `cdd072676ab9956edf7d568f13da60f6cabf98fe`
-- **PR updated at (UTC):** `2026-11-24T10:57:38Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/cdd072676ab9956edf7d568f13da60f6cabf98fe/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `373e60703e4a17a3d226c0278566f08b95759d07`
+- **PR updated at (UTC):** `2026-11-24T10:58:10Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/373e60703e4a17a3d226c0278566f08b95759d07/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45379679287](https://github.com/taku077/c545d-recorder/actions/runs/45379679287) |
-| C545D detached weekly companion Windows 10 PowerShell 5.1 | in_progress | [#45379673272](https://github.com/taku077/c545d-recorder/actions/runs/45379673272) |
-| C545D metadata ZIP integration (CI only) | in_progress | [#45379673246](https://github.com/taku077/c545d-recorder/actions/runs/45379673246) |
-| C545D closed media metadata prototype (CI only) | in_progress | [#45379673201](https://github.com/taku077/c545d-recorder/actions/runs/45379673201) |
-| Windows native EXE controller (stage 2) | in_progress | [#45379673196](https://github.com/taku077/c545d-recorder/actions/runs/45379673196) |
+| C545D active development handoff auto-refresh | in_progress | [#45379763870](https://github.com/taku077/c545d-recorder/actions/runs/45379763870) |
+| C545D closed media metadata prototype (CI only) | in_progress | [#45379757278](https://github.com/taku077/c545d-recorder/actions/runs/45379757278) |
 
 ## Current development findings from the active PR
 
