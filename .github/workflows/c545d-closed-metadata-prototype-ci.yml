@@ -1,0 +1,53 @@
+name: C545D closed media metadata prototype (CI only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545D-ClosedMetadataPrototype.ps1'
+      - '.github/workflows/c545d-closed-metadata-prototype-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metadata-only:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate strict metadata classifier and synthetic closed MP4
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          . ./tests/C545D-ClosedMetadataPrototype.ps1
+          Test-C545DMetadataEvidence
+          $ffmpeg=(Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)
+          $ffprobe=(Get-Command ffprobe.exe -ErrorAction SilentlyContinue)
+          if(-not $ffmpeg -or -not $ffprobe){
+            choco install ffmpeg -y --no-progress
+            if($LASTEXITCODE -ne 0){throw 'FFMPEG_INSTALL_FAILED'}
+            $env:PATH+=';'+$env:ChocolateyInstall+'\bin'
+            $ffmpeg=Get-Command ffmpeg.exe -ErrorAction Stop
+            $ffprobe=Get-Command ffprobe.exe -ErrorAction Stop
+          }
+          $dir=Join-Path $env:RUNNER_TEMP 'c545d-closed-metadata-fixtures'
+          New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
+          $ok=Join-Path $dir 'composite.mp4'
+          $noAudio=Join-Path $dir 'no-audio.mp4'
+          $bad=Join-Path $dir 'broken.mp4'
+          # Only freshly generated disposable fixtures; never a recording directory.
+          & $ffmpeg.Source -nostdin -v error -f lavfi -i 'color=c=blue:s=2560x720:r=15' -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 1 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -ac 1 -ar 48000 $ok
+          if($LASTEXITCODE -ne 0){throw 'GENERATE_FIXTURE_FAILED'}
+          & $ffmpeg.Source -nostdin -v error -i $ok -map 0:v:0 -c copy $noAudio
+          if($LASTEXITCODE -ne 0){throw 'GENERATE_NO_AUDIO_FAILED'}
+          [IO.File]::WriteAllBytes($bad,[byte[]](1,2,3,4))
+          function Read-Fixture([string]$path){
+            $json= & $ffprobe.Source -v quiet -protocol_whitelist file -f mov -show_entries 'stream=codec_type,codec_name,width,height,avg_frame_rate,sample_rate,channels:format=duration' -of json -i $path
+            $exit=$LASTEXITCODE
+            ConvertTo-C545DMetadataEvidence ($json -join [Environment]::NewLine) $exit
+          }
+          $row=Read-Fixture $ok
+          if($row.metadata_status -ne 'profile_match_metadata_only' -or $row.duration_ms -lt 900 -or $row.duration_ms -gt 1200){throw 'REAL_FIXTURE_METADATA_FAILED'}
+          if((Read-Fixture $noAudio).metadata_status -ne 'profile_mismatch'){throw 'MISSING_AUDIO_ACCEPTED'}
+          if((Read-Fixture $bad).metadata_status -ne 'probe_failed'){throw 'BROKEN_CONTAINER_ACCEPTED'}
+          $global:LASTEXITCODE=0
+          Write-Host 'C545D_CLOSED_METADATA_FIXTURES_PASS,valid=1,no_audio_rejected=1,invalid_container_rejected=1,real_camera=0,composition_proven=0,release_HOLD=1'
