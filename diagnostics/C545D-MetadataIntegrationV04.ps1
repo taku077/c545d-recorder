@@ -2,11 +2,13 @@
 # Requires a trusted, previously qualified direct ffprobe binary SHA256.
 # A hash match verifies identity, not provenance. No automatic download or install.
 $script:C545DMetadataWriterV04=$null
+$script:C545DMetadataLeaseV04=$null
 $script:C545DMetadataProbeV04=$null
 $script:C545DMetadataProbeLengthV04=0L
 $script:C545DMetadataProbeWriteV04=[datetime]::MinValue
 function Initialize-C545DMetadataV04([string]$outputRoot,[string]$approvedSha256){
     try{
+        if($script:C545DMetadataWriterV04 -or $script:C545DMetadataLeaseV04){return 'already_initialized'}
         if($approvedSha256 -notmatch '\A[0-9a-fA-F]{64}\z'){return 'probe_identity_unavailable'}
         $probe=Get-C545DProbeExe
         if(-not $probe){return 'probe_unavailable'}
@@ -32,6 +34,17 @@ function Initialize-C545DMetadataV04([string]$outputRoot,[string]$approvedSha256
             }
             if(-not [C545DClosedProbeV04]::IsSafeLocalDirectory($d)){return 'storage_root_rejected'}
         }
+        # Serialize diagnostic writers across overlapping helper processes only.
+        # Never block or stop the baseline watcher; never delete a lease file.
+        $leasePath=Join-Path $store 'writer.lease'
+        if(Test-Path -LiteralPath $leasePath){
+            $leaseItem=Get-Item -LiteralPath $leasePath -ErrorAction Stop
+            if($leaseItem.PSIsContainer -or ($leaseItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+               $leaseItem.Length -ne 0){return 'lease_rejected'}
+        }
+        try{
+            $script:C545DMetadataLeaseV04=[IO.File]::Open($leasePath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+        }catch [IO.IOException]{return 'writer_lease_unavailable'}
         $journal=Join-Path $store 'journal';$receipts=Join-Path $store 'receipts'
         foreach($d in @($journal,$receipts)){
             if(-not(Test-Path -LiteralPath $d -PathType Container)){New-Item -ItemType Directory -Path $d -ErrorAction Stop|Out-Null}
@@ -45,6 +58,11 @@ function Initialize-C545DMetadataV04([string]$outputRoot,[string]$approvedSha256
     }catch{
         $script:C545DMetadataProbeV04=$null
         return 'initialization_failed'
+    }finally{
+        if(-not $script:C545DMetadataWriterV04 -and $script:C545DMetadataLeaseV04){
+            try{$script:C545DMetadataLeaseV04.Dispose()}catch{}
+            $script:C545DMetadataLeaseV04=$null
+        }
     }
 }
 function Get-C545DMetadataProbeV04([string]$root){
@@ -85,7 +103,14 @@ function Stop-C545DMetadataV04 {
         Write-Host ('C545D_METADATA_V04_STOP,drained='+[int]$drained+',accepted='+$w.Accepted+
             ',saved='+$w.Saved+',rejected='+$w.Rejected+',failed='+$w.Failed+
             ',receipt='+$w.ReceiptStatus+',publish_errors='+$script:C545DMetadataPublishErrorsV04)
-        if($drained){return 'drained'}
+        if($drained){
+            if($script:C545DMetadataLeaseV04){
+                $script:C545DMetadataLeaseV04.Dispose()
+                $script:C545DMetadataLeaseV04=$null
+            }
+            return 'drained'
+        }
+        # Keep lease alive until this helper exits if storage drain is unconfirmed.
         return 'drain_unconfirmed'
     }catch{return 'stop_unconfirmed'}
 }
