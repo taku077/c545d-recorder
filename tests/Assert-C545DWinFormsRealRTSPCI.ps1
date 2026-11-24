@@ -48,7 +48,13 @@ function Invoke-PackagedButton([string]$action){
   $driver=Start-Process -FilePath $ps -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
     '-File',('"'+$helper+'"'),'-TargetPid',$gui.Id,'-Action',$action,'-Stage',('"'+$stage+'"')) -PassThru -WindowStyle Hidden
   try{
-    if(-not $driver.WaitForExit(18000) -or $driver.ExitCode -ne 0){throw 'PACKAGED_BUTTON_NOT_INVOKED'}
+    $done=$driver.WaitForExit(25000)
+    $diag=Join-Path $stage ('ci-button-'+$action+'.txt')
+    if(Test-Path -LiteralPath $diag){
+      $line=[IO.File]::ReadAllText($diag)
+      if($line -cmatch '^C545D_PACKAGED_BUTTON_DIAG,action=(start|stop|quit),phase=[A-Z]+,main=[0-9]+,buttons=[0-9]+,matched=[0-9]+,enabled=[01],sent=-?[01],winerr=[0-9]+$'){Write-Host $line}
+    }
+    if(-not $done -or $driver.ExitCode -ne 0){throw 'PACKAGED_BUTTON_NOT_INVOKED'}
   }finally{
     if(-not $driver.HasExited){$driver.Kill();[void]$driver.WaitForExit(5000)}
     $driver.Dispose()
