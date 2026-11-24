@@ -95,10 +95,18 @@ function Run-Arm([bool]$stall){
         '" -OutputDirectory "'+$folder+'" -OwnerProcessId '+$PID+' -ReadyFile "'+$ready+'" -StopFile "'+$stop+'"'
     $proc=$null;$locked=$null
     try{
-        $proc=Start-Process -FilePath $ps -ArgumentList $argsLine -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+        # Own the actual process handle and drain both pipes concurrently.
+        $psi=New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName=$ps;$psi.Arguments=$argsLine
+        $psi.UseShellExecute=$false;$psi.CreateNoWindow=$true
+        $psi.RedirectStandardOutput=$true;$psi.RedirectStandardError=$true
+        $proc=[Diagnostics.Process]::Start($psi)
+        $null=$proc.Handle
+        $outTask=$proc.StandardOutput.ReadToEndAsync()
+        $errTask=$proc.StandardError.ReadToEndAsync()
         Wait-Until { (Test-Path -LiteralPath $ready) -or $proc.HasExited } 20000 'READY'
         if($proc.HasExited){
-            $e=[IO.File]::ReadAllText($stderr)
+            $e=if($errTask.Wait(1000)){$errTask.Result}else{''}
             # Only report a bounded line/type diagnostic, not private paths.
             Write-Host ('LIFECYCLE_EARLY_EXIT,stderr_chars='+$e.Length)
             throw 'LIFECYCLE_WORKER_EARLY_EXIT'
@@ -124,7 +132,11 @@ function Run-Arm([bool]$stall){
         Assert-Eq $proc.HasExited $false 'WATCHER_ALIVE'
         $locked.Dispose();$locked=$null
         if(-not $proc.WaitForExit(20000)){throw 'LIFECYCLE_STOP_TIMEOUT'}
+        $proc.Refresh()
         Assert-Eq $proc.ExitCode 0 'EXIT_CODE'
+        if(-not $outTask.Wait(1000) -or -not $errTask.Wait(1000)){throw 'LIFECYCLE_PIPE_DRAIN_TIMEOUT'}
+        [IO.File]::WriteAllText($stdout,$outTask.Result)
+        [IO.File]::WriteAllText($stderr,$errTask.Result)
         Assert-Eq (Test-Path -LiteralPath $last) $false 'FINAL_RENAMED'
         Assert-Eq (Test-Path -LiteralPath $ready) $false 'READY_REMOVED'
         Assert-Eq (Test-Path -LiteralPath $stop) $false 'STOP_REMOVED'
