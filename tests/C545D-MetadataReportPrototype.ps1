@@ -52,3 +52,43 @@ function Write-C545DMetadataCsv($metadata,[string]$path){
         [IO.File]::WriteAllText($path,($fields -join ',')+[Environment]::NewLine,$utf8)
     }
 }
+
+# Whole-run counters only, never interpreted as exact totals inside report dates.
+function Read-C545DWriterReport([string]$root,[string]$journalSource,[string]$writerSource,[datetime]$begin,[datetime]$end){
+    $rows=New-Object 'System.Collections.Generic.List[object]'
+    $r=[pscustomobject]@{status='not_found';rows=$rows;completed=0;unfinished=0;invalid=0;busy=0}
+    if(-not $root -or -not(Test-Path -LiteralPath $root -PathType Container)){return $r}
+    try{
+        if(-not ('C545DWriterReceipts' -as [type])){
+            Add-Type -Path @($journalSource,$writerSource) -ErrorAction Stop
+        }
+        $s=[C545DWriterReceipts]::ReadWindow($root,$begin.ToUniversalTime(),$end.ToUniversalTime())
+        $r.status=$s.Status;$r.completed=$s.CompletedRuns;$r.unfinished=$s.UnfinishedRuns
+        $r.invalid=$s.InvalidSlots;$r.busy=$s.BusySlots
+        foreach($e in $s.Rows){
+            $state='unfinished_or_active';$endText='';$accepted='unknown';$rejected='unknown'
+            $saved='unknown';$failed='unknown';$recovered='unknown'
+            if($e.Final){
+                $state='final_counters_saved';$endText=UtcText $e.EndUtc
+                $accepted=$e.Accepted;$rejected=$e.Rejected;$saved=$e.Saved;$failed=$e.Failed;$recovered=$e.Recovered
+            }
+            $rows.Add([pscustomobject][ordered]@{
+                start_utc=UtcText $e.StartUtc;end_utc=$endText;state=$state
+                accepted=$accepted;rejected=$rejected;saved=$saved;failed=$failed;recovered=$recovered
+                counter_scope='whole_run_not_report_window'
+            })
+        }
+    }catch{
+        $r.status='reader_unavailable';$rows.Clear()
+        $r.completed=0;$r.unfinished=0;$r.invalid=0;$r.busy=0
+    }
+    return $r
+}
+function Write-C545DWriterCsv($report,[string]$path){
+    $fields=@('start_utc','end_utc','state','accepted','rejected','saved','failed','recovered','counter_scope')
+    if($report.rows.Count -gt 0){
+        $report.rows | Select-Object -Property $fields | Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8
+    }else{
+        [IO.File]::WriteAllText($path,($fields -join ',')+[Environment]::NewLine,$utf8)
+    }
+}
