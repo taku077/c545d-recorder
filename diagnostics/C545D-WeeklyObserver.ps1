@@ -16,6 +16,14 @@ $culture=[Globalization.CultureInfo]::InvariantCulture
 $utf8=New-Object Text.UTF8Encoding($false)
 $version='0.4.0'
 $schema='1'
+# Logical bytes of observer-owned regular files, not filesystem allocation.
+# Never auto-delete completed reports or unknown files to make room.
+$script:ObserverMetricLimit=200MB
+$script:ObserverDailyLimit=15000000
+$script:ObserverMetricCountLimit=45
+$script:ObserverReportLimit=256MB
+$script:ObserverReportReserve=64MB
+$script:ObserverReportCountLimit=32
 $columns=@('schema_version','utc_time','status','pid','start_utc',
  'private_bytes','working_set_bytes','handle_count','thread_count',
  'cpu_100ns','observer_private_bytes')
@@ -89,18 +97,66 @@ function Assert-ObserverRow($row){
    throw 'SCHEMA_INVALID_UNAVAILABLE'
  }
 }
+# Scope: trusted local diagnostic directory; reject reparse points and
+# unexpected entries. This does not secure against concurrent hostile renames.
+function Assert-ObserverDirectory([string]$path){
+ $d=New-Object IO.DirectoryInfo([IO.Path]::GetFullPath($path))
+ if($d.FullName -notmatch '^[A-Za-z]:\\' -or
+    ([IO.DriveInfo]::new($d.Root.FullName)).DriveType -ne [IO.DriveType]::Fixed){throw 'OBSERVER_UNSAFE_STORAGE'}
+ while($null -ne $d){
+   if(-not $d.Exists -or ($d.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'OBSERVER_UNSAFE_STORAGE'}
+   $d=$d.Parent
+ }
+}
+function Get-ObserverStorage([string]$dir,[string]$kind){
+ Assert-ObserverDirectory $dir
+ $count=0;$bytes=0L
+ # Enumerate lazily and fail immediately at the policy limit; no unbounded list.
+ foreach($item in [IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()){
+   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+      ($item.Attributes -band [IO.FileAttributes]::Directory)){throw 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
+   if($kind -ceq 'metrics'){
+     if($item.Name -cnotmatch '^process_\d{8}\.csv$'){throw 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
+     $countLimit=$script:ObserverMetricCountLimit;$byteLimit=$script:ObserverMetricLimit
+     if($item.Length -gt $script:ObserverDailyLimit){throw 'OBSERVER_DAILY_LIMIT'}
+   }else{
+     # Crash leftovers and unknown data are preserved and block further export.
+     if($item.Name -cnotmatch '^C545D_SAFE_WEEKLY_\d{8}_\d{6}_[0-9a-f]{8}\.zip$'){throw 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
+     $countLimit=$script:ObserverReportCountLimit;$byteLimit=$script:ObserverReportLimit
+   }
+   $count++;$bytes+=$item.Length
+   if($count -gt $countLimit -or $bytes -gt $byteLimit){throw 'OBSERVER_STORAGE_LIMIT'}
+ }
+ return [pscustomobject]@{Count=$count;Bytes=$bytes}
+}
 function Save-ObserverRow($row,[string]$root){
  Assert-ObserverRow $row
  $dir=Join-Path $root 'metrics'
  if(-not(Test-Path -LiteralPath $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
  $day=(ToUtc ([string]$row.utc_time)).ToString('yyyyMMdd',$culture)
  $name=Join-Path $dir ('process_'+$day+'.csv')
+ $usage=Get-ObserverStorage $dir 'metrics'
  $present=Test-Path -LiteralPath $name
+ $lines=@($row | Select-Object -Property $columns | ConvertTo-Csv -NoTypeInformation)
+ if($lines.Count -ne 2){throw 'OBSERVER_ROW_SERIALIZATION'}
+ $encoding=New-Object Text.UTF8Encoding($false)
+ $text=if($present){$lines[1]+[Environment]::NewLine}else{($lines -join [Environment]::NewLine)+[Environment]::NewLine}
+ $data=$encoding.GetBytes($text)
+ $current=0L
  if($present){
-   $row | Select-Object -Property $columns | Export-Csv -LiteralPath $name -NoTypeInformation -Encoding UTF8 -Append
- }else{
-   $row | Select-Object -Property $columns | Export-Csv -LiteralPath $name -NoTypeInformation -Encoding UTF8
- }
+   $file=Get-Item -LiteralPath $name -Force
+   if($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'OBSERVER_UNSAFE_STORAGE'}
+   $current=$file.Length
+ }elseif($usage.Count -ge $script:ObserverMetricCountLimit){throw 'OBSERVER_STORAGE_LIMIT'}
+ if($current+$data.Length -gt $script:ObserverDailyLimit -or
+    $usage.Bytes+$data.Length -gt $script:ObserverMetricLimit){throw 'OBSERVER_STORAGE_LIMIT'}
+ $mode=if($present){[IO.FileMode]::Open}else{[IO.FileMode]::CreateNew}
+ $stream=[IO.File]::Open($name,$mode,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+ try{
+   if($stream.Length -ne $current){throw 'OBSERVER_METRIC_CHANGED'}
+   $stream.Position=$stream.Length
+   $stream.Write($data,0,$data.Length)
+ }finally{$stream.Dispose()}
 }
 function Read-ValidRows([string]$root,[datetime]$begin,[datetime]$end){
  $result=New-Object 'Collections.Generic.List[object]'
@@ -594,14 +650,31 @@ function Read-GStreamerRuntimeIdentity {
 }
 
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
+ # Serialize manual and scheduled exports, independently of sampling.
+ $reportGate=New-Object Threading.Mutex($false,'Local\C545D_WeeklyObserver_Export')
+ $locked=$false
+ try{
+   try{$locked=$reportGate.WaitOne(0)}catch [Threading.AbandonedMutexException]{$locked=$true}
+   if(-not $locked){throw 'OBSERVER_EXPORT_BUSY'}
+   return (New-SafeBundleCore $root $begin $end $reason)
+ }finally{
+   if($locked){$reportGate.ReleaseMutex()}
+   $reportGate.Dispose()
+ }
+}
+function New-SafeBundleCore([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
+ Assert-ObserverDirectory $root
+ $dir=Join-Path $root 'reports'
+ New-Item -ItemType Directory -Path $dir -Force|Out-Null
+ $usage=Get-ObserverStorage $dir 'reports'
+ if($usage.Count -ge $script:ObserverReportCountLimit -or
+    $usage.Bytes+$script:ObserverReportReserve -gt $script:ObserverReportLimit){throw 'OBSERVER_REPORT_LIMIT_REVIEW_NEEDED'}
  $rows=Read-ValidRows $root $begin $end
  $media=Read-NamerEvents $RecorderLogDirectory $begin $end
  $worker=Read-WorkerSessions $RecorderLogDirectory $begin $end
  $writerReport=Read-C545DWriterReport $WriterReceiptRoot $begin $end
  $metadata=Read-C545DMetadataReport $MetadataJournalRoot $begin $end $media
- $dir=Join-Path $root 'reports'
- New-Item -ItemType Directory -Path $dir -Force|Out-Null
  $work=Join-Path $dir ('work_'+[guid]::NewGuid().ToString('N'))
  New-Item -ItemType Directory -Path $work|Out-Null
  $base='C545D_SAFE_WEEKLY_'+$end.ToString('yyyyMMdd_HHmmss',$culture)+'_'+
@@ -715,9 +788,21 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
       (ConvertTo-Json $manifest -Depth 4 -Compress),$utf8)
    [IO.File]::WriteAllText((Join-Path $work 'summary.json'),
       (ConvertTo-Json $summary -Depth 4 -Compress),$utf8)
+   # All source rows and fields are bounded by their existing strict schemas.
+   # Verify workspace size before compression, reserve for both copies.
+   $workspaceBytes=0L
+   foreach($entry in [IO.DirectoryInfo]::new($work).EnumerateFileSystemInfos()){
+     if(($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        ($entry.Attributes -band [IO.FileAttributes]::Directory)){throw 'OBSERVER_EXPORT_WORKSPACE_UNSAFE'}
+     $workspaceBytes+=$entry.Length
+   }
+   if($workspaceBytes -gt ($script:ObserverReportReserve/2-1MB)){throw 'OBSERVER_EXPORT_WORKSPACE_LIMIT'}
    Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,$metadataFile,$writerFile,(Join-Path $work 'manifest.json'),
      (Join-Path $work 'summary.json')) -DestinationPath $partial -CompressionLevel Optimal -ErrorAction Stop
    if(-not(Test-Path $partial)){throw 'ZIP_NOT_CREATED'}
+   $zipBytes=(Get-Item -LiteralPath $partial).Length
+   if($workspaceBytes+$zipBytes -gt $script:ObserverReportReserve -or
+      $usage.Bytes+$zipBytes -gt $script:ObserverReportLimit){throw 'OBSERVER_REPORT_LIMIT_REVIEW_NEEDED'}
    Move-Item -LiteralPath $partial -Destination $output -ErrorAction Stop
    return $output
  }finally{
@@ -766,19 +851,25 @@ function Export-WhenDue($state,[string]$root,[datetime]$now){
  Save-ObserverState $state $root
  return $zip
 }
-function Prune-Metrics([string]$root,[datetime]$now){
+function Prune-Metrics([string]$root,[datetime]$now,[datetime]$reportedBefore){
  $folder=Join-Path $root 'metrics'
  if(-not(Test-Path -LiteralPath $folder)){return}
- foreach($old in @(Get-ChildItem -LiteralPath $folder -Filter 'process_*.csv' -File)){
-   if($old.LastWriteTimeUtc -lt $now.AddDays(-30)){
+ Assert-ObserverDirectory $folder
+ # Only exact, regular, fully reported daily files older than 30 days.
+ # Never prune on LastWriteTime alone or delete unreported history for space.
+ $items=0
+ foreach($old in [IO.DirectoryInfo]::new($folder).EnumerateFileSystemInfos()){
+   $items++
+   if($items -gt $script:ObserverMetricCountLimit){throw 'OBSERVER_STORAGE_LIMIT'}
+   if(($old.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+      ($old.Attributes -band [IO.FileAttributes]::Directory) -or
+      $old.Name -cnotmatch '^process_(\d{8})\.csv$'){throw 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
+   $day=[datetime]::ParseExact($Matches[1],'yyyyMMdd',$culture,[Globalization.DateTimeStyles]::AssumeUniversal).ToUniversalTime()
+   if($day.AddDays(1) -le $reportedBefore -and $day.AddDays(1) -le $now.AddDays(-30) -and
+      $old.LastWriteTimeUtc -lt $now.AddDays(-30)){
      Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop
    }
  }
- $files=@(Get-ChildItem -LiteralPath $folder -Filter 'process_*.csv' -File)
- $sum=0L
- foreach($file in $files){$sum+=$file.Length}
- # Never delete as-yet-unreported samples to force the cap.
- if($sum -gt 200MB){throw 'STORAGE_LIMIT_REACHED_REVIEW_NEEDED'}
 }
 function Test-Observer {
  $root=Join-Path $env:TEMP ('C545D_weekly_test_'+[guid]::NewGuid().ToString('N'))
@@ -914,11 +1005,19 @@ try{
  Save-ObserverState $state $RootDirectory
  do{
      $row=Get-ObserverRow
-     Save-ObserverRow $row $RootDirectory
+     try{
+       Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.window_from_utc))
+       Save-ObserverRow $row $RootDirectory
+     }catch{
+       # Capacity failure is observable, not a reason to stop the recorder.
+       $reason=[string]$_.Exception.Message
+       if($reason -cnotmatch '^OBSERVER_[A-Z_]+$'){$reason='STORAGE_ERROR'}
+       Write-Warning ('OBSERVER_SAMPLE_NOT_SAVED: '+$reason)
+     }
      try{
        $zip=Export-WhenDue $state $RootDirectory ([datetime]::UtcNow)
        if($zip){
-         Prune-Metrics $RootDirectory ([datetime]::UtcNow)
+         Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.window_from_utc))
          Write-Output ('C545D_SAFE_WEEKLY_READY: '+$zip)
        }
      }catch{
