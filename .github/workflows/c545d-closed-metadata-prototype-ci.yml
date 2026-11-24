@@ -5,6 +5,8 @@ on:
     paths:
       - 'tests/C545D-ClosedMetadataPrototype.ps1'
       - 'tests/C545DClosedProbePrototype.cs'
+      - 'tests/Test-C545DNamerSingleProbe.ps1'
+      - 'SegmentNamer.ps1'
       - '.github/workflows/c545d-closed-metadata-prototype-ci.yml'
   workflow_dispatch:
 permissions:
@@ -101,3 +103,5 @@ jobs:
           Assert-Probe (Run-Synthetic 'Start-Sleep -Seconds 20;exit 0' 1000) 'timeout' 1
           Assert-Probe (Run-Synthetic 'exit 7' 5000) 'probe_failed' 1
           Write-Host 'C545D_CLOSED_PROBE_SAFETY_PASS,real_fixture=1,locked=1,path_rejections=5,junction=1,media_hash_unchanged=1,dual_pipe=1,overflow=2,timeout=1,child_cleanup=1,host_modified=0'
+
+          & ./tests/Test-C545DNamerSingleProbe.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
