@@ -3,15 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `a7a316f38acb68e4643e439350d1f27951c2421f`
-- **PR updated at (UTC):** `2026-11-24T05:46:27Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/a7a316f38acb68e4643e439350d1f27951c2421f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8c67c828ddcf89bbb8c3a5853778721b0e148346`
+- **PR updated at (UTC):** `2026-11-24T05:46:52Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8c67c828ddcf89bbb8c3a5853778721b0e148346/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45335661066](https://github.com/taku077/c545d-recorder/actions/runs/45335661066) |
+| C545D original in-stream MP4 event namer with dual synthetic RTSP CI ONLY | queued | [#45335705521](https://github.com/taku077/c545d-recorder/actions/runs/45335705521) |
+| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | queued | [#45335705486](https://github.com/taku077/c545d-recorder/actions/runs/45335705486) |
 
 ## Current development findings from the active PR
 
