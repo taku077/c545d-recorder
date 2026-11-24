@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - 'diagnostics/C545D*V04*'
       - '.github/workflows/c545d-weekly-observer-ci.yml'
   workflow_dispatch:
 permissions:
@@ -44,21 +45,23 @@ jobs:
           $unpacked=Join-Path $env:RUNNER_TEMP 'weekly-check-expanded'
           Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $unpacked
           $names=@(Get-ChildItem $unpacked -File|ForEach-Object Name|Sort-Object)
-          if((Compare-Object @('manifest.json','process_metrics.csv','recorder_sessions.csv','recording_events.csv','summary.json') $names).Count -ne 0){
+          if((Compare-Object @('diagnostic_writer_runs.csv','manifest.json','mp4_metadata.csv','process_metrics.csv','recorder_sessions.csv','recording_events.csv','summary.json') $names).Count -ne 0){
             throw 'Unexpected/missing report files'
           }
           $blob=(Get-Content (Join-Path $unpacked 'manifest.json') -Raw)+
             (Get-Content (Join-Path $unpacked 'process_metrics.csv') -Raw)+
             (Get-Content (Join-Path $unpacked 'recording_events.csv') -Raw)+
             (Get-Content (Join-Path $unpacked 'recorder_sessions.csv') -Raw)+
-            (Get-Content (Join-Path $unpacked 'summary.json') -Raw)
+            (Get-Content (Join-Path $unpacked 'summary.json') -Raw)+
+            (Get-Content (Join-Path $unpacked 'mp4_metadata.csv') -Raw)+
+            (Get-Content (Join-Path $unpacked 'diagnostic_writer_runs.csv') -Raw)
           foreach($forbidden in @('rtsp://','user-pw','authorization','password=','C:\Users\', '192.0.2.1', 'camerauser')){
             if($blob.IndexOf($forbidden,[StringComparison]::OrdinalIgnoreCase) -ge 0){
               throw 'Sensitive diagnostic contents in safe ZIP'
             }
           }
           $manifest=Get-Content (Join-Path $unpacked 'manifest.json') -Raw|ConvertFrom-Json
-          if($manifest.schema_version -ne 1 -or $manifest.diagnostics_version -ne '0.3.0' -or
+          if($manifest.schema_version -ne 1 -or $manifest.diagnostics_version -ne '0.4.0' -or
              $manifest.actual_samples -ne 1 -or
              $manifest.recording_integrity -ne 'closed_rename_events_only_not_media_integrity' -or
              $manifest.heavy_etw -ne 'disabled' -or $manifest.automatic_upload -ne $false){
