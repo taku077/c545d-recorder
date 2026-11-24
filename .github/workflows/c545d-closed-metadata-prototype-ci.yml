@@ -6,6 +6,9 @@ on:
       - 'tests/C545D-ClosedMetadataPrototype.ps1'
       - 'tests/C545DClosedProbePrototype.cs'
       - 'tests/Test-C545DNamerSingleProbe.ps1'
+      - 'tests/Test-C545DNamerWriterLifecycle.ps1'
+      - 'tests/C545DMetadataWriterPrototype.cs'
+      - 'SegmentNamerWorker.ps1'
       - 'tests/C545DMetadataJournalPrototype.cs'
       - 'tests/Read-C545DMetadataJournalFixture.ps1'
       - 'SegmentNamer.ps1'
@@ -112,3 +115,5 @@ jobs:
           Write-Host 'C545D_CLOSED_PROBE_SAFETY_PASS,real_fixture=1,locked=1,path_rejections=5,junction=1,media_hash_unchanged=1,dual_pipe=1,overflow=2,timeout=1,child_cleanup=1,host_modified=0'
 
           & ./tests/Test-C545DNamerSingleProbe.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
+
+          & ./tests/Test-C545DNamerWriterLifecycle.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
