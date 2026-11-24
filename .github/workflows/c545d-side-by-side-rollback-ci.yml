@@ -1,0 +1,36 @@
+name: C545D side-by-side exact candidate rollback CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-side-by-side-rollback-ci.yml'
+      - 'tests/Test-C545DSideBySideRollbackCI.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  side-by-side-rollback:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-exe-win10-x64
+          repository: taku077/c545d-recorder
+          run-id: 45389548064
+          github-token: ${{ github.token }}
+          path: artifacts/previous
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-exe-win10-x64
+          repository: taku077/c545d-recorder
+          run-id: 45392026715
+          github-token: ${{ github.token }}
+          path: artifacts/candidate
+      - name: Verify exact candidate packages and synthetic settings history rollback
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & tests/Test-C545DSideBySideRollbackCI.ps1 -OldZip (Resolve-Path 'artifacts/previous/C545D_Recorder_EXE_Win10_x64.zip').Path -NewZip (Resolve-Path 'artifacts/candidate/C545D_Recorder_EXE_Win10_x64.zip').Path
