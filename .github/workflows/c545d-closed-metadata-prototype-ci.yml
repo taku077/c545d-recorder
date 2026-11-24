@@ -6,6 +6,8 @@ on:
       - 'tests/C545D-ClosedMetadataPrototype.ps1'
       - 'tests/C545DClosedProbePrototype.cs'
       - 'tests/Test-C545DNamerSingleProbe.ps1'
+      - 'tests/C545DMetadataJournalPrototype.cs'
+      - 'tests/Read-C545DMetadataJournalFixture.ps1'
       - 'SegmentNamer.ps1'
       - '.github/workflows/c545d-closed-metadata-prototype-ci.yml'
   workflow_dispatch:
