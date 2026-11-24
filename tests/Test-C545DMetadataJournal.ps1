@@ -103,6 +103,26 @@ try{
     Assert-Eq ([C545DMetadataJournalPrototype]::RecoverTornTail($root,$recoverDay)) 'not_recoverable' 'RECOVERY_BAD_PREFIX'
     Assert-Eq (Get-FileHash $recoverySlot).Hash $badHash 'RECOVERY_BAD_PREFIX_UNCHANGED'
     Write-Host 'C545D_JOURNAL_TORN_TAIL_PASS,complete_rows_preserved=2,append_after_recovery=1,loss_marker=1,locked_unchanged=1,wrong_day_denied=1,corrupt_prefix_denied=1,idempotent=1,real_power_cut=0'
+    # Automatic recovery uses a single attempt on a same-day invalid append.
+    $autoDay=$recoverDay.AddDays(1)
+    Assert-Eq (Save-Row (New-Row $autoDay)) 'saved' 'AUTO_FIRST'
+    $autoSlot=@(Get-ChildItem -LiteralPath $root -File | Where-Object {
+        [IO.File]::ReadAllText($_.FullName).StartsWith('C545D_META_V1|'+$autoDay.ToString('yyyyMMdd'))
+    })[0].FullName
+    [IO.File]::AppendAllText($autoSlot,'interrupted')
+    Assert-Eq ([C545DMetadataJournalPrototype]::AppendRecovering($root,(New-Row $autoDay.AddHours(1)))) 'saved_after_recovery' 'AUTO_RECOVERED'
+    $auto=Get-Snapshot $autoDay $autoDay.AddDays(1)
+    Assert-Eq $auto.Rows.Count 2 'AUTO_ROWS'
+    Assert-Eq $auto.RecoveredSlots 1 'AUTO_LOSS_MARKER'
+    [IO.File]::AppendAllText($autoSlot,('bad-complete'+[char]10))
+    $autoHash=(Get-FileHash $autoSlot).Hash
+    Assert-Eq ([C545DMetadataJournalPrototype]::AppendRecovering($root,(New-Row $autoDay.AddHours(2)))) 'corrupt_slot_preserved' 'AUTO_CORRUPT_REFUSED'
+    Assert-Eq (Get-FileHash $autoSlot).Hash $autoHash 'AUTO_CORRUPT_UNCHANGED'
+    Assert-Eq ([C545DMetadataJournalPrototype]::AppendRecovering($root,(New-Row $autoDay.AddDays(1)))) 'saved' 'AUTO_NEXT_DAY'
+    $lock=[IO.File]::Open($autoSlot,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{Assert-Eq ([C545DMetadataJournalPrototype]::AppendRecovering($root,(New-Row $autoDay))) 'busy_or_io_error' 'AUTO_BUSY_NO_RETRY'}
+    finally{$lock.Dispose()}
+    Write-Host 'C545D_JOURNAL_AUTO_RECOVERY_PASS,recovered_append=1,rows=2,loss_marker=1,corrupt_preserved=1,next_day_saved=1,busy_no_retry=1'
     $junction=$root+'-junction'
     New-Item -ItemType Junction -Path $junction -Target $root | Out-Null
     try{Assert-Eq ([C545DMetadataJournalPrototype]::Append($junction,(New-Row $latest))) 'root_rejected' 'REPARSE'}
