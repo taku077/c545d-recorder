@@ -99,6 +99,7 @@ function Run-Arm([string]$name,[bool]$enabled){
         $privatePeak=$privateFirst;$handlesPeak=$handlesFirst
         $latencies=@()
         $clock=[Diagnostics.Stopwatch]::StartNew()
+        $traceStart=[uint64][datetime]::UtcNow.ToFileTimeUtc()
         for($i=1;$i -le $segments;$i++){
             $leaf=('C545D_PENDING_20261124_120000_12345678_{0:D5}.mp4' -f $i)
             $pending=Join-Path $output $leaf
@@ -126,6 +127,7 @@ function Run-Arm([string]$name,[bool]$enabled){
         $privatePeak=[Math]::Max($privatePeak,$privateLast)
         $handlesPeak=[Math]::Max($handlesPeak,$handlesLast)
         $batch=$job.Read()
+        $traceEnd=[uint64][datetime]::UtcNow.ToFileTimeUtc()
         $batchEndMs=$clock.ElapsedMilliseconds
         # Let queued WMI events arrive after the batch. Keep batch CPU
         # boundary unchanged and do not include this diagnostic settle time.
@@ -135,12 +137,25 @@ function Run-Arm([string]$name,[bool]$enabled){
         $descendants=New-Object 'System.Collections.Generic.HashSet[uint32]'
         [void]$descendants.Add([uint32]$proc.Id)
         $probeStarts=0;$conhostStarts=0;$otherStarts=0;$directProbes=0;$allConhost=0
+        $outside=0;$outsideDirectOther=0;$outsideDirectProbe=0;$duplicate=0;$pidReuse=0
+        $seen=New-Object 'System.Collections.Generic.HashSet[string]'
         foreach($ev in $traceEvents){
             $e=$ev.SourceEventArgs.NewEvent
             $image=[string]$e.ProcessName
+            $time=[uint64]$e.TIME_CREATED
+            if($time -lt $traceStart -or $time -gt $traceEnd){
+                $outside++
+                if([uint32]$e.ParentProcessID -eq [uint32]$proc.Id){
+                    if($image -ieq 'ffprobe.exe'){$outsideDirectProbe++}
+                    elseif($image -ine 'conhost.exe'){$outsideDirectOther++}
+                }
+                continue
+            }
+            $key=('{0}|{1}|{2}|{3}' -f $time,$e.ProcessID,$e.ParentProcessID,$image)
+            if(-not $seen.Add($key)){$duplicate++;continue}
             if($image -ieq 'conhost.exe'){$allConhost++}
             if(-not $descendants.Contains([uint32]$e.ParentProcessID)){continue}
-            [void]$descendants.Add([uint32]$e.ProcessID)
+            if(-not $descendants.Add([uint32]$e.ProcessID)){$pidReuse++}
             if($image -ieq 'ffprobe.exe'){
                 $probeStarts++
                 if([uint32]$e.ParentProcessID -eq [uint32]$proc.Id){$directProbes++}
@@ -150,9 +165,11 @@ function Run-Arm([string]$name,[bool]$enabled){
         $unreconciled=[long]$batch.Total-1-$probeStarts-$conhostStarts-$otherStarts
         Write-Host ('C545D_NAMER_OVERHEAD_PROCESS_TRACE,arm='+$name+',job_total='+$batch.Total+
             ',direct_ffprobe='+$directProbes+',descendant_ffprobe='+$probeStarts+',descendant_conhost='+$conhostStarts+
-            ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',runner_conhost='+$allConhost+',active='+$batch.Active)
+            ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',runner_conhost='+$allConhost+',active='+$batch.Active+
+            ',outside_window='+$outside+',outside_direct_other='+$outsideDirectOther+',outside_direct_probe='+$outsideDirectProbe+
+            ',duplicate_events='+$duplicate+',descendant_pid_reuse='+$pidReuse)
         $traceQualified=($probeStarts -eq $segments -and $directProbes -eq $segments -and
-            $otherStarts -eq 0 -and $unreconciled -eq 0)
+            $otherStarts -eq 0 -and $unreconciled -eq 0 -and $pidReuse -eq 0 -and $outsideDirectProbe -eq 0)
         Assert-Equal $batch.Active 1 'ONLY_HELPER_REMAINS'
         $batchMs=$batchEndMs
         [IO.File]::WriteAllText($stop,'CI_TEST')
