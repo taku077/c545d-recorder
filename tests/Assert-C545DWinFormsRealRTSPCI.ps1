@@ -14,7 +14,9 @@ param(
   [Parameter(Mandatory=$true)][string]$CandidateDll,
   [Parameter(Mandatory=$true)][string]$ReferenceManifest,
   [ValidateSet(8)][int]$CiSplitSeconds=8,
-  [ValidateSet(0,1000,5000)][int]$CiPreStopDelayMs=0
+  [ValidateSet(0,1000,5000)][int]$CiPreStopDelayMs=0,
+  [string]$CiMetadataProbeExe,
+  [string]$CiMetadataProbeSha256
 )
 $ErrorActionPreference='Stop'
 $pin=@{
@@ -131,10 +133,26 @@ try {
   $phase='ENV'
   foreach($key in @('PATH','LOCALAPPDATA','GST_PLUGIN_SCANNER','GST_REGISTRY',
       'GST_PLUGIN_PATH','GST_PLUGIN_PATH_1_0',
-      'GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0')){
+      'GST_PLUGIN_SYSTEM_PATH','GST_PLUGIN_SYSTEM_PATH_1_0','C545D_METADATA_V04','C545D_METADATA_PROBE_SHA256')){
     $prior[$key]=[Environment]::GetEnvironmentVariable($key,'Process')
   }
   $env:PATH="$bin;$sdkBin;$($prior['PATH'])"
+  # All existing invocations remain explicitly OFF. Only the separate CI gate
+  # supplies a direct binary from the pinned, archive-verified fixture.
+  Remove-Item Env:C545D_METADATA_V04,Env:C545D_METADATA_PROBE_SHA256 -ErrorAction SilentlyContinue
+  $ciMetaEnabled=[bool]$CiMetadataProbeExe
+  if($ciMetaEnabled){
+    $probeItem=Get-Item -LiteralPath $CiMetadataProbeExe -ErrorAction Stop
+    if($probeItem.PSIsContainer -or $probeItem.Name -cne 'ffprobe.exe' -or
+       $CiMetadataProbeSha256 -notmatch '\A[0-9A-Fa-f]{64}\z' -or
+       (Get-FileHash -LiteralPath $probeItem.FullName).Hash -ine $CiMetadataProbeSha256){
+      throw 'CI_METADATA_PROBE_IDENTITY'
+    }
+    $env:PATH=$probeItem.DirectoryName+';'+$env:PATH
+    if((Get-Command ffprobe.exe -ErrorAction Stop).Source -ine $probeItem.FullName){throw 'CI_METADATA_PROBE_RESOLUTION'}
+    $env:C545D_METADATA_V04='1'
+    $env:C545D_METADATA_PROBE_SHA256=$CiMetadataProbeSha256
+  }elseif($CiMetadataProbeSha256){throw 'CI_METADATA_PARTIAL_OPTIN'}
   $env:GST_PLUGIN_SCANNER=Join-Path $SdkRoot 'libexec\gstreamer-1.0\gst-plugin-scanner.exe'
   $env:GST_REGISTRY=Join-Path $stage 'registry.bin'
   $env:GST_PLUGIN_PATH=''
@@ -334,6 +352,18 @@ $script:ciWinFormsTime.Start()
     Copy-Item -LiteralPath $path -Destination $target
     if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -cne $snapshot[$path]){
       throw 'GUI_NAMER_SOURCE_CHANGED'
+    }
+  }
+  if($ciMetaEnabled){
+    $metaStage=Join-Path $stage 'diagnostics'
+    New-Item -ItemType Directory -Path $metaStage | Out-Null
+    foreach($name in @('C545D-MetadataIntegrationV04.ps1','C545D-MetadataClassifierV04.ps1',
+        'C545DClosedProbeV04.cs','C545DMetadataJournalV04.cs','C545DMetadataWriterV04.cs')){
+      $src=(Resolve-Path -LiteralPath (Join-Path 'diagnostics' $name)).Path
+      $snapshot[$src]=(Get-FileHash -LiteralPath $src).Hash
+      $target=Join-Path $metaStage $name
+      Copy-Item -LiteralPath $src -Destination $target
+      if((Get-FileHash -LiteralPath $target).Hash -cne $snapshot[$src]){throw 'CI_METADATA_MODULE_CHANGED'}
     }
   }
   # Bootstrap only private synthetic settings & DPAPI in the actual GUI
@@ -744,6 +774,531 @@ $encrypted=ConvertFrom-SecureString $pass
       throw 'ORIGINAL_BYTES_CHANGED'
     }
   }
+  $phase='CI_METADATA_REPORT'
+  $metaRoot=Join-Path $localData 'C545D_GStreamer\MetadataV04'
+  if($ciMetaEnabled){
+    $j=@(Get-ChildItem -LiteralPath (Join-Path $metaRoot 'journal') -File)
+    $receipts=@(Get-ChildItem -LiteralPath (Join-Path $metaRoot 'receipts') -File)
+    if($j.Count -ne 1 -or $receipts.Count -ne 1){throw 'CI_METADATA_FILE_COUNT'}
+    $journalRows=@(Get-Content -LiteralPath $j[0].FullName)
+    if($journalRows.Count -ne ($liveRenameCount+1) -or $journalRows[0] -cnotmatch '^C545D_META_V1\|\d{8} -eq 1){
+    $phase='POST_VERIFICATION_WORKER_STATUS'
+    throw 'GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
+  $phase='PASS'
+} catch {
+  $known=@('NOT_DISPOSABLE_WINDOWS_CI','UNSAFE_CI_TEMP','REFERENCE_NOT_PINNED',
+    'OFFICIAL_SDK_CHANGED','CANDIDATE_CHANGED','SOURCE_MIRROR_REFUSED',
+    'OUTPUT_MIRROR_REFUSED','RECORDER_MIRROR_NOT_EXACT','STAGED_EXE_CHANGED',
+    'STAGED_GIO_CHANGED','DUMMY_SECRET_SETUP_FAILED','FINITE_RTSP_COMPILE_FAILED',
+    'FINITE_RTSP_NOT_READY','RECORDER_LIVE_GATE_NOT_PASSED','MP4_TOO_SMALL',
+    'LIVE_MP4_DISCOVER_FAILED','LIVE_MP4_CAPS_INVALID','LIVE_MP4_DECODE_FAILED',
+    'ORIGINAL_BYTES_CHANGED','EARLY_WORKER_MARKER','GUI_WORKER_MIRROR_NOT_EXACT',
+    'REAL_GUI_WORKER_NOT_READY','REAL_WORKER_DUAL_RTSP_NOT_READY',
+    'WORKER_EXITED_BEFORE_CTRL_C','GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN',
+    'GUI_WORKER_FINALIZE_TIMEOUT','GUI_WORKER_EOS_NOT_TIMELY','GUI_TRANSCRIPT_NOT_UNIQUE',
+    'GUI_REAL_WORKER_STOP_POLICY_FAILED',
+    'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
+    'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
+    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
+    'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
+    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID',
+    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED',
+    'LIVE_NAMER_REQUIRES_CI_SPLIT','LIVE_NAMER_MARKER_COLLISION',
+    'LIVE_NAMER_OUTPUT_MISSING','LIVE_NAMER_NOT_READY','LIVE_NAMER_EARLY_EXIT',
+    'LIVE_NAMER_NOT_DURING_RECORDING','LIVE_NAMER_NOT_FULLY_DRAINED',
+    'LIVE_NAMER_LOG_MISSING','LIVE_NAMER_LOG_SEQUENCE','LIVE_NAMER_SHUTDOWN_FAILED',
+    'GUI_SOURCE_INSERTION_UNSAFE','GUI_SOURCE_ROUNDTRIP_MISMATCH','GUI_CI_SOURCE_SYNTAX',
+    'GUI_NAMER_SOURCE_CHANGED','GUI_CI_DID_NOT_START_WORKER','GUI_CI_SESSION_INVALID',
+    'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
+    'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
+    'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'GUI_CI_NAMER_PROCESS_NOT_UNIQUE','GUI_CI_NAMER_PROCESS_EARLY_EXIT',
+    'GUI_CI_NAMER_PROCESS_NOT_EXITED','GUI_CI_NAMER_PROCESS_BAD_EXIT',
+    'CI_STOP_ALIGNMENT_WORKER_EXITED',
+    'CI_EXIT_HEX_ENCODING_FAILED',
+    'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
+    'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
+    'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
+    'GUI_STOP_POLICY_STOP_DECISION','GUI_STOP_POLICY_RECONNECT',
+    'GUI_STOP_POLICY_EOS_MISSING','GUI_STOP_POLICY_RECORD_RETURN',
+    'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
+    'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
+  $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    # Attach the signed worker exit status directly to the one failure line
+    # that the workflow is guaranteed to preserve. Numeric PID is NOT logged.
+    $reason='GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  if($phase -ceq 'GUI_STOP_POLICY_CHECK'){
+    # Only bounded scalar counters. Never upload original worker transcript,
+    # camera credentials, RTSP URLs, file names, or exception messages.
+    $recordErrorDetected=[int](([string]$text).Contains('RECORD ERROR:'))
+    $gstReturned=[int](([string]$text).Contains('GStreamer returned; exitCode='))
+    $eosSuccessful=[int](([string]$text).Contains('Recording stopped by GUI; GStreamer EOS completed.'))
+    # Reason token must survive outer workflow's strict A-Z_ log whitelist.
+    # Encode small finite categories only, never the user's camera/path/logs.
+    $workerClass=if($recordExit -eq 0){'ZERO'}elseif($recordExit -eq 1){'ONE'}elseif($recordExit -eq -1073741510){'CONTROL_C'}else{'OTHER'}
+    $gstClass=if($nativeExit -eq 0){'ZERO'}elseif($nativeExit -eq 999){'MISSING'}else{'NONZERO'}
+    $eosClass=if($eosSuccessful -eq 1){'YES'}else{'NO'}
+    $errorClassToken=if($recordErrorDetected -eq 1){'YES'}else{'NO'}
+    $returnedClass=if($returned -eq 1){'YES'}else{'NO'}
+    $markerClass=if($markerAtReturn -eq 1){'YES'}else{'NO'}
+    $stopClass=if($policyStop -eq 1){'YES'}else{'NO'}
+    $readyClass=if($readyRemoved -eq 1){'YES'}else{'NO'}
+    $reason=(@('GUI','STOP','WORKER',$workerClass,'GST',$gstClass,'EOS',$eosClass,
+      'RECORDERROR',$errorClassToken,'RETURNED',$returnedClass,'MARKER',$markerClass,
+      'POLICY',$stopClass,'READYREMOVED',$readyClass) -join '_')
+    Write-Output "C545D_WINFORMS_STOP_DIAG,worker_exit=$recordExit,native_gst_exit=$nativeExit,record_error=$recordErrorDetected,gst_returned=$gstReturned,eos_successful=$eosSuccessful,stop_policy=$policyStop,reconnect=$unexpectedReconnect,record_returned=$returned,marker_at_return=$markerAtReturn,mp4_files=$filesCount,stop_proven=$stopExists,ready_removed=$readyRemoved,real_camera=0"
+  }
+  $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
+  $errorClass=[string]$_.Exception.GetType().Name
+  if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
+  $errorCategory=[string]$_.CategoryInfo.Category
+  if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
+  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0"
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0,host_modified=0"
+  } else {
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
+  }
+  throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
+ } finally {
+  if($namerOwned){
+    if(-not $namerOwned.HasExited){
+      # Last-resort cleanup only for the independently checked CI-owned
+      # child PowerShell process, never a camera or user's recorder process.
+      try {$namerOwned.Kill();[void]$namerOwned.WaitForExit(5000)}catch {}
+    }
+    $namerOwned.Dispose()
+  }
+  if($gui){
+    if(-not $gui.HasExited){
+      # Only CI-owned private GUI process can be stopped after a failed test.
+      try {$gui.Kill();[void]$gui.WaitForExit(5000)}catch {}
+    }
+    $gui.Dispose()
+  }
+  if($liveNamer){
+    if(-not $liveNamer.HasExited){
+      # CI-only private watcher child. Never stop or signal a user process.
+      try {$liveNamer.Kill();[void]$liveNamer.WaitForExit(5000)}catch {}
+    }
+    $liveNamer.Dispose()
+  }
+  if($worker){
+    if(-not $worker.HasExited){
+      # CI-only failure cleanup of process we personally started.
+      try {$worker.Kill();[void]$worker.WaitForExit(4000)}catch {}
+    }
+    $worker.Dispose()
+  }
+  if($server){
+    if(-not $server.HasExited){try{$server.Kill();[void]$server.WaitForExit(5000)}catch{}}
+    $server.Dispose()
+  }
+  foreach($key in $prior.Keys){
+    [Environment]::SetEnvironmentVariable($key,$prior[$key],'Process')
+  }
+  if($owned -and $stage -and (Test-Path -LiteralPath $stage)){
+    $dir=Get-Item -LiteralPath $stage -Force
+    $links=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+      Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+    if(-not $dir.PSIsContainer -or
+       ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+       $links.Count -ne 0 -or
+       -not [string]::Equals([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\'),
+                            $temp,[StringComparison]::OrdinalIgnoreCase) -or
+       [IO.Path]::GetFileName($stage) -notmatch '^c545d-ci-production-mirror-[a-f0-9]{32}$' -or
+       [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-owned')) -cne
+       'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){
+      throw 'OWNED_STAGE_CLEANUP_REFUSED'
+    }
+    # FileSystemWatcher may release a handle immediately AFTER .ready is
+    # deleted. Only this exact CI-owned child of RUNNER_TEMP may be retried.
+    # No new path or ownership is accepted; reject reparse links on every
+    # attempt. A permanent lock still fails the job, never a false PASS.
+    $ciStageCleanupRetries=0
+    $ciStageCleanupError='NONE'
+    for($attempt=0;$attempt -lt 16;$attempt++){
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $newLinks=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+        Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+      $rootAttributes=(Get-Item -LiteralPath $stage -Force).Attributes
+      if($newLinks.Count -ne 0 -or
+         ($rootAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'OWNED_STAGE_CLEANUP_REFUSED'
+      }
+      try {
+        Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
+      } catch {
+        $ciStageCleanupError=$_.Exception.GetType().Name
+        if($ciStageCleanupError -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$ciStageCleanupError='OTHER'}
+      }
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $ciStageCleanupRetries++
+      Start-Sleep -Milliseconds 250
+    }
+    $stageRemoved=[int](-not (Test-Path -LiteralPath $stage))
+    Write-Output "C545D_GUI_CI_STAGE_CLEANUP,removed=$stageRemoved,retries=$ciStageCleanupRetries,real_camera=0"
+    if($stageRemoved -ne 1){throw 'STAGE_CLEANUP_INCOMPLETE'}
+  }
+}
+if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
+  throw 'GUI_CTRL_C_EOS_NOT_QUALIFIED'
+}
+Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
+){
+      throw 'CI_METADATA_ROW_COUNT'
+    }
+    foreach($row in @($journalRows|Select-Object -Skip 1)){
+      if($row -cnotmatch '\|profile_match_metadata_only\|'){throw 'CI_METADATA_PROFILE'}
+    }
+    $receiptRows=@(Get-Content -LiteralPath $receipts[0].FullName)
+    $expected='^END\|\d{8}T\d{6}\.\d{7}Z\|'+$liveRenameCount+'\|0\|'+$liveRenameCount+'\|0\|0 -eq 1){
+    $phase='POST_VERIFICATION_WORKER_STATUS'
+    throw 'GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
+  $phase='PASS'
+} catch {
+  $known=@('NOT_DISPOSABLE_WINDOWS_CI','UNSAFE_CI_TEMP','REFERENCE_NOT_PINNED',
+    'OFFICIAL_SDK_CHANGED','CANDIDATE_CHANGED','SOURCE_MIRROR_REFUSED',
+    'OUTPUT_MIRROR_REFUSED','RECORDER_MIRROR_NOT_EXACT','STAGED_EXE_CHANGED',
+    'STAGED_GIO_CHANGED','DUMMY_SECRET_SETUP_FAILED','FINITE_RTSP_COMPILE_FAILED',
+    'FINITE_RTSP_NOT_READY','RECORDER_LIVE_GATE_NOT_PASSED','MP4_TOO_SMALL',
+    'LIVE_MP4_DISCOVER_FAILED','LIVE_MP4_CAPS_INVALID','LIVE_MP4_DECODE_FAILED',
+    'ORIGINAL_BYTES_CHANGED','EARLY_WORKER_MARKER','GUI_WORKER_MIRROR_NOT_EXACT',
+    'REAL_GUI_WORKER_NOT_READY','REAL_WORKER_DUAL_RTSP_NOT_READY',
+    'WORKER_EXITED_BEFORE_CTRL_C','GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN',
+    'GUI_WORKER_FINALIZE_TIMEOUT','GUI_WORKER_EOS_NOT_TIMELY','GUI_TRANSCRIPT_NOT_UNIQUE',
+    'GUI_REAL_WORKER_STOP_POLICY_FAILED',
+    'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
+    'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
+    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
+    'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
+    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID',
+    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED',
+    'LIVE_NAMER_REQUIRES_CI_SPLIT','LIVE_NAMER_MARKER_COLLISION',
+    'LIVE_NAMER_OUTPUT_MISSING','LIVE_NAMER_NOT_READY','LIVE_NAMER_EARLY_EXIT',
+    'LIVE_NAMER_NOT_DURING_RECORDING','LIVE_NAMER_NOT_FULLY_DRAINED',
+    'LIVE_NAMER_LOG_MISSING','LIVE_NAMER_LOG_SEQUENCE','LIVE_NAMER_SHUTDOWN_FAILED',
+    'GUI_SOURCE_INSERTION_UNSAFE','GUI_SOURCE_ROUNDTRIP_MISMATCH','GUI_CI_SOURCE_SYNTAX',
+    'GUI_NAMER_SOURCE_CHANGED','GUI_CI_DID_NOT_START_WORKER','GUI_CI_SESSION_INVALID',
+    'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
+    'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
+    'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'GUI_CI_NAMER_PROCESS_NOT_UNIQUE','GUI_CI_NAMER_PROCESS_EARLY_EXIT',
+    'GUI_CI_NAMER_PROCESS_NOT_EXITED','GUI_CI_NAMER_PROCESS_BAD_EXIT',
+    'CI_STOP_ALIGNMENT_WORKER_EXITED',
+    'CI_EXIT_HEX_ENCODING_FAILED',
+    'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
+    'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
+    'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
+    'GUI_STOP_POLICY_STOP_DECISION','GUI_STOP_POLICY_RECONNECT',
+    'GUI_STOP_POLICY_EOS_MISSING','GUI_STOP_POLICY_RECORD_RETURN',
+    'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
+    'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
+  $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    # Attach the signed worker exit status directly to the one failure line
+    # that the workflow is guaranteed to preserve. Numeric PID is NOT logged.
+    $reason='GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  if($phase -ceq 'GUI_STOP_POLICY_CHECK'){
+    # Only bounded scalar counters. Never upload original worker transcript,
+    # camera credentials, RTSP URLs, file names, or exception messages.
+    $recordErrorDetected=[int](([string]$text).Contains('RECORD ERROR:'))
+    $gstReturned=[int](([string]$text).Contains('GStreamer returned; exitCode='))
+    $eosSuccessful=[int](([string]$text).Contains('Recording stopped by GUI; GStreamer EOS completed.'))
+    # Reason token must survive outer workflow's strict A-Z_ log whitelist.
+    # Encode small finite categories only, never the user's camera/path/logs.
+    $workerClass=if($recordExit -eq 0){'ZERO'}elseif($recordExit -eq 1){'ONE'}elseif($recordExit -eq -1073741510){'CONTROL_C'}else{'OTHER'}
+    $gstClass=if($nativeExit -eq 0){'ZERO'}elseif($nativeExit -eq 999){'MISSING'}else{'NONZERO'}
+    $eosClass=if($eosSuccessful -eq 1){'YES'}else{'NO'}
+    $errorClassToken=if($recordErrorDetected -eq 1){'YES'}else{'NO'}
+    $returnedClass=if($returned -eq 1){'YES'}else{'NO'}
+    $markerClass=if($markerAtReturn -eq 1){'YES'}else{'NO'}
+    $stopClass=if($policyStop -eq 1){'YES'}else{'NO'}
+    $readyClass=if($readyRemoved -eq 1){'YES'}else{'NO'}
+    $reason=(@('GUI','STOP','WORKER',$workerClass,'GST',$gstClass,'EOS',$eosClass,
+      'RECORDERROR',$errorClassToken,'RETURNED',$returnedClass,'MARKER',$markerClass,
+      'POLICY',$stopClass,'READYREMOVED',$readyClass) -join '_')
+    Write-Output "C545D_WINFORMS_STOP_DIAG,worker_exit=$recordExit,native_gst_exit=$nativeExit,record_error=$recordErrorDetected,gst_returned=$gstReturned,eos_successful=$eosSuccessful,stop_policy=$policyStop,reconnect=$unexpectedReconnect,record_returned=$returned,marker_at_return=$markerAtReturn,mp4_files=$filesCount,stop_proven=$stopExists,ready_removed=$readyRemoved,real_camera=0"
+  }
+  $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
+  $errorClass=[string]$_.Exception.GetType().Name
+  if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
+  $errorCategory=[string]$_.CategoryInfo.Category
+  if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
+  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0"
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0,host_modified=0"
+  } else {
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
+  }
+  throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
+ } finally {
+  if($namerOwned){
+    if(-not $namerOwned.HasExited){
+      # Last-resort cleanup only for the independently checked CI-owned
+      # child PowerShell process, never a camera or user's recorder process.
+      try {$namerOwned.Kill();[void]$namerOwned.WaitForExit(5000)}catch {}
+    }
+    $namerOwned.Dispose()
+  }
+  if($gui){
+    if(-not $gui.HasExited){
+      # Only CI-owned private GUI process can be stopped after a failed test.
+      try {$gui.Kill();[void]$gui.WaitForExit(5000)}catch {}
+    }
+    $gui.Dispose()
+  }
+  if($liveNamer){
+    if(-not $liveNamer.HasExited){
+      # CI-only private watcher child. Never stop or signal a user process.
+      try {$liveNamer.Kill();[void]$liveNamer.WaitForExit(5000)}catch {}
+    }
+    $liveNamer.Dispose()
+  }
+  if($worker){
+    if(-not $worker.HasExited){
+      # CI-only failure cleanup of process we personally started.
+      try {$worker.Kill();[void]$worker.WaitForExit(4000)}catch {}
+    }
+    $worker.Dispose()
+  }
+  if($server){
+    if(-not $server.HasExited){try{$server.Kill();[void]$server.WaitForExit(5000)}catch{}}
+    $server.Dispose()
+  }
+  foreach($key in $prior.Keys){
+    [Environment]::SetEnvironmentVariable($key,$prior[$key],'Process')
+  }
+  if($owned -and $stage -and (Test-Path -LiteralPath $stage)){
+    $dir=Get-Item -LiteralPath $stage -Force
+    $links=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+      Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+    if(-not $dir.PSIsContainer -or
+       ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+       $links.Count -ne 0 -or
+       -not [string]::Equals([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\'),
+                            $temp,[StringComparison]::OrdinalIgnoreCase) -or
+       [IO.Path]::GetFileName($stage) -notmatch '^c545d-ci-production-mirror-[a-f0-9]{32}$' -or
+       [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-owned')) -cne
+       'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){
+      throw 'OWNED_STAGE_CLEANUP_REFUSED'
+    }
+    # FileSystemWatcher may release a handle immediately AFTER .ready is
+    # deleted. Only this exact CI-owned child of RUNNER_TEMP may be retried.
+    # No new path or ownership is accepted; reject reparse links on every
+    # attempt. A permanent lock still fails the job, never a false PASS.
+    $ciStageCleanupRetries=0
+    $ciStageCleanupError='NONE'
+    for($attempt=0;$attempt -lt 16;$attempt++){
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $newLinks=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+        Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+      $rootAttributes=(Get-Item -LiteralPath $stage -Force).Attributes
+      if($newLinks.Count -ne 0 -or
+         ($rootAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'OWNED_STAGE_CLEANUP_REFUSED'
+      }
+      try {
+        Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
+      } catch {
+        $ciStageCleanupError=$_.Exception.GetType().Name
+        if($ciStageCleanupError -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$ciStageCleanupError='OTHER'}
+      }
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $ciStageCleanupRetries++
+      Start-Sleep -Milliseconds 250
+    }
+    $stageRemoved=[int](-not (Test-Path -LiteralPath $stage))
+    Write-Output "C545D_GUI_CI_STAGE_CLEANUP,removed=$stageRemoved,retries=$ciStageCleanupRetries,real_camera=0"
+    if($stageRemoved -ne 1){throw 'STAGE_CLEANUP_INCOMPLETE'}
+  }
+}
+if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
+  throw 'GUI_CTRL_C_EOS_NOT_QUALIFIED'
+}
+Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
+
+    if($receiptRows.Count -ne 2 -or $receiptRows[0] -cnotmatch '^C545D_WRITER_V1\|\d{8}T\d{6}\.\d{7}Z\|[0-9a-f]{32} -eq 1){
+    $phase='POST_VERIFICATION_WORKER_STATUS'
+    throw 'GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  Write-Output "C545D_WINFORMS_REAL_RECORDING_CI_PASS,gui_start_click=$guiStarted,gui_stop_click=$guiStop,gui_quit_click=$guiExit,namer_ready=$liveNamerReady,renamed_before_stop=$liveRenamedBeforeStop,renamed_total=$liveRenameCount,all_decoded=$mp4Decoded,gui_ctrl_c_eos=$signalSent,watcher_closed=$liveNamerClosed,source_unchanged=1,real_rtsp=0,synthetic_rtsp=1,real_camera=0,install_approved=0"
+  $phase='PASS'
+} catch {
+  $known=@('NOT_DISPOSABLE_WINDOWS_CI','UNSAFE_CI_TEMP','REFERENCE_NOT_PINNED',
+    'OFFICIAL_SDK_CHANGED','CANDIDATE_CHANGED','SOURCE_MIRROR_REFUSED',
+    'OUTPUT_MIRROR_REFUSED','RECORDER_MIRROR_NOT_EXACT','STAGED_EXE_CHANGED',
+    'STAGED_GIO_CHANGED','DUMMY_SECRET_SETUP_FAILED','FINITE_RTSP_COMPILE_FAILED',
+    'FINITE_RTSP_NOT_READY','RECORDER_LIVE_GATE_NOT_PASSED','MP4_TOO_SMALL',
+    'LIVE_MP4_DISCOVER_FAILED','LIVE_MP4_CAPS_INVALID','LIVE_MP4_DECODE_FAILED',
+    'ORIGINAL_BYTES_CHANGED','EARLY_WORKER_MARKER','GUI_WORKER_MIRROR_NOT_EXACT',
+    'REAL_GUI_WORKER_NOT_READY','REAL_WORKER_DUAL_RTSP_NOT_READY',
+    'WORKER_EXITED_BEFORE_CTRL_C','GUI_PRIVATE_CONSOLE_SIGNAL_NOT_PROVEN',
+    'GUI_WORKER_FINALIZE_TIMEOUT','GUI_WORKER_EOS_NOT_TIMELY','GUI_TRANSCRIPT_NOT_UNIQUE',
+    'GUI_REAL_WORKER_STOP_POLICY_FAILED',
+    'WORKER_EXITED_DURING_RESOURCE_SAMPLE',
+    'OWNED_GST_RESOURCE_PROCESS_NOT_UNIQUE',
+    'OWNED_RESOURCE_SAMPLES_INVALID','STAGED_GST_REMAINS_AFTER_STOP',
+    'CI_SPLIT_ANCHOR_NOT_UNIQUE','CI_SPLIT_MIRROR_NOT_REVERSIBLE',
+    'CI_SPLIT_SOURCE_SYNTAX','CI_SPLIT_FILENAME_INVALID','CI_SPLIT_SEQUENCE_INVALID',
+    'CI_NAMER_SYNTAX','CI_NAMER_GATE_FAILED',
+    'LIVE_NAMER_REQUIRES_CI_SPLIT','LIVE_NAMER_MARKER_COLLISION',
+    'LIVE_NAMER_OUTPUT_MISSING','LIVE_NAMER_NOT_READY','LIVE_NAMER_EARLY_EXIT',
+    'LIVE_NAMER_NOT_DURING_RECORDING','LIVE_NAMER_NOT_FULLY_DRAINED',
+    'LIVE_NAMER_LOG_MISSING','LIVE_NAMER_LOG_SEQUENCE','LIVE_NAMER_SHUTDOWN_FAILED',
+    'GUI_SOURCE_INSERTION_UNSAFE','GUI_SOURCE_ROUNDTRIP_MISMATCH','GUI_CI_SOURCE_SYNTAX',
+    'GUI_NAMER_SOURCE_CHANGED','GUI_CI_DID_NOT_START_WORKER','GUI_CI_SESSION_INVALID',
+    'GUI_CI_WORKER_NOT_OWNED','GUI_CI_WORKER_NOT_READY','GUI_CI_EXITED_DURING_RECORDING',
+    'GUI_CI_STOP_BUTTON_FAILED','GUI_CI_EXITED_BEFORE_MP4_DRAIN','GUI_CI_QUIT_TIMEOUT',
+    'GUI_CI_QUIT_CLICK_FAILED','GUI_CI_NAMER_NOT_CLOSED',
+    'GUI_CI_NAMER_PROCESS_NOT_UNIQUE','GUI_CI_NAMER_PROCESS_EARLY_EXIT',
+    'GUI_CI_NAMER_PROCESS_NOT_EXITED','GUI_CI_NAMER_PROCESS_BAD_EXIT',
+    'CI_STOP_ALIGNMENT_WORKER_EXITED',
+    'CI_EXIT_HEX_ENCODING_FAILED',
+    'GUI_STOP_POLICY_WORKER_EXIT','GUI_STOP_POLICY_NO_SIGNAL',
+    'GUI_STOP_POLICY_NOT_LAUNCHED','GUI_STOP_POLICY_LAUNCH_COUNT',
+    'GUI_STOP_POLICY_MARKER_AT_RETURN','GUI_STOP_POLICY_GST_EXIT',
+    'GUI_STOP_POLICY_STOP_DECISION','GUI_STOP_POLICY_RECONNECT',
+    'GUI_STOP_POLICY_EOS_MISSING','GUI_STOP_POLICY_RECORD_RETURN',
+    'GUI_STOP_POLICY_FRAGMENT_COUNT','GUI_STOP_POLICY_MP4_BYTES',
+    'GUI_STOP_POLICY_MARKER_PROOF','GUI_STOP_POLICY_WORKER_READY_LEFT')
+  $reason=if($_.Exception.Message -in $known){$_.Exception.Message}else{'BLOCKED'}
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    # Attach the signed worker exit status directly to the one failure line
+    # that the workflow is guaranteed to preserve. Numeric PID is NOT logged.
+    $reason='GUI_STOP_POLICY_WORKER_EXIT'
+  }
+  if($phase -ceq 'GUI_STOP_POLICY_CHECK'){
+    # Only bounded scalar counters. Never upload original worker transcript,
+    # camera credentials, RTSP URLs, file names, or exception messages.
+    $recordErrorDetected=[int](([string]$text).Contains('RECORD ERROR:'))
+    $gstReturned=[int](([string]$text).Contains('GStreamer returned; exitCode='))
+    $eosSuccessful=[int](([string]$text).Contains('Recording stopped by GUI; GStreamer EOS completed.'))
+    # Reason token must survive outer workflow's strict A-Z_ log whitelist.
+    # Encode small finite categories only, never the user's camera/path/logs.
+    $workerClass=if($recordExit -eq 0){'ZERO'}elseif($recordExit -eq 1){'ONE'}elseif($recordExit -eq -1073741510){'CONTROL_C'}else{'OTHER'}
+    $gstClass=if($nativeExit -eq 0){'ZERO'}elseif($nativeExit -eq 999){'MISSING'}else{'NONZERO'}
+    $eosClass=if($eosSuccessful -eq 1){'YES'}else{'NO'}
+    $errorClassToken=if($recordErrorDetected -eq 1){'YES'}else{'NO'}
+    $returnedClass=if($returned -eq 1){'YES'}else{'NO'}
+    $markerClass=if($markerAtReturn -eq 1){'YES'}else{'NO'}
+    $stopClass=if($policyStop -eq 1){'YES'}else{'NO'}
+    $readyClass=if($readyRemoved -eq 1){'YES'}else{'NO'}
+    $reason=(@('GUI','STOP','WORKER',$workerClass,'GST',$gstClass,'EOS',$eosClass,
+      'RECORDERROR',$errorClassToken,'RETURNED',$returnedClass,'MARKER',$markerClass,
+      'POLICY',$stopClass,'READYREMOVED',$readyClass) -join '_')
+    Write-Output "C545D_WINFORMS_STOP_DIAG,worker_exit=$recordExit,native_gst_exit=$nativeExit,record_error=$recordErrorDetected,gst_returned=$gstReturned,eos_successful=$eosSuccessful,stop_policy=$policyStop,reconnect=$unexpectedReconnect,record_returned=$returned,marker_at_return=$markerAtReturn,mp4_files=$filesCount,stop_proven=$stopExists,ready_removed=$readyRemoved,real_camera=0"
+  }
+  $errorLine=[int]$_.InvocationInfo.ScriptLineNumber
+  $errorClass=[string]$_.Exception.GetType().Name
+  if($errorClass -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorClass='OTHER'}
+  $errorCategory=[string]$_.CategoryInfo.Category
+  if($errorCategory -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$errorCategory='OTHER'}
+  Write-Output "C545D_GUI_INTEGRATED_ERROR_STAGE,phase=$phase,line=$errorLine,exception_class=$errorClass,category=$errorCategory,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0"
+  if($phase -ceq 'POST_VERIFICATION_WORKER_STATUS'){
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,worker_exit=$recordExit,media_verified=$mediaVerified,mp4_files=$filesCount,real_camera=0,host_modified=0"
+  } else {
+    Write-Output "C545D_GUI_WORKER_RTSP_FAIL,phase=$phase,reason=$reason,real_camera=0,host_modified=0"
+  }
+  throw 'SANITIZED_CI_LOOPBACK_RECORD_TEST_FAILED'
+ } finally {
+  if($namerOwned){
+    if(-not $namerOwned.HasExited){
+      # Last-resort cleanup only for the independently checked CI-owned
+      # child PowerShell process, never a camera or user's recorder process.
+      try {$namerOwned.Kill();[void]$namerOwned.WaitForExit(5000)}catch {}
+    }
+    $namerOwned.Dispose()
+  }
+  if($gui){
+    if(-not $gui.HasExited){
+      # Only CI-owned private GUI process can be stopped after a failed test.
+      try {$gui.Kill();[void]$gui.WaitForExit(5000)}catch {}
+    }
+    $gui.Dispose()
+  }
+  if($liveNamer){
+    if(-not $liveNamer.HasExited){
+      # CI-only private watcher child. Never stop or signal a user process.
+      try {$liveNamer.Kill();[void]$liveNamer.WaitForExit(5000)}catch {}
+    }
+    $liveNamer.Dispose()
+  }
+  if($worker){
+    if(-not $worker.HasExited){
+      # CI-only failure cleanup of process we personally started.
+      try {$worker.Kill();[void]$worker.WaitForExit(4000)}catch {}
+    }
+    $worker.Dispose()
+  }
+  if($server){
+    if(-not $server.HasExited){try{$server.Kill();[void]$server.WaitForExit(5000)}catch{}}
+    $server.Dispose()
+  }
+  foreach($key in $prior.Keys){
+    [Environment]::SetEnvironmentVariable($key,$prior[$key],'Process')
+  }
+  if($owned -and $stage -and (Test-Path -LiteralPath $stage)){
+    $dir=Get-Item -LiteralPath $stage -Force
+    $links=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+      Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+    if(-not $dir.PSIsContainer -or
+       ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+       $links.Count -ne 0 -or
+       -not [string]::Equals([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($stage)).TrimEnd('\'),
+                            $temp,[StringComparison]::OrdinalIgnoreCase) -or
+       [IO.Path]::GetFileName($stage) -notmatch '^c545d-ci-production-mirror-[a-f0-9]{32}$' -or
+       [IO.File]::ReadAllText((Join-Path $stage '.c545d-ci-owned')) -cne
+       'CI_MIRROR_ONLY_NOT_FOR_EXECUTION'){
+      throw 'OWNED_STAGE_CLEANUP_REFUSED'
+    }
+    # FileSystemWatcher may release a handle immediately AFTER .ready is
+    # deleted. Only this exact CI-owned child of RUNNER_TEMP may be retried.
+    # No new path or ownership is accepted; reject reparse links on every
+    # attempt. A permanent lock still fails the job, never a false PASS.
+    $ciStageCleanupRetries=0
+    $ciStageCleanupError='NONE'
+    for($attempt=0;$attempt -lt 16;$attempt++){
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $newLinks=@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Stop |
+        Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0})
+      $rootAttributes=(Get-Item -LiteralPath $stage -Force).Attributes
+      if($newLinks.Count -ne 0 -or
+         ($rootAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'OWNED_STAGE_CLEANUP_REFUSED'
+      }
+      try {
+        Remove-Item -LiteralPath $stage -Force -Recurse -ErrorAction Stop
+      } catch {
+        $ciStageCleanupError=$_.Exception.GetType().Name
+        if($ciStageCleanupError -cnotmatch '^[A-Za-z0-9_]{1,80}$'){$ciStageCleanupError='OTHER'}
+      }
+      if(-not (Test-Path -LiteralPath $stage)){break}
+      $ciStageCleanupRetries++
+      Start-Sleep -Milliseconds 250
+    }
+    $stageRemoved=[int](-not (Test-Path -LiteralPath $stage))
+    Write-Output "C545D_GUI_CI_STAGE_CLEANUP,removed=$stageRemoved,retries=$ciStageCleanupRetries,real_camera=0"
+    if($stageRemoved -ne 1){throw 'STAGE_CLEANUP_INCOMPLETE'}
+  }
+}
+if($phase -cne 'PASS' -or $mp4Decoded -ne 1 -or $eosObserved -ne 1 -or $signalSent -ne 1){
+  throw 'GUI_CTRL_C_EOS_NOT_QUALIFIED'
+}
+Write-Output "C545D_GUI_ACCELERATED_SPLIT_CI_PASS,original_worker=1,ci_modified_split_only=1,synthetic_rtsp=1,fragments=$filesCount,each_mp4_decoded=1,gui_ctrlc_eos=1,owned_rollback=1,real_hourly_split_tested=0,real_camera=0,install_approved=0"
+ -or
+       $receiptRows[1] -cnotmatch $expected){throw 'CI_METADATA_RECEIPT'}
+    $released=[IO.File]::Open((Join-Path $metaRoot 'writer.lease'),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    $released.Dispose()
+    Write-Output "C545D_GUI_METADATA_ENABLED_CI_PASS,renamed=$liveRenameCount,rows=$liveRenameCount,receipt=1,lease_released=1,all_decoded=$mp4Decoded,real_camera=0,install_approved=0"
+  }elseif(Test-Path -LiteralPath $metaRoot){throw 'CI_METADATA_DEFAULT_OFF_CHANGED'}
   $mediaVerified=1
   if($workerExitMismatch -eq 1){
     $phase='POST_VERIFICATION_WORKER_STATUS'
