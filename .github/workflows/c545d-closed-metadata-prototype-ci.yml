@@ -70,7 +70,7 @@ jobs:
           Assert-Probe $p 'ok' 1
           if((ConvertTo-C545DMetadataEvidence $p.Json $p.ExitCode).metadata_status -ne 'profile_match_metadata_only'){throw 'LEASED_METADATA_INVALID'}
           Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$leaf,$false,$ffprobe.Source,4000)) 'no_rename_evidence' 0
-          foreach($name in @('..\'+$leaf,'C545D_PENDING_20261124_120000_12345678_00001.mp4',$leaf+':stream','https://example.invalid/a.mp4')){
+          foreach($name in @(('..\'+$leaf),'C545D_PENDING_20261124_120000_12345678_00001.mp4',($leaf+':stream'),'https://example.invalid/a.mp4')){
             Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized($dir,$name,$true,$ffprobe.Source,4000)) 'name_rejected' 0
           }
           Assert-Probe ([C545DClosedProbePrototype]::ProbeFinalized('\\example.invalid\share',$leaf,$true,$ffprobe.Source,4000)) 'root_rejected' 0
