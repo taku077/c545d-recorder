@@ -4,6 +4,7 @@ on:
     branches: ['investigate/c545d-status-only-monitor-20261120']
     paths:
       - 'tests/C545DMetadataJournalPrototype.cs'
+      - 'tests/C545DMetadataWriterPrototype.cs'
       - 'tests/C545D-MetadataReportPrototype.ps1'
       - 'tests/Test-C545DMetadataZipIntegration.ps1'
       - 'diagnostics/C545D-WeeklyObserver.ps1'
