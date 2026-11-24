@@ -105,6 +105,22 @@ public static class C545DClosedProbePrototype {
             !Regex.IsMatch(renamedLeaf, @"\A[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}(?:_[0-9]{2,9})?\.mp4\z")) {
             result.Status = "name_rejected"; return result;
         }
+        return ProbeLocalLeaf(trustedRoot, renamedLeaf, trustedProbeExe, timeoutMs);
+    }
+    // CI-only candidate: existing renamer's exclusive-open check already succeeded.
+    // Independently acquire a read lease before launching ffprobe; pending name alone is not evidence.
+    public static Result ProbeRenameCandidate(string trustedRoot, string pendingLeaf, bool exclusiveGatePassed,
+                                              string trustedProbeExe, int timeoutMs) {
+        var result = new Result();
+        if (!exclusiveGatePassed) { result.Status = "no_close_gate"; return result; }
+        if (String.IsNullOrEmpty(pendingLeaf) ||
+            !Regex.IsMatch(pendingLeaf, @"\A(?:[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}_[0-9]{5}|C545D_PENDING_[0-9]{8}_[0-9]{6}_[0-9a-fA-F]{8}_[0-9]{5})\.mp4\z")) {
+            result.Status = "name_rejected"; return result;
+        }
+        return ProbeLocalLeaf(trustedRoot, pendingLeaf, trustedProbeExe, timeoutMs);
+    }
+    static Result ProbeLocalLeaf(string trustedRoot, string renamedLeaf, string trustedProbeExe, int timeoutMs) {
+        var result = new Result();
         try {
             if (String.IsNullOrEmpty(trustedRoot) || !Regex.IsMatch(trustedRoot, @"^[A-Za-z]:\\")) {
                 result.Status = "root_rejected"; return result;
