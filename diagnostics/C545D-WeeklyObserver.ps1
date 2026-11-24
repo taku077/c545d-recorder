@@ -714,6 +714,7 @@ function New-SafeBundleCore([string]$root,[datetime]$begin,[datetime]$end,[strin
      actual_samples=$samples.Count;valid_process_samples=$okay
      unavailable_process_samples=$samples.Count-$okay
      missing_intervals='not_classified'
+     observer_storage_failures=(Read-ObserverFailureSummary $root)
      recording_integrity='closed_rename_events_only_not_media_integrity'
      namer_event_source_status=$media.status
      renamed_closed_mp4_count=$media.renamed
@@ -810,32 +811,65 @@ function New-SafeBundleCore([string]$root,[datetime]$begin,[datetime]$end,[strin
    Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
  }
 }
+function Assert-ObserverStateFile([string]$path){
+ if(Test-Path -LiteralPath $path){
+   $item=Get-Item -LiteralPath $path -Force
+   if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 4096){throw 'OBSERVER_STATE_UNSAFE'}
+ }
+}
 function Load-ObserverState([string]$root,[datetime]$now){
+ Assert-ObserverDirectory $root
  $file=Join-Path $root 'observer_state.json'
  if(Test-Path -LiteralPath $file){
+   Assert-ObserverStateFile $file
    $x=Get-Content -LiteralPath $file -Raw -Encoding UTF8|ConvertFrom-Json
    if($x.schema_version -ne $schema){throw 'STATE_VERSION_INVALID'}
-   [void](ToUtc ([string]$x.started_utc))
-   [void](ToUtc ([string]$x.window_from_utc))
-   [void](ToUtc ([string]$x.next_cut_utc))
-   return $x
+   foreach($k in @('started_utc','window_from_utc','next_cut_utc')){[void](ToUtc ([string]$x.$k))}
+   $clean=[ordered]@{schema_version=$schema;started_utc=[string]$x.started_utc;window_from_utc=[string]$x.window_from_utc;next_cut_utc=[string]$x.next_cut_utc}
+   foreach($key in @('report_count','sample_save_failures','scheduled_export_failures')){
+     $value=0L
+     if($null -ne $x.PSObject.Properties[$key]){
+       if(([string]$x.$key) -cnotmatch '^\d{1,10}$' -or -not [long]::TryParse([string]$x.$key,[ref]$value) -or $value -gt 2147483647){throw 'STATE_COUNTER_INVALID'}
+     }
+     $clean[$key]=[int]$value
+   }
+   return [pscustomobject]$clean
  }
  [pscustomobject]@{
    schema_version=$schema;started_utc=UtcText $now
    window_from_utc=UtcText $now
    next_cut_utc=UtcText $now.AddHours(72)
-   report_count=0
+   report_count=0;sample_save_failures=0;scheduled_export_failures=0
  }
 }
 function Save-ObserverState($state,[string]$root){
+ Assert-ObserverDirectory $root
  $name=Join-Path $root 'observer_state.json'
  $temp=$name+'.partial'
- [IO.File]::WriteAllText($temp,(ConvertTo-Json $state -Depth 5),$utf8)
+ foreach($path in @($name,$temp,($name+'.previous'))){Assert-ObserverStateFile $path}
+ $data=$utf8.GetBytes((ConvertTo-Json $state -Depth 5))
+ if($data.Length -gt 4096){throw 'OBSERVER_STATE_LIMIT'}
+ [IO.File]::WriteAllBytes($temp,$data)
  if(Test-Path -LiteralPath $name){
-   # .NET Framework 4.x on Windows requires a real backup path here;
-   # a null backup path failed the isolated CI runtime.
    [IO.File]::Replace($temp,$name,($name+'.previous'))
  }else{Move-Item -LiteralPath $temp -Destination $name}
+}
+function Add-ObserverFailure($state,[string]$root,[string]$kind){
+ if($kind -notin @('sample_save_failures','scheduled_export_failures')){throw 'STATE_COUNTER_INVALID'}
+ $state.$kind=[int][Math]::Min(2147483647,([long]$state.$kind+1))
+ try{Save-ObserverState $state $root}
+ catch{Write-Warning 'OBSERVER_FAILURE_COUNTER_NOT_PERSISTED'}
+}
+function Read-ObserverFailureSummary([string]$root){
+ $result=[ordered]@{status='unavailable';scope='cumulative_since_state_creation_not_report_window';sample_save_failures=-1;scheduled_export_failures=-1;coverage='not_proven'}
+ try{
+   if(-not(Test-Path -LiteralPath (Join-Path $root 'observer_state.json'))){$result.status='not_found';return $result}
+   $x=Load-ObserverState $root ([datetime]::UtcNow)
+   $result.status='observed_state'
+   $result.sample_save_failures=$x.sample_save_failures
+   $result.scheduled_export_failures=$x.scheduled_export_failures
+ }catch{}
+ return $result
 }
 function Export-WhenDue($state,[string]$root,[datetime]$now){
  $cut=ToUtc ([string]$state.next_cut_utc)
@@ -962,6 +996,10 @@ function Test-Observer {
    Save-ObserverState $state $root
    $restored=Load-ObserverState $root $now.AddHours(3)
    if((ToUtc $restored.next_cut_utc) -ne $now.AddHours(72)){throw 'RESTART_CHANGED_CADENCE'}
+   Add-ObserverFailure $restored $root 'sample_save_failures'
+   Add-ObserverFailure $restored $root 'scheduled_export_failures'
+   $restored=Load-ObserverState $root $now.AddHours(3)
+   if($restored.sample_save_failures -ne 1 -or $restored.scheduled_export_failures -ne 1){throw 'SELFTEST_FAILURE_COUNTER_RESTART'}
    $first=Export-WhenDue $restored $root $now.AddHours(73)
    if(-not $first -or -not(Test-Path $first)){throw 'FIRST_72H_REPORT_MISSING'}
    if((ToUtc $restored.next_cut_utc) -ne $now.AddHours(72).AddDays(7)){
@@ -1034,6 +1072,8 @@ function Test-Observer {
      $script:ObserverDailyLimit=$oldDaily;$script:ObserverMetricLimit=$oldMetric
      $script:ObserverReportCountLimit=$oldCount;$script:ObserverReportLimit=$oldReport
    }
+   if($emptyMeta.observer_storage_failures.status -ne 'observed_state' -or $emptyMeta.observer_storage_failures.sample_save_failures -ne 1 -or $emptyMeta.observer_storage_failures.scheduled_export_failures -ne 1 -or $emptyMeta.observer_storage_failures.coverage -ne 'not_proven'){throw 'SELFTEST_FAILURE_COUNTER_EXPORT'}
+   Write-Output 'C545D_OBSERVER_FAILURE_COUNTER_CI_PASS,restart=1,export=1,window_attribution=0,coverage_proven=0'
    Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,namer_sanitized=1,closed_rename=1,watcher_loss=3,worker_eos_pair=1,reconnect=1,incomplete_session=1,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
  }finally{
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -1073,6 +1113,7 @@ try{
        # Capacity failure is observable, not a reason to stop the recorder.
        $reason=[string]$_.Exception.Message
        if($reason -cnotmatch '^OBSERVER_[A-Z_]+$'){$reason='STORAGE_ERROR'}
+       Add-ObserverFailure $state $RootDirectory 'sample_save_failures'
        Write-Warning ('OBSERVER_SAMPLE_NOT_SAVED: '+$reason)
      }
      try{
@@ -1083,7 +1124,8 @@ try{
        }
      }catch{
        # Fail independently: no GStreamer process is killed/restarted or changed.
-       Write-Warning ('OBSERVER_EXPORT_FAILED: '+$_.Exception.GetType().Name)
+       Add-ObserverFailure $state $RootDirectory 'scheduled_export_failures'
+       Write-Warning 'OBSERVER_EXPORT_FAILED'
      }
      if(-not $Once){Start-Sleep -Seconds $IntervalSeconds}
    }while(-not $Once)
