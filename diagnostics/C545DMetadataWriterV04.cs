@@ -190,13 +190,12 @@ public static class C545DWriterReceipts {
             DateTime observed=DateTime.UtcNow;
             for(int i=0;i<Slots;i++){
                 string p=PathAt(root,i);
-                if(!File.Exists(p)){
-                    // Directory collisions are unavailable, never free slots.
-                    if(Directory.Exists(p))s.InvalidSlots++;else s.EmptySlots++;
-                    continue;
-                }
                 try{
-                    if((File.GetAttributes(p)&FileAttributes.ReparsePoint)!=0){s.InvalidSlots++;continue;}
+                    // File.Exists can hide access failures; only FileNotFound is empty.
+                    FileAttributes attrs;
+                    try{attrs=File.GetAttributes(p);}
+                    catch(FileNotFoundException){s.EmptySlots++;continue;}
+                    if((attrs&(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0){s.InvalidSlots++;continue;}
                     using(var f=File.Open(p,FileMode.Open,FileAccess.Read,FileShare.Read)){
                         var r=Read(f);
                         if(!r.Final)s.PreservedUnfinishedSlots++;
