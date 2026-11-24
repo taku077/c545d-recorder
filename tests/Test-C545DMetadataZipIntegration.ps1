@@ -8,22 +8,31 @@ try{
     $source=[IO.File]::ReadAllText($observer)
     $adapter=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'C545D-MetadataReportPrototype.ps1'))
     $journalSource=Join-Path $PSScriptRoot 'C545DMetadataJournalPrototype.cs'
-    Add-Type -Path $journalSource
+    $writerSource=Join-Path $PSScriptRoot 'C545DMetadataWriterPrototype.cs'
+    Add-Type -Path @($journalSource,$writerSource)
     $journal=Join-Path $root 'journal'
     $logs=Join-Path $root 'logs'
+    $receiptRoot=Join-Path $root 'receipts'
     $metrics=Join-Path $root 'observer'
-    foreach($dir in @($journal,$logs,$metrics)){New-Item -ItemType Directory -Path $dir | Out-Null}
+    foreach($dir in @($journal,$logs,$metrics,$receiptRoot)){New-Item -ItemType Directory -Path $dir | Out-Null}
     $nl=[Environment]::NewLine
     function Replace-Once([string]$text,[string]$old,[string]$new){
         if(([regex]::Matches($text,[regex]::Escape($old))).Count -ne 1){throw 'OBSERVER_SOURCE_ANCHOR_DRIFT'}
         $text.Replace($old,$new)
     }
-    $candidate=Replace-Once $source '  [switch]$SelfTest,' ('  [string]$MetadataJournalRoot,'+$nl+'  [string]$MetadataJournalSource,'+$nl+'  [switch]$SelfTest,')
+    $candidate=Replace-Once $source '  [switch]$SelfTest,' ('  [string]$MetadataJournalRoot,'+$nl+'  [string]$MetadataJournalSource,'+$nl+'  [string]$WriterReceiptRoot,'+$nl+'  [string]$WriterSource,'+$nl+'  [switch]$SelfTest,')
     $candidate=Replace-Once $candidate '$version=''0.3.0''' '$version=''0.4.0'''
     $candidate=Replace-Once $candidate 'function New-SafeBundle(' ($adapter+$nl+'function New-SafeBundle(')
     $anchor=' $worker=Read-WorkerSessions $RecorderLogDirectory $begin $end'
-    $candidate=Replace-Once $candidate $anchor ($anchor+$nl+' $metadata=Read-C545DMetadataReport $MetadataJournalRoot $MetadataJournalSource $begin $end $media')
+    $candidate=Replace-Once $candidate $anchor ($anchor+$nl+' $writerReport=Read-C545DWriterReport $WriterReceiptRoot $MetadataJournalSource $WriterSource $begin $end'+$nl+' $metadata=Read-C545DMetadataReport $MetadataJournalRoot $MetadataJournalSource $begin $end $media')
     $manifestFields=@'
+     writer_receipt_source_status=$writerReport.status
+     writer_completed_runs=$writerReport.completed
+     writer_unfinished_or_active_runs=$writerReport.unfinished
+     writer_invalid_slots=$writerReport.invalid
+     writer_busy_slots=$writerReport.busy
+     writer_event_coverage='not_proven'
+     writer_counter_scope='whole_run_not_report_window'
      metadata_journal_source_status=$metadata.status
      metadata_journal_invalid_slots=$metadata.invalid_slots
      metadata_journal_busy_slots=$metadata.busy_slots
@@ -42,16 +51,26 @@ try{
     $candidate=Replace-Once $candidate $anchor ($anchor+$nl+$manifestFields)
     $anchor='   $metric=Join-Path $work ''process_metrics.csv'''
     $insert=@'
+   $writerFile=Join-Path $work 'diagnostic_writer_runs.csv'
+   Write-C545DWriterCsv $writerReport $writerFile
    $metadataFile=Join-Path $work 'mp4_metadata.csv'
    Write-C545DMetadataCsv $metadata $metadataFile
    $summary['metadata_event_count']=$metadata.rows.Count
    $summary['metadata_coverage']='not_proven'
 '@
     $candidate=Replace-Once $candidate $anchor ($insert+$nl+$anchor)
-    $candidate=Replace-Once $candidate 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,' 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,$metadataFile,'
+    $candidate=Replace-Once $candidate 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,' 'Compress-Archive -LiteralPath @($metric,$mediaFile,$sessionFile,$metadataFile,$writerFile,'
     $candidateFile=Join-Path $root 'observer-v04-ci.ps1'
     [IO.File]::WriteAllText($candidateFile,$candidate,(New-Object Text.UTF8Encoding($true)))
     $now=[datetime]::UtcNow.AddMinutes(-10)
+    # First session spans report boundary; counters must not be attributed to this week.
+    $finished=[C545DWriterReceipts]::Start($receiptRoot,$now.AddDays(-8))
+    if(-not [C545DWriterReceipts]::Finish($finished,$now,4,2,3,1,1)){throw 'WRITER_FIXTURE_FINAL'}
+    $unfinished=[C545DWriterReceipts]::Start($receiptRoot,$now.AddMinutes(1))
+    if($null -eq $unfinished){throw 'WRITER_FIXTURE_START'}
+    $corrupt=[C545DWriterReceipts]::Start($receiptRoot,$now.AddMinutes(2))
+    if($null -eq $corrupt){throw 'WRITER_FIXTURE_CORRUPT'}
+    [IO.File]::AppendAllText((Join-Path $receiptRoot 'writer_002.dat'),'PRIVATE_SECRET_923')
     function Add-Fixture([string]$status,[datetime]$t){
         $row=New-Object 'C545DMetadataJournalPrototype+Row'
         $row.Utc=$t;$row.Status=$status
@@ -73,7 +92,7 @@ try{
     function Run-Export([string]$script,[string]$tag,[bool]$new){
         $argsList=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,
           '-RootDirectory',$metrics,'-RecorderLogDirectory',$logs,'-ExportNow')
-        if($new){$argsList+=@('-MetadataJournalRoot',$journal,'-MetadataJournalSource',$journalSource)}
+        if($new){$argsList+=@('-MetadataJournalRoot',$journal,'-MetadataJournalSource',$journalSource,'-WriterReceiptRoot',$receiptRoot,'-WriterSource',$writerSource)}
         $before=@(Get-ChildItem (Join-Path $metrics 'reports') -Filter '*.zip' -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
         & powershell.exe @argsList | Out-Null
         if($LASTEXITCODE -ne 0){throw ('OBSERVER_CHILD_FAILED_'+$tag)}
@@ -92,10 +111,24 @@ try{
     Assert-Eq $m.diagnostics_version '0.4.0' 'CANDIDATE_VERSION'
     Assert-Eq $m.schema_version $oldManifest.schema_version 'SCHEMA_COMPATIBILITY'
     Assert-Eq @(Get-ChildItem $old -File).Count 5 'OLD_FILES'
-    Assert-Eq @(Get-ChildItem $new -File).Count 6 'NEW_FILES'
+    Assert-Eq @(Get-ChildItem $new -File).Count 7 'NEW_FILES'
     foreach($file in @('process_metrics.csv','recording_events.csv','recorder_sessions.csv')){
         Assert-Eq (Get-FileHash (Join-Path $old $file)).Hash (Get-FileHash (Join-Path $new $file)).Hash 'OLD_CSV_PARITY'
     }
+    Assert-Eq $m.writer_completed_runs 1 'WRITER_COMPLETED'
+    Assert-Eq $m.writer_unfinished_or_active_runs 1 'WRITER_UNFINISHED'
+    Assert-Eq $m.writer_invalid_slots 1 'WRITER_CORRUPT'
+    Assert-Eq $m.writer_event_coverage 'not_proven' 'WRITER_COVERAGE'
+    $wrows=@(Import-Csv (Join-Path $new 'diagnostic_writer_runs.csv'))
+    Assert-Eq $wrows.Count 2 'WRITER_ROWS'
+    $done=@($wrows|Where-Object state -eq 'final_counters_saved')
+    $unknown=@($wrows|Where-Object state -eq 'unfinished_or_active')
+    Assert-Eq $done[0].accepted '4' 'WRITER_ACCEPTED'
+    Assert-Eq $done[0].rejected '2' 'WRITER_REJECTED'
+    Assert-Eq $done[0].failed '1' 'WRITER_FAILED'
+    Assert-Eq $done[0].counter_scope 'whole_run_not_report_window' 'WRITER_SCOPE'
+    Assert-Eq $unknown[0].accepted 'unknown' 'WRITER_UNKNOWN'
+    Assert-Eq $unknown[0].saved 'unknown' 'WRITER_UNKNOWN_SAVED'
     Assert-Eq $m.metadata_event_count 3 'EVENTS'
     Assert-Eq $m.metadata_profile_match_count 1 'MATCH'
     Assert-Eq $m.metadata_profile_mismatch_count 1 'MISMATCH'
@@ -136,11 +169,16 @@ try{
     }
     Write-Host 'C545D_METADATA_ZIP_RECOVERY_PASS,rows=4,recovered_slots=1,coverage_not_proven=1,count_unclassified=1,privacy=1'
     Remove-Item -LiteralPath $journal -Recurse -Force
+    Remove-Item -LiteralPath $receiptRoot -Recurse -Force
     $missing=Run-Export $candidateFile 'missing' $true
     $m=Get-Content (Join-Path $missing 'manifest.json') -Raw|ConvertFrom-Json
     Assert-Eq $m.metadata_journal_source_status 'not_found' 'MISSING'
     Assert-Eq $m.metadata_event_count 0 'MISSING_ROWS'
     Assert-Eq $m.metadata_event_coverage 'not_proven' 'MISSING_NOT_HEALTH'
     Assert-Eq $m.metadata_rename_count_difference 'not_classified' 'MISSING_DIFF'
-    Write-Host 'C545D_METADATA_ZIP_INTEGRATION_PASS,baseline_files=5,candidate_files=6,legacy_csv_parity=3,profile_match=1,profile_mismatch=1,unknown=1,count_gap=1,equal_not_proof=1,corrupt_excluded=1,missing_unknown=1,privacy=1,host_modified=0'
+    Assert-Eq $m.writer_receipt_source_status 'not_found' 'WRITER_MISSING'
+    Assert-Eq $m.writer_event_coverage 'not_proven' 'WRITER_MISSING_UNKNOWN'
+    Assert-Eq @(Import-Csv (Join-Path $missing 'diagnostic_writer_runs.csv')).Count 0 'WRITER_EMPTY_CSV'
+    Write-Host 'C545D_WRITER_ZIP_PASS,completed=1,unfinished_unknown=1,corrupt_excluded=1,missing_unknown=1,whole_run_only=1,privacy=1'
+    Write-Host 'C545D_METADATA_ZIP_INTEGRATION_PASS,baseline_files=5,candidate_files=7,legacy_csv_parity=3,profile_match=1,profile_mismatch=1,unknown=1,count_gap=1,equal_not_proof=1,corrupt_excluded=1,missing_unknown=1,privacy=1,host_modified=0'
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
