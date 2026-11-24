@@ -90,8 +90,26 @@ $script:probeCalls=0
 $script:publishFailures=0
 $script:failPublish=$false
 $script:rows=New-Object 'System.Collections.Generic.List[object]'
+$journalRoot=Join-Path $FixtureDirectory 'integration-journal'
+New-Item -ItemType Directory -Path $journalRoot | Out-Null
+if(-not ('C545DMetadataJournalPrototype' -as [type])){
+    Add-Type -Path (Join-Path $repo 'tests/C545DMetadataJournalPrototype.cs')
+}
+$journalBegin=[datetime]::UtcNow.AddMinutes(-1)
+
 function Publish-C545DTestEvidence($row){
     if($script:failPublish){throw 'SYNTHETIC_SINK_FAILURE'}
+    $entry=New-Object 'C545DMetadataJournalPrototype+Row'
+    $entry.Utc=[datetime]::UtcNow
+    $entry.Status=$row.metadata_status
+    $entry.DurationMs=$row.duration_ms
+    $entry.VideoTracks=$row.video_tracks;$entry.AudioTracks=$row.audio_tracks
+    $entry.Width=$row.width;$entry.Height=$row.height
+    $entry.FpsNum=$row.fps_num;$entry.FpsDen=$row.fps_den
+    $entry.SampleRate=$row.sample_rate;$entry.Channels=$row.channels
+    $entry.H264=$row.video_h264;$entry.Aac=$row.audio_aac
+    $status=[C545DMetadataJournalPrototype]::Append($journalRoot,$entry)
+    if($status -ne 'saved'){throw ('JOURNAL_PUBLISH_'+$status)}
     $script:rows.Add($row)
 }
 Set-NamerProbe $ProbeExe
@@ -153,3 +171,28 @@ Assert-Equal $script:rows[2].metadata_status 'probe_unavailable' 'NO_PROBE_UNKNO
 $blob=ConvertTo-Json -InputObject ($script:rows.ToArray()) -Compress
 if($blob -match 'rtsp|secret|filename|[A-Za-z]:\\'){throw 'EVIDENCE_PRIVACY'}
 Write-Host 'C545D_NAMER_SINGLE_PROBE_PASS,baseline_name_parity=1,collision_preserved=1,media_hash_unchanged=1,normal_probes=1,wrong_profile_rename=1,locked_no_probe=1,move_failed_no_event=1,publish_failed_rename_done=1,invalid_mp4_pending=1,missing_probe_fallback=1,duplicate_probe=0,host_modified=0'
+
+# Persistent sink evidence must agree with successful publication, not every rename.
+$journalEnd=[datetime]::UtcNow.AddMinutes(1)
+$snapshot=[C545DMetadataJournalPrototype]::ReadWindow($journalRoot,$journalBegin,$journalEnd)
+Assert-Equal $snapshot.Rows.Count 3 'JOURNAL_PERSISTED'
+Assert-Equal $snapshot.Status 'coverage_unverified' 'JOURNAL_NO_OVERCLAIM'
+Assert-Equal @($snapshot.Rows | Where-Object Status -eq 'profile_match_metadata_only').Count 1 'JOURNAL_MATCH'
+Assert-Equal @($snapshot.Rows | Where-Object Status -eq 'profile_mismatch').Count 1 'JOURNAL_MISMATCH'
+Assert-Equal @($snapshot.Rows | Where-Object Status -eq 'probe_unavailable').Count 1 'JOURNAL_UNKNOWN'
+# Real journal file contention must be isolated from a completed rename.
+$journalFiles=@(Get-ChildItem -LiteralPath $journalRoot -File)
+Assert-Equal $journalFiles.Count 1 'JOURNAL_ONE_DAY'
+$journalLock=[IO.File]::Open($journalFiles[0].FullName,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+try{
+    $target=Set-NamerFixture $candidate $fixture $pending
+    Assert-Equal (Invoke-C545DRenameOne $target $candidate) 'done' 'JOURNAL_BUSY_RENAME_DONE'
+    Assert-Equal (Test-Path -LiteralPath $target) $false 'JOURNAL_BUSY_MOVED'
+    Assert-Equal $script:publishFailures 2 'JOURNAL_BUSY_FAILURE'
+    Assert-Equal $script:probeCalls 5 'JOURNAL_BUSY_NO_EXTRA_PROBE'
+}finally{$journalLock.Dispose()}
+# Read from another PowerShell process to prove persistence independently of memory.
+$readerScript=Join-Path $PSScriptRoot 'Read-C545DMetadataJournalFixture.ps1'
+& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $readerScript -JournalRoot $journalRoot
+if($LASTEXITCODE -ne 0){throw 'JOURNAL_READER_CHILD_FAILED'}
+Write-Host 'C545D_NAMER_PERSISTENT_SINK_PASS,persisted=3,busy_rename_done=1,publication_failures=2,separate_reader=1,coverage_unverified=1,host_modified=0'
