@@ -9,6 +9,16 @@ param(
     [string]$MetadataProbeSha256
 )
 $ErrorActionPreference='Stop'
+# Opt-in inherited from the launching process (native or PowerShell GUI).
+# No registry/user environment changes, automatic downloads or activation.
+# Explicit arguments take precedence; a partial/malformed opt-in stays OFF.
+if(-not $PSBoundParameters.ContainsKey('EnableMetadataDiagnostics') -and
+   -not $PSBoundParameters.ContainsKey('MetadataProbeSha256') -and
+   $env:C545D_METADATA_V04 -ceq '1' -and
+   $env:C545D_METADATA_PROBE_SHA256 -match '\A[0-9A-Fa-f]{64}\z'){
+    $EnableMetadataDiagnostics=$true
+    $MetadataProbeSha256=$env:C545D_METADATA_PROBE_SHA256
+}
 . (Join-Path $PSScriptRoot 'SegmentNamer.ps1')
 
 # C# callbacks do NOT run PowerShell. They only enqueue paths for the single
