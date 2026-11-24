@@ -11,7 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#45333706711](https://github.com/taku077/c545d-recorder/actions/runs/45333706711) |
+| C545D active development handoff auto-refresh | in_progress | [#45333706711](https://github.com/taku077/c545d-recorder/actions/runs/45333706711) |
 | C545D metadata ZIP integration (CI only) | in_progress | [#45333702816](https://github.com/taku077/c545d-recorder/actions/runs/45333702816) |
 
 ## Current development findings from the active PR
