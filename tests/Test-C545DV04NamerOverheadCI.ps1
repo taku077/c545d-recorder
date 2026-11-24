@@ -26,10 +26,27 @@ public sealed class C545DNamerAccountingJob : IDisposable {
     [DllImport("kernel32.dll", SetLastError=true)]
     [return:MarshalAs(UnmanagedType.Bool)]
     static extern bool CloseHandle(IntPtr handle);
-    IntPtr handle;
+    [StructLayout(LayoutKind.Sequential)]
+    struct Association { public IntPtr Key, Port; }
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern IntPtr CreateIoCompletionPort(IntPtr file,IntPtr existing,IntPtr key,uint threads);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    static extern bool SetInformationJobObject(IntPtr job,int cls,ref Association info,uint len);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    static extern bool GetQueuedCompletionStatus(IntPtr port,out uint msg,out IntPtr key,out IntPtr value,uint ms);
+    IntPtr handle, port;
     public C545DNamerAccountingJob(){
         handle=CreateJobObject(IntPtr.Zero,null);
         if(handle==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            port=CreateIoCompletionPort(new IntPtr(-1),IntPtr.Zero,IntPtr.Zero,1);
+            if(port==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error());
+            Association a=new Association { Key=new IntPtr(1), Port=port };
+            if(!SetInformationJobObject(handle,7,ref a,(uint)Marshal.SizeOf(typeof(Association))))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+        } catch { Dispose(); throw; }
     }
     public void Attach(IntPtr process){
         if(!AssignProcessToJobObject(handle,process))throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -40,7 +57,24 @@ public sealed class C545DNamerAccountingJob : IDisposable {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         return a;
     }
-    public void Dispose(){if(handle!=IntPtr.Zero){CloseHandle(handle);handle=IntPtr.Zero;}}
+    // Notifications are best effort; exact reconciliation is mandatory.
+    public uint[] NewProcesses(){
+        var ids=new System.Collections.Generic.List<uint>();
+        for(int i=0;i<4096;i++){
+            uint msg; IntPtr key,value;
+            if(!GetQueuedCompletionStatus(port,out msg,out key,out value,250)){
+                if(Marshal.GetLastWin32Error()==258)return ids.ToArray();
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if(key!=new IntPtr(1))throw new InvalidOperationException("Unexpected job key");
+            if(msg==6)ids.Add(checked((uint)value.ToInt64()));
+        }
+        throw new InvalidOperationException("Notification bound exceeded");
+    }
+    public void Dispose(){
+        if(handle!=IntPtr.Zero){CloseHandle(handle);handle=IntPtr.Zero;}
+        if(port!=IntPtr.Zero){CloseHandle(port);port=IntPtr.Zero;}
+    }
 }
 '@
 $repo=Split-Path -Parent $PSScriptRoot
@@ -64,7 +98,7 @@ function Run-Arm([string]$name,[bool]$enabled){
     $env:LOCALAPPDATA=$local
     $env:C545D_METADATA_V04=$null;$env:C545D_METADATA_PROBE_SHA256=$null
     if($enabled){$env:C545D_METADATA_V04='1';$env:C545D_METADATA_PROBE_SHA256=$probeHash}
-    $proc=$null;$job=$null;$traceId=$null
+    $proc=$null;$job=$null;$traceId=$null;$etl=$null;$traceRunning=$false
     try{
         Assert-Equal (Get-Command ffprobe.exe -ErrorAction Stop).Source $ProbeExe 'DIRECT_PROBE'
         $psi=New-Object Diagnostics.ProcessStartInfo
@@ -83,23 +117,32 @@ function Run-Arm([string]$name,[bool]$enabled){
         $startupMs=$startup.ElapsedMilliseconds
         # Attach AFTER initialization/ready, BEFORE any fixture is submitted.
         # Counts include terminated ffprobe descendants missed by polling.
+        # Private disposable ETW session; no event payload is uploaded or printed.
+        # Calibrate with a known outside-job process and require its start/stop.
+        $traceId='C545D_CI_KernelProc_'+[guid]::NewGuid().ToString('N')
+        $etl=Join-Path $arm 'private-process.etl'
+        & logman.exe start $traceId -p '{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}' 0x10 4 -o $etl -nb 16 64 -bs 64 -ets *> $null
+        if($LASTEXITCODE -ne 0){throw 'NAMER_OVERHEAD_ETW_START'}
+        $traceRunning=$true
+        $calPsi=New-Object Diagnostics.ProcessStartInfo
+        $calPsi.FileName=Join-Path $env:SystemRoot 'System32\cmd.exe'
+        $calPsi.Arguments='/d /c exit 0';$calPsi.UseShellExecute=$false;$calPsi.CreateNoWindow=$true
+        $cal=[Diagnostics.Process]::Start($calPsi)
+        try{
+            $calId=[uint32]$cal.Id
+            if(-not $cal.WaitForExit(5000) -or $cal.ExitCode -ne 0){throw 'NAMER_OVERHEAD_ETW_CALIBRATION_PROCESS'}
+        }finally{if(-not $cal.HasExited){$cal.Kill();[void]$cal.WaitForExit(3000)};$cal.Dispose()}
+        # Completion port is associated while job is empty, before attaching helper.
         $job=New-Object C545DNamerAccountingJob
         $job.Attach($proc.Handle)
         $before=$job.Read()
         Assert-Equal $before.Total 1 'INITIAL_JOB_COUNT'
-        # Independent kernel-backed WMI start events. Capture all names only
-        # in memory, then resolve descendants by event time and parent PID.
-        # Never publish raw events, command lines, PID or unrelated names.
-        $traceId='C545D_CI_ProcStart_'+[guid]::NewGuid().ToString('N')
-        Register-WmiEvent -Class Win32_ProcessStartTrace -SourceIdentifier $traceId -ErrorAction Stop|Out-Null
-        Start-Sleep -Milliseconds 300
         $proc.Refresh()
         $cpuFirst=$proc.TotalProcessorTime.Ticks
         $privateFirst=$proc.PrivateMemorySize64;$handlesFirst=$proc.HandleCount
         $privatePeak=$privateFirst;$handlesPeak=$handlesFirst
         $latencies=@()
         $clock=[Diagnostics.Stopwatch]::StartNew()
-        $traceStart=[uint64][datetime]::UtcNow.ToFileTimeUtc()
         for($i=1;$i -le $segments;$i++){
             $leaf=('C545D_PENDING_20261124_120000_12345678_{0:D5}.mp4' -f $i)
             $pending=Join-Path $output $leaf
@@ -127,49 +170,69 @@ function Run-Arm([string]$name,[bool]$enabled){
         $privatePeak=[Math]::Max($privatePeak,$privateLast)
         $handlesPeak=[Math]::Max($handlesPeak,$handlesLast)
         $batch=$job.Read()
-        $traceEnd=[uint64][datetime]::UtcNow.ToFileTimeUtc()
         $batchEndMs=$clock.ElapsedMilliseconds
-        # Let queued WMI events arrive after the batch. Keep batch CPU
-        # boundary unchanged and do not include this diagnostic settle time.
-        Start-Sleep -Milliseconds 1200
-        $traceEvents=@(Get-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue |
-            Sort-Object { [uint64]$_.SourceEventArgs.NewEvent.TIME_CREATED })
-        $descendants=New-Object 'System.Collections.Generic.HashSet[uint32]'
-        [void]$descendants.Add([uint32]$proc.Id)
-        $probeStarts=0;$conhostStarts=0;$otherStarts=0;$directProbes=0;$allConhost=0
-        $outside=0;$outsideDirectOther=0;$outsideDirectProbe=0;$duplicate=0;$pidReuse=0
-        $seen=New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach($ev in $traceEvents){
-            $e=$ev.SourceEventArgs.NewEvent
-            $image=[string]$e.ProcessName
-            $time=[uint64]$e.TIME_CREATED
-            if($time -lt $traceStart -or $time -gt $traceEnd){
-                $outside++
-                if([uint32]$e.ParentProcessID -eq [uint32]$proc.Id){
-                    if($image -ieq 'ffprobe.exe'){$outsideDirectProbe++}
-                    elseif($image -ine 'conhost.exe'){$outsideDirectOther++}
-                }
-                continue
+        # Membership from job notifications, identity and lifetime from ETW.
+        # Never infer membership from a wall-clock filter or a stale parent PID.
+        $traceQualified=$false
+        $probeStarts=0;$conhostStarts=0;$otherStarts=0;$directProbes=0
+        $missing=0;$ambiguous=0;$badLifetime=0;$calOk=0;$jobIds=@()
+        try{
+            $jobIds=@($job.NewProcesses())
+            & logman.exe stop $traceId -ets *> $null
+            if($LASTEXITCODE -ne 0){throw 'NAMER_OVERHEAD_ETW_STOP'}
+            $traceRunning=$false
+            $unique=@($jobIds|Sort-Object -Unique)
+            $wanted=New-Object 'System.Collections.Generic.HashSet[uint32]'
+            foreach($id in $unique){[void]$wanted.Add([uint32]$id)}
+            [void]$wanted.Add($calId)
+            $starts=@{};$ends=@{}
+            foreach($event in (Get-WinEvent -Path $etl -Oldest -ErrorAction Stop)){
+                try{
+                    if($event.ProviderName -ne 'Microsoft-Windows-Kernel-Process' -or $event.Id -notin @(1,2)){continue}
+                    [xml]$xml=$event.ToXml()
+                    $d=@{}
+                    foreach($node in $xml.Event.EventData.Data){$d[[string]$node.Name]=[string]$node.'#text'}
+                    if(-not $d.ContainsKey('ProcessID')){continue}
+                    $id=[uint32]$d['ProcessID']
+                    if(-not $wanted.Contains($id)){continue}
+                    $record=@{create=$d['CreateTime'];seq=$d['ProcessSequenceNumber'];parent=$d['ParentProcessID'];image=$d['ImageName']}
+                    $table=if($event.Id -eq 1){$starts}else{$ends}
+                    if(-not $table.ContainsKey($id)){$table[$id]=@()}
+                    $table[$id]+=$record
+                }finally{$event.Dispose()}
             }
-            $key=('{0}|{1}|{2}|{3}' -f $time,$e.ProcessID,$e.ParentProcessID,$image)
-            if(-not $seen.Add($key)){$duplicate++;continue}
-            if($image -ieq 'conhost.exe'){$allConhost++}
-            if(-not $descendants.Contains([uint32]$e.ParentProcessID)){continue}
-            if(-not $descendants.Add([uint32]$e.ProcessID)){$pidReuse++}
-            if($image -ieq 'ffprobe.exe'){
-                $probeStarts++
-                if([uint32]$e.ParentProcessID -eq [uint32]$proc.Id){$directProbes++}
-            }elseif($image -ieq 'conhost.exe'){$conhostStarts++}
-            else{$otherStarts++}
-        }
+            function Test-Lifetime([uint32]$id){
+                if(@($starts[$id]).Count -ne 1 -or @($ends[$id]).Count -ne 1){return $false}
+                $st=$starts[$id][0];$en=$ends[$id][0]
+                return (-not [string]::IsNullOrEmpty($st.create) -and $st.create -ceq $en.create -and
+                    ((-not $st.seq -and -not $en.seq) -or ($st.seq -and $st.seq -ceq $en.seq)))
+            }
+            if((Test-Lifetime $calId) -and [uint32]$starts[$calId][0].parent -eq [uint32]$PID -and
+                [IO.Path]::GetFileName($starts[$calId][0].image) -ieq 'cmd.exe' -and $calId -notin $unique){$calOk=1}
+            foreach($id in $unique){
+                if($id -eq [uint32]$proc.Id){continue}
+                if(-not $starts.ContainsKey($id) -or -not $ends.ContainsKey($id)){$missing++;continue}
+                if($starts[$id].Count -ne 1 -or $ends[$id].Count -ne 1){$ambiguous++;continue}
+                if(-not(Test-Lifetime $id)){$badLifetime++;continue}
+                $st=$starts[$id][0]
+                $image=[IO.Path]::GetFileName($st.image)
+                if($image -ieq 'ffprobe.exe'){
+                    $probeStarts++
+                    if([uint32]$st.parent -eq [uint32]$proc.Id){$directProbes++}
+                }elseif($image -ieq 'conhost.exe'){$conhostStarts++}
+                else{$otherStarts++}
+            }
+            $traceQualified=($calOk -eq 1 -and $jobIds.Count -eq $batch.Total -and $unique.Count -eq $jobIds.Count -and
+                [uint32]$proc.Id -in $unique -and $missing -eq 0 -and $ambiguous -eq 0 -and $badLifetime -eq 0 -and
+                $probeStarts -eq $segments -and $directProbes -eq $segments -and $otherStarts -eq 0 -and
+                (1+$probeStarts+$conhostStarts) -eq $batch.Total)
+        }catch{Write-Host 'C545D_NAMER_OVERHEAD_ETW_ERROR,detail_suppressed=1'}
         $unreconciled=[long]$batch.Total-1-$probeStarts-$conhostStarts-$otherStarts
         Write-Host ('C545D_NAMER_OVERHEAD_PROCESS_TRACE,arm='+$name+',job_total='+$batch.Total+
             ',direct_ffprobe='+$directProbes+',descendant_ffprobe='+$probeStarts+',descendant_conhost='+$conhostStarts+
-            ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',runner_conhost='+$allConhost+',active='+$batch.Active+
-            ',outside_window='+$outside+',outside_direct_other='+$outsideDirectOther+',outside_direct_probe='+$outsideDirectProbe+
-            ',duplicate_events='+$duplicate+',descendant_pid_reuse='+$pidReuse)
-        $traceQualified=($probeStarts -eq $segments -and $directProbes -eq $segments -and
-            $otherStarts -eq 0 -and $unreconciled -eq 0 -and $pidReuse -eq 0 -and $outsideDirectProbe -eq 0)
+            ',descendant_other='+$otherStarts+',unreconciled='+$unreconciled+',active='+$batch.Active+
+            ',job_notifications='+$jobIds.Count+',calibration='+$calOk+',missing_lifetime='+$missing+
+            ',ambiguous_lifetime='+$ambiguous+',bad_lifetime='+$badLifetime+',etw=1')
         Assert-Equal $batch.Active 1 'ONLY_HELPER_REMAINS'
         $batchMs=$batchEndMs
         [IO.File]::WriteAllText($stop,'CI_TEST')
@@ -211,10 +274,8 @@ function Run-Arm([string]$name,[bool]$enabled){
     }finally{
         if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
         if($job){$job.Dispose()}
-        if($traceId){
-            Unregister-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue
-            Get-Event -SourceIdentifier $traceId -ErrorAction SilentlyContinue | Remove-Event -ErrorAction SilentlyContinue
-        }
+        if($traceRunning){& logman.exe stop $traceId -ets *> $null}
+        if($etl -and (Test-Path -LiteralPath $etl)){Remove-Item -LiteralPath $etl -Force}
         foreach($k in $old.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')}
     }
 }
