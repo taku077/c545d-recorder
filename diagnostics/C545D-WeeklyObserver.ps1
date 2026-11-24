@@ -439,13 +439,17 @@ function Write-C545DMetadataCsv($metadata,[string]$path){
 # Whole-run counters only, never interpreted as exact totals inside report dates.
 function Read-C545DWriterReport([string]$root,[datetime]$begin,[datetime]$end){
     $rows=New-Object 'System.Collections.Generic.List[object]'
-    $r=[pscustomobject]@{status='not_found';rows=$rows;completed=0;unfinished=0;invalid=0;busy=0}
+    $r=[pscustomobject]@{status='not_found';rows=$rows;completed=0;unfinished=0;invalid=0;busy=0;capacity='unavailable';empty=-1;reusable=-1;recent=-1;preserved=-1}
     if(-not $root -or -not(Test-Path -LiteralPath $root -PathType Container)){return $r}
     try{
         if(-not (Initialize-MetadataReportTypes)){throw 'METADATA_READER_UNAVAILABLE'}
         $s=[C545DWriterReceipts]::ReadWindow($root,$begin.ToUniversalTime(),$end.ToUniversalTime())
         $r.status=$s.Status;$r.completed=$s.CompletedRuns;$r.unfinished=$s.UnfinishedRuns
         $r.invalid=$s.InvalidSlots;$r.busy=$s.BusySlots
+        if($s.CapacityObserved){
+            $r.empty=$s.EmptySlots;$r.reusable=$s.ReusableSlots;$r.recent=$s.RecentFinalSlots;$r.preserved=$s.PreservedUnfinishedSlots
+            $r.capacity=if($s.EmptySlots+$s.ReusableSlots -eq 0){'no_observed_available_slots'}else{'observed_available_not_reserved'}
+        }
         foreach($e in $s.Rows){
             $state='unfinished_or_active';$endText='';$accepted='unknown';$rejected='unknown'
             $saved='unknown';$failed='unknown';$recovered='unknown'
@@ -462,6 +466,7 @@ function Read-C545DWriterReport([string]$root,[datetime]$begin,[datetime]$end){
     }catch{
         $r.status='reader_unavailable';$rows.Clear()
         $r.completed=0;$r.unfinished=0;$r.invalid=0;$r.busy=0
+        $r.capacity='unavailable';$r.empty=-1;$r.reusable=-1;$r.recent=-1;$r.preserved=-1
     }
     return $r
 }
@@ -694,6 +699,7 @@ function New-SafeBundleCore([string]$root,[datetime]$begin,[datetime]$end,[strin
      writer_unfinished_or_active_runs=$writerReport.unfinished
      writer_invalid_slots=$writerReport.invalid
      writer_busy_slots=$writerReport.busy
+     writer_slot_capacity=[ordered]@{status=$writerReport.capacity;total_slots=128;empty=$writerReport.empty;reusable=$writerReport.reusable;recent_final=$writerReport.recent;preserved_unfinished=$writerReport.preserved;scope='current_snapshot_not_report_window';reservation='not_proven'}
      writer_event_coverage='not_proven'
      writer_counter_scope='whole_run_not_report_window'
      metadata_journal_source_status=$metadata.status
