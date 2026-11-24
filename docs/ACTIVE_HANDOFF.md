@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45328446255](https://github.com/taku077/c545d-recorder/actions/runs/45328446255) |
+| C545D metadata ZIP integration (CI only) | in_progress | [#45328443602](https://github.com/taku077/c545d-recorder/actions/runs/45328443602) |
 
 ## Current development findings from the active PR
 
