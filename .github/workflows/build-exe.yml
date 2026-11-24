@@ -17,6 +17,7 @@ on:
     paths:
       - 'src/C545D.Launcher/**'
       - 'diagnostics/C545D-WeeklyObserver.ps1'
+      - 'diagnostics/C545D*V04*'
       - 'START_WEEKLY_OBSERVER.cmd'
       - 'EXPORT_WEEKLY_REPORT.cmd'
       - '.github/workflows/build-exe.yml'
@@ -134,10 +135,46 @@ jobs:
           $diagnostics=Join-Path $bundle 'diagnostics'
           New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
           Copy-Item -LiteralPath 'diagnostics/C545D-WeeklyObserver.ps1' -Destination $diagnostics -Force
+          # Optional RC modules only; GUI does not enable them. No host FFmpeg or SDK installation.
+          $metadataModules=@('C545DClosedProbeV04.cs','C545DMetadataJournalV04.cs','C545DMetadataWriterV04.cs',
+             'C545D-MetadataClassifierV04.ps1','C545D-MetadataIntegrationV04.ps1')
+          foreach($module in $metadataModules){
+            Copy-Item -LiteralPath (Join-Path 'diagnostics' $module) -Destination $diagnostics -ErrorAction Stop
+          }
           Copy-Item 'src/C545D.Launcher/bin/Release/C545D_Recorder.exe' -Destination $bundle
           Copy-Item 'EXE_START_HERE.txt' -Destination $bundle
+          # Build identity is not a measurement of loaded host DLLs.
+          $identityFiles=@('C545D_Recorder.exe','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1',
+            'diagnostics/C545D-WeeklyObserver.ps1','plugins/gstc545dsei.dll')
+          $identityFiles+=@($metadataModules|ForEach-Object {'diagnostics/'+$_})
+          $identity=[ordered]@{schema_version=1;source_commit=$env:GITHUB_SHA;observer_version='0.3.0';
+            metadata_candidate_version='0.4.0';metadata_default_enabled=0;host_runtime_verified=0;files=[ordered]@{}}
+          foreach($file in $identityFiles){
+            $identity.files[$file]=(Get-FileHash -LiteralPath (Join-Path $bundle $file) -Algorithm SHA256).Hash
+          }
+          $identity|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $bundle 'BUILD_IDENTITY.json') -Encoding UTF8
           Compress-Archive -Path "$bundle/*" -DestinationPath 'dist/C545D_Recorder_EXE_Win10_x64.zip' -Force
           Write-Host 'ZIP generated with native C# WinForms and unchanged recording worker sources.'
+      - name: Verify optional metadata module hashes and compile in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle='dist/C545D_Recorder'
+          $identity=Get-Content (Join-Path $bundle 'BUILD_IDENTITY.json') -Raw|ConvertFrom-Json
+          if($identity.source_commit -ne $env:GITHUB_SHA -or $identity.metadata_default_enabled -ne 0 -or
+             $identity.host_runtime_verified -ne 0){throw 'BUILD_IDENTITY_INVALID'}
+          foreach($file in $identity.files.PSObject.Properties){
+            if((Get-FileHash -LiteralPath (Join-Path $bundle $file.Name) -Algorithm SHA256).Hash -ne $file.Value){throw 'BUILD_IDENTITY_HASH_MISMATCH'}
+          }
+          $dir=Join-Path $bundle 'diagnostics'
+          Add-Type -Path (Join-Path $dir 'C545DClosedProbeV04.cs') -ErrorAction Stop
+          Add-Type -Path @((Join-Path $dir 'C545DMetadataJournalV04.cs'),(Join-Path $dir 'C545DMetadataWriterV04.cs')) -ErrorAction Stop
+          foreach($name in @('C545D-MetadataClassifierV04.ps1','C545D-MetadataIntegrationV04.ps1')){
+            $tok=$null;$err=$null
+            [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path (Join-Path $dir $name)).Path,[ref]$tok,[ref]$err)
+            if($err.Count){throw 'PACKAGED_METADATA_PARSE_FAILED'}
+          }
+          Write-Host 'C545D_V04_OPTIONAL_MODULE_PACKAGE_PASS,hashes_verified=1,compiled=1,default_off=1,host_runtime_verified=0,release_HOLD=1'
       - name: Verify detached weekly observer in the packaged candidate
         shell: powershell
         run: |
