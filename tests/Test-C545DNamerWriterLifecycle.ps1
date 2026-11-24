@@ -56,6 +56,36 @@ $worker=Replace-Once $worker '    if ($events) { $events.Dispose() }' (@'
         ',probes='+$script:probeCalls+',elapsed_ms='+$ms)
     if($drained){$script:diagnosticGate.Dispose()}
 '@)
+# CI mirror only: observe pending insertion and shutdown independently of
+# best-effort log writes; never read Filename_Rename.log concurrently.
+$worker=Replace-Once $worker '                    $pending[$path]=Get-Date' @'
+                    $pending[$path]=Get-Date
+                    if($name -ceq 'C545D_PENDING_20261124_120000_12345678_00002.mp4'){
+                        [IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'ci-final-pending'),'1')
+                    }
+'@
+$worker=Replace-Once $worker '        if ($errors -gt 0) {' @'
+        if ($errors -gt 0) {
+            [IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'ci-watcher-errors'),'1')
+'@
+$worker=Replace-Once $worker '            if ($null -eq $closingSince) { $closingSince=Get-Date; Write-C545DNamerLog ''Watcher received shutdown request; draining detected pending files.'' }' @'
+            if ($null -eq $closingSince) {
+                $closingSince=Get-Date
+                [IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'ci-shutdown-seen'),'1')
+                Write-C545DNamerLog 'Watcher received shutdown request; draining detected pending files.'
+            }
+'@
+# Match either checkout newline convention without changing other source.
+$logAnchor=[regex]::Match($namer,'(?m)^    \} catch \{ \}\r?\n\}\r?\n\r?\nfunction Get-C545DProbeExe')
+if(-not $logAnchor.Success){throw 'LIFECYCLE_LOG_ANCHOR_MISSING'}
+$namer=Replace-Once $namer $logAnchor.Value @'
+    } catch {
+        [IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'ci-log-write-failed'),'1')
+    }
+}
+
+function Get-C545DProbeExe
+'@
 $stage=Join-Path $root 'source'
 New-Item -ItemType Directory -Path $stage|Out-Null
 $utf8=New-Object Text.UTF8Encoding($true)
@@ -123,19 +153,23 @@ function Run-Arm([bool]$stall){
         $input=[IO.File]::OpenRead($sample)
         try{$input.CopyTo($locked);$locked.Flush()}finally{$input.Dispose()}
         $log=Join-Path $private 'C545D_GStreamer\Logs\Filename_Rename.log'
-        Wait-Until {
-            try{(Get-Content -LiteralPath $log -Raw -ErrorAction Stop).Contains('Event: new temporary MP4 '+$lastName)}catch{$false}
-        } 12000 'FINAL_EVENT'
+        Wait-Until { Test-Path -LiteralPath (Join-Path $private 'ci-final-pending') } 12000 'FINAL_PENDING'
         [IO.File]::WriteAllText($stop,'CI_SYNTHETIC_STOP')
-        Wait-Until {
-            try{(Get-Content -LiteralPath $log -Raw -ErrorAction Stop).Contains('Watcher received shutdown request')}catch{$false}
-        } 10000 'SHUTDOWN_SEEN'
+        Wait-Until { Test-Path -LiteralPath (Join-Path $private 'ci-shutdown-seen') } 10000 'SHUTDOWN_SEEN'
         Assert-Eq (Test-Path -LiteralPath $last) $true 'LOCKED_FINAL_PRESERVED'
         Assert-Eq $proc.HasExited $false 'WATCHER_ALIVE'
         $locked.Dispose();$locked=$null
         if(-not $proc.WaitForExit(20000)){throw 'LIFECYCLE_STOP_TIMEOUT'}
         $proc.Refresh()
         Assert-Eq $proc.ExitCode 0 'EXIT_CODE'
+        $logText=''
+        try{$logText=[string](Get-Content -LiteralPath $log -Raw -ErrorAction Stop)}catch{}
+        $watcherError=Test-Path -LiteralPath (Join-Path $private 'ci-watcher-errors')
+        $logWriteError=Test-Path -LiteralPath (Join-Path $private 'ci-log-write-failed')
+        Write-Host ('C545D_LIFECYCLE_OBSERVATION,stall='+[int]$stall+',pending=1,shutdown=1,watcher_error='+[int]$watcherError+
+            ',log_write_error='+[int]$logWriteError+',final_log='+[int]($logText.Contains('Event: new temporary MP4 '+$lastName))+
+            ',shutdown_log='+[int]($logText.Contains('Watcher received shutdown request')))
+        Assert-Eq $watcherError $false 'WATCHER_ERRORS'
         if(-not $outTask.Wait(1000) -or -not $errTask.Wait(1000)){throw 'LIFECYCLE_PIPE_DRAIN_TIMEOUT'}
         [IO.File]::WriteAllText($stdout,$outTask.Result)
         [IO.File]::WriteAllText($stderr,$errTask.Result)
@@ -168,6 +202,13 @@ function Run-Arm([bool]$stall){
         }
         Write-Host ('C545D_NAMER_WRITER_RECEIPT_ARM_PASS,stall='+[int]$stall+',start=1,final='+[int](-not $stall))
         Write-Host ('C545D_NAMER_WRITER_ARM_PASS,stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
+    }catch{
+        Write-Host ('C545D_LIFECYCLE_FAILURE_OBSERVATION,stall='+[int]$stall+
+            ',pending='+[int](Test-Path -LiteralPath (Join-Path $private 'ci-final-pending'))+
+            ',shutdown='+[int](Test-Path -LiteralPath (Join-Path $private 'ci-shutdown-seen'))+
+            ',watcher_error='+[int](Test-Path -LiteralPath (Join-Path $private 'ci-watcher-errors'))+
+            ',log_write_error='+[int](Test-Path -LiteralPath (Join-Path $private 'ci-log-write-failed')))
+        throw
     }finally{
         if($locked){$locked.Dispose()}
         if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
