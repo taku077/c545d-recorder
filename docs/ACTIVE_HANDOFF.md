@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#45383093477](https://github.com/taku077/c545d-recorder/actions/runs/45383093477) |
+| C545D closed media metadata prototype (CI only) | in_progress | [#45383084085](https://github.com/taku077/c545d-recorder/actions/runs/45383084085) |
 
 ## Current development findings from the active PR
 
