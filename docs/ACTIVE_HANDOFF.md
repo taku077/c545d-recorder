@@ -3,16 +3,16 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `33cf8d4c8f5a10a08480fbf1930b9fe98ac4fc8f`
-- **PR updated at (UTC):** `2026-11-24T05:29:21Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/33cf8d4c8f5a10a08480fbf1930b9fe98ac4fc8f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `35267975b949d98beee6cdb3250e8402b64036c9`
+- **PR updated at (UTC):** `2026-11-24T05:29:44Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/35267975b949d98beee6cdb3250e8402b64036c9/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45333663492](https://github.com/taku077/c545d-recorder/actions/runs/45333663492) |
-| C545D metadata ZIP integration (CI only) | in_progress | [#45333657698](https://github.com/taku077/c545d-recorder/actions/runs/45333657698) |
+| C545D active development handoff auto-refresh | pending | [#45333706711](https://github.com/taku077/c545d-recorder/actions/runs/45333706711) |
+| C545D metadata ZIP integration (CI only) | in_progress | [#45333702816](https://github.com/taku077/c545d-recorder/actions/runs/45333702816) |
 
 ## Current development findings from the active PR
 
