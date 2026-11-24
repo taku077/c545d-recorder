@@ -9,6 +9,8 @@ on:
       - 'tests/Test-C545DNamerWriterLifecycle.ps1'
       - 'tests/C545DMetadataWriterPrototype.cs'
       - 'SegmentNamerWorker.ps1'
+      - 'diagnostics/C545D*V04*'
+      - 'tests/Test-C545DV04ActualNamer.ps1'
       - 'tests/C545DMetadataJournalPrototype.cs'
       - 'tests/Read-C545DMetadataJournalFixture.ps1'
       - 'SegmentNamer.ps1'
@@ -117,3 +119,5 @@ jobs:
           & ./tests/Test-C545DNamerSingleProbe.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
 
           & ./tests/Test-C545DNamerWriterLifecycle.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
+
+          & ./tests/Test-C545DV04ActualNamer.ps1 -FixtureDirectory $dir -ProbeExe $ffprobe.Source
