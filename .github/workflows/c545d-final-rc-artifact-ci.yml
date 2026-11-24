@@ -1,0 +1,70 @@
+name: C545D final limited RC artifact identity CI ONLY
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-final-rc-artifact-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  freeze-verified-artifact:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2dc4212131eb7a367564e260bcaf9d35dc6271bd
+      - uses: actions/download-artifact@v4
+        with:
+          name: c545d-exe-win10-x64
+          repository: taku077/c545d-recorder
+          run-id: 45392026715
+          github-token: ${{ github.token }}
+          path: artifacts/pinned
+      - name: Verify exact ZIP inventory source parity and hash before freeze
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $commit='2dc4212131eb7a367564e260bcaf9d35dc6271bd'
+          $a=gh api repos/taku077/c545d-recorder/actions/artifacts/14919487050 | ConvertFrom-Json
+          if($LASTEXITCODE -ne 0 -or $a.expired -or $a.workflow_run.id -ne 45392026715 -or
+             $a.workflow_run.head_sha -cne $commit -or
+             $a.digest -cne 'sha256:0ae54e498922bdea1f11b05b0cf459bcb54f42a29f439c832f89b651bce1a036'){throw 'PINNED_ARTIFACT_IDENTITY'}
+          $zip=(Resolve-Path 'artifacts/pinned/C545D_Recorder_EXE_Win10_x64.zip').Path
+          $sourceNames=@('C545D_SettingsBridge.ps1','C545D_App.ps1','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1','CommonSettings.ps1','RecoverPending.ps1','C545D_Start.vbs','START_DIAGNOSTIC.cmd','EXPORT_SAFE_LOGS.cmd','Export-SafeDiagnostics.ps1','START_SEI_FILTER_DIAGNOSTIC.cmd','START_WEEKLY_OBSERVER.cmd','EXPORT_WEEKLY_REPORT.cmd','README.txt','EXE_START_HERE.txt','diagnostics/C545D-WeeklyObserver.ps1','diagnostics/C545DClosedProbeV04.cs','diagnostics/C545DMetadataJournalV04.cs','diagnostics/C545DMetadataWriterV04.cs','diagnostics/C545D-MetadataClassifierV04.ps1','diagnostics/C545D-MetadataIntegrationV04.ps1')
+          $expected=@($sourceNames+@('C545D_Recorder.exe','plugins/gstc545dsei.dll','BUILD_IDENTITY.json')|Sort-Object)
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive=[IO.Compression.ZipFile]::OpenRead($zip)
+          try{
+            $names=@($archive.Entries|Where-Object {$_.Name -ne ''}|ForEach-Object {$_.FullName.Replace('\','/')}|Sort-Object)
+            if($names.Count -ne $expected.Count -or @(Compare-Object $expected $names -CaseSensitive).Count -ne 0){throw 'PACKAGE_INVENTORY'}
+            if(@($names|Sort-Object -Unique).Count -ne $names.Count){throw 'DUPLICATE_ENTRY'}
+          }finally{$archive.Dispose()}
+          $dir=Join-Path $env:RUNNER_TEMP ('final-rc-'+[guid]::NewGuid().ToString('N'))
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          $m=Get-Content -LiteralPath (Join-Path $dir 'BUILD_IDENTITY.json') -Raw|ConvertFrom-Json
+          if($m.source_commit -cne $commit -or $m.metadata_default_enabled -ne 0 -or
+             $m.host_runtime_verified -ne 0 -or $m.observer_version -cne '0.4.0' -or
+             @($m.files.PSObject.Properties).Count -ne 12){throw 'MANIFEST_IDENTITY'}
+          foreach($p in $m.files.PSObject.Properties){
+            if($p.Name -cnotin $expected -or (Get-FileHash -LiteralPath (Join-Path $dir $p.Name)).Hash -cne $p.Value){throw 'MANIFEST_HASH'}
+          }
+          foreach($name in $sourceNames){
+            if((Get-FileHash -LiteralPath (Join-Path $dir $name)).Hash -cne (Get-FileHash -LiteralPath $name).Hash){throw 'SOURCE_PARITY'}
+          }
+          $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          $exe=(Get-FileHash -LiteralPath (Join-Path $dir 'C545D_Recorder.exe')).Hash
+          $dll=(Get-FileHash -LiteralPath (Join-Path $dir 'plugins/gstc545dsei.dll')).Hash
+          Write-Host "C545D_FINAL_RC_ARTIFACT_PASS,artifact_id=14919487050,source_commit=$commit,files=$($expected.Count),source_parity=$($sourceNames.Count),manifest_hashes=12,zip_sha256=$hash,exe_sha256=$exe,sei_dll_sha256=$dll,real_camera=0,install_approved=0"
+          # Preserve the identical inner ZIP beyond the original seven-day artifact.
+          # This is a CI artifact, not a published or install-approved release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c545d-frozen-rc-unapproved-2dc42121
+          path: artifacts/pinned/C545D_Recorder_EXE_Win10_x64.zip
+          retention-days: 30
+          if-no-files-found: error
