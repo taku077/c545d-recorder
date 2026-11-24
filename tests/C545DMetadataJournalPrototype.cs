@@ -22,7 +22,7 @@ public static class C545DMetadataJournalPrototype {
     }
     public sealed class Snapshot {
         public string Status="coverage_unverified";
-        public int InvalidSlots, BusySlots, SaturatedSlots;
+        public int InvalidSlots, BusySlots, SaturatedSlots, RecoveredSlots;
         public List<Row> Rows=new List<Row>();
     }
     static bool IsDay(DateTime t) { return t.Kind==DateTimeKind.Utc && t>=Epoch && t.Year<=2100; }
@@ -64,16 +64,20 @@ public static class C545DMetadataJournalPrototype {
         if(Encode(r)!=line)throw new InvalidDataException();
         return r;
     }
-    static List<Row> Read(FileStream f,int slot){
+    static List<Row> Read(FileStream f,int slot,out bool recovered){
+        recovered=false;
         if(f.Length<=0||f.Length>MaxBytes)throw new InvalidDataException();
         var bytes=new byte[(int)f.Length];int read=0;
         while(read<bytes.Length){int n=f.Read(bytes,read,bytes.Length-read);if(n==0)throw new EndOfStreamException();read+=n;}
         string text=Ascii.GetString(bytes);
         if(!text.EndsWith("\n",StringComparison.Ordinal))throw new InvalidDataException();
         string[] lines=text.Split('\n');
-        if(lines.Length<3||lines.Length>MaxRows+2||!lines[0].StartsWith("C545D_META_V1|",StringComparison.Ordinal))throw new InvalidDataException();
+        if(lines.Length<3||lines.Length>MaxRows+2)throw new InvalidDataException();
+        recovered=lines[0].StartsWith("C545D_META_R1|",StringComparison.Ordinal);
+        string header=recovered?"C545D_META_R1|":"C545D_META_V1|";
+        if(!lines[0].StartsWith(header,StringComparison.Ordinal))throw new InvalidDataException();
         var day=DateTime.ParseExact(lines[0].Substring(14),"yyyyMMdd",Inv,DateTimeStyles.AssumeUniversal|DateTimeStyles.AdjustToUniversal);
-        if(!IsDay(day)||Slot(day)!=slot||lines[0]!="C545D_META_V1|"+day.ToString("yyyyMMdd",Inv))throw new InvalidDataException();
+        if(!IsDay(day)||Slot(day)!=slot||lines[0]!=header+day.ToString("yyyyMMdd",Inv))throw new InvalidDataException();
         var result=new List<Row>();
         for(int i=1;i<lines.Length-1;i++){
             var r=Decode(lines[i]);if(r.Utc.Date!=day.Date)throw new InvalidDataException();result.Add(r);
@@ -91,7 +95,8 @@ public static class C545DMetadataJournalPrototype {
             using(var f=File.Open(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)){
                 bool reset=!exists&&f.Length==0;
                 if(!reset){
-                    var rows=Read(f,Slot(row.Utc));
+                    bool recovered;
+                    var rows=Read(f,Slot(row.Utc),out recovered);
                     var day=rows[0].Utc.Date;
                     if(day>row.Utc.Date)return "clock_rollback";
                     reset=day<row.Utc.Date;
@@ -111,6 +116,46 @@ public static class C545DMetadataJournalPrototype {
          catch(IOException){return "busy_or_io_error";}
          catch{return "storage_error";}
     }
+    // Conservative recovery only for an incomplete final line on the same UTC day.
+    // Never infer a lost event's content or overwrite a corrupt complete row.
+    // Persist a loss marker BEFORE truncating. This is not a power-failure atomic transaction.
+    public static string RecoverTornTail(string root,DateTime day){
+        if(!IsDay(day))return "invalid_day";
+        try{
+            if(!SafeRoot(root))return "root_rejected";
+            string path=PathFor(root,Slot(day));
+            if(!File.Exists(path))return "not_found";
+            if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)return "reparse_rejected";
+            using(var f=File.Open(path,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){
+                if(f.Length<=0||f.Length>MaxBytes)return "not_recoverable";
+                var bytes=new byte[(int)f.Length];int read=0;
+                while(read<bytes.Length){int n=f.Read(bytes,read,bytes.Length-read);if(n==0)return "not_recoverable";read+=n;}
+                if(bytes[bytes.Length-1]==10)return "not_torn_tail";
+                int last=Array.LastIndexOf(bytes,(byte)10);
+                if(last<0||bytes.Length-last-1>256)return "not_recoverable";
+                // Validate the entire intact prefix; decode only the prefix, not discarded bytes.
+                string prefix=Ascii.GetString(bytes,0,last+1);
+                string[] lines=prefix.Split('\n');
+                string expected=day.ToString("yyyyMMdd",Inv);
+                if(lines.Length<3||lines.Length>MaxRows+2||
+                   (lines[0]!="C545D_META_V1|"+expected&&lines[0]!="C545D_META_R1|"+expected))return "not_recoverable";
+                for(int i=1;i<lines.Length-1;i++){
+                    var row=Decode(lines[i]);
+                    if(row.Utc.Date!=day.Date)return "not_recoverable";
+                }
+                // Same-size header marker, preserves every complete data row verbatim.
+                f.Position=0;byte[] marker=Ascii.GetBytes("C545D_META_R1|");
+                f.Write(marker,0,marker.Length);f.Flush(true);
+                f.SetLength(last+1);f.Flush(true);
+                return "recovered_loss_possible";
+            }
+        }catch(InvalidDataException){return "not_recoverable";}
+         catch(FormatException){return "not_recoverable";}
+         catch(OverflowException){return "not_recoverable";}
+         catch(DecoderFallbackException){return "not_recoverable";}
+         catch(IOException){return "busy_or_io_error";}
+         catch{return "storage_error";}
+    }
     public static Snapshot ReadWindow(string root,DateTime begin,DateTime end){
         var result=new Snapshot();
         if(!IsDay(begin)||!IsDay(end)||end<=begin||(end-begin).TotalDays>31){result.Status="window_invalid";return result;}
@@ -121,7 +166,9 @@ public static class C545DMetadataJournalPrototype {
                 try{
                     if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0){result.InvalidSlots++;continue;}
                     using(var f=File.Open(path,FileMode.Open,FileAccess.Read,FileShare.Read)){
-                        var rows=Read(f,i);
+                        bool recovered;
+                        var rows=Read(f,i,out recovered);
+                        if(recovered&&rows[0].Utc.Date>=begin.Date&&rows[0].Utc.Date<=end.Date)result.RecoveredSlots++;
                         if(rows.Count==MaxRows&&rows[0].Utc.Date>=begin.Date&&rows[0].Utc.Date<=end.Date)result.SaturatedSlots++;
                         foreach(var row in rows)if(row.Utc>=begin&&row.Utc<end)result.Rows.Add(row);
                     }
@@ -130,7 +177,7 @@ public static class C545DMetadataJournalPrototype {
             }
             result.Rows.Sort((a,b)=>a.Utc.CompareTo(b.Utc));
             // Even all readable slots are not proof all renames published.
-            if(result.InvalidSlots>0||result.BusySlots>0||result.SaturatedSlots>0)result.Status="partial_or_unavailable";
+            if(result.InvalidSlots>0||result.BusySlots>0||result.SaturatedSlots>0||result.RecoveredSlots>0)result.Status="partial_or_unavailable";
             else if(result.Rows.Count==0)result.Status="no_events_coverage_unverified";
             return result;
         }catch{result.Status="storage_error";result.Rows.Clear();return result;}
