@@ -101,6 +101,9 @@ public static class C545DWriterReceipts {
     public sealed class Snapshot {
         public string Status="coverage_unverified";
         public int InvalidSlots, BusySlots, UnfinishedRuns, CompletedRuns;
+        // Capacity snapshot independent of requested report dates, not a reservation.
+        public int EmptySlots, ReusableSlots, RecentFinalSlots, PreservedUnfinishedSlots;
+        public bool CapacityObserved;
         public List<Entry> Rows=new List<Entry>();
     }
     static bool ValidTime(DateTime t){return t.Kind==DateTimeKind.Utc&&t.Year>=2020&&t.Year<=2100;}
@@ -184,12 +187,21 @@ public static class C545DWriterReceipts {
         if(!ValidTime(begin)||!ValidTime(end)||end<=begin||(end-begin).TotalDays>31){s.Status="window_invalid";return s;}
         try{
             if(!SafeRoot(root)){s.Status="root_rejected";return s;}
+            DateTime observed=DateTime.UtcNow;
             for(int i=0;i<Slots;i++){
-                string p=PathAt(root,i);if(!File.Exists(p))continue;
+                string p=PathAt(root,i);
+                if(!File.Exists(p)){
+                    // Directory collisions are unavailable, never free slots.
+                    if(Directory.Exists(p))s.InvalidSlots++;else s.EmptySlots++;
+                    continue;
+                }
                 try{
                     if((File.GetAttributes(p)&FileAttributes.ReparsePoint)!=0){s.InvalidSlots++;continue;}
                     using(var f=File.Open(p,FileMode.Open,FileAccess.Read,FileShare.Read)){
                         var r=Read(f);
+                        if(!r.Final)s.PreservedUnfinishedSlots++;
+                        else if(r.EndUtc<=observed.AddDays(-32))s.ReusableSlots++;
+                        else s.RecentFinalSlots++;
                         // Whole-run totals, NOT attributed to individual report-window events.
                         if(r.StartUtc>=end||(r.Final&&r.EndUtc<begin))continue;
                         if(r.Final)s.CompletedRuns++;else s.UnfinishedRuns++;
@@ -202,6 +214,7 @@ public static class C545DWriterReceipts {
                  catch(IOException){s.BusySlots++;}
                  catch{s.InvalidSlots++;}
             }
+            s.CapacityObserved=(s.EmptySlots+s.ReusableSlots+s.RecentFinalSlots+s.PreservedUnfinishedSlots+s.InvalidSlots+s.BusySlots==Slots);
             if(s.InvalidSlots>0||s.BusySlots>0||s.UnfinishedRuns>0)s.Status="partial_or_unavailable";
             else if(s.Rows.Count==0)s.Status="no_runs_coverage_unverified";
             return s;
