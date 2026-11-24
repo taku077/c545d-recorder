@@ -1,0 +1,22 @@
+name: C545D bounded metadata journal (CI only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545DMetadataJournalPrototype.cs'
+      - 'tests/Test-C545DMetadataJournal.ps1'
+      - '.github/workflows/c545d-metadata-journal-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  journal:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simulate 40 days and failure modes with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Test-C545DMetadataJournal.ps1
