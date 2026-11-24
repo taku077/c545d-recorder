@@ -3,18 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `d1d1546f08cf1e6d7a10603c3b4b59a6315480d9`
-- **PR updated at (UTC):** `2026-11-24T11:34:21Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/d1d1546f08cf1e6d7a10603c3b4b59a6315480d9/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `b14855be2c23d316002bf9b922e9a2f7057c404a`
+- **PR updated at (UTC):** `2026-11-24T11:34:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/b14855be2c23d316002bf9b922e9a2f7057c404a/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | queued | [#45385407918](https://github.com/taku077/c545d-recorder/actions/runs/45385407918) |
-| C545D closed media metadata prototype (CI only) | in_progress | [#45385402562](https://github.com/taku077/c545d-recorder/actions/runs/45385402562) |
+| C545D active development handoff auto-refresh | in_progress | [#45385464596](https://github.com/taku077/c545d-recorder/actions/runs/45385464596) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-24 JST — **ABBA all four arms preserved; eight direct probes per arm observed; trace window alignment committed**
+
+- Resumed exact PR #62/main ACTIVE_HANDOFF `ad5a1db6b36c097413f0bb91a3d171fb9bc3d671`. [#45384375718 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/45384375718) job 138411369974: previous eight actual activation/fallback arms and two independent lifecycle observations PASS; new ABBA executed all four, media hash 8/8 and enabled journal/receipt checks PASS each. Trace qualified only a1; b1,b2,a2 failed count reconciliation. Actual a1 job_total=17, direct/descendant_ffprobe=8, conhost=8, other=0, unreconciled=0, active=1. All four job_total=17 and eight direct/descendant ffprobe; b1,b2 conhost=8 other=6 unreconciled=-6; a2 conhost=9 other=2 unreconciled=-3. No duplicate probe observed, no claim all job members classified outside a1. Other process images not exported. 
+- Actual provisional ABBA a1/off,b1/on,b2/on,a2/off respectively: startup ms 439,877,877,435; batch ms 1199,1453,1392,1127; max rename ms 193,248,249,186; tree CPU ms 703,688,734,719; helper CPU ms 250,281,297,234; helper private first B 84561920,95711232,95600640,84852736; last B 103661568,108380160,108322816,120643584; sampled peak B 103809024,108380160,108900352,120643584; handles first 549,563,566,550; last 556,564,567,552; peak 566,574,577,573. Do not treat CPU parity or private differences as qualified overhead/long-run leakage. Prior powerShell GUI ON/OFF #45382416077 PASS remains valid.
+- [d1d1546f](https://github.com/taku077/c545d-recorder/commit/d1d1546f08cf1e6d7a10603c3b4b59a6315480d9) CI-only test filters WMI start events by original TIME_CREATED UTC FILETIME between actual batch start and Job Object final accounting read; logs excluded events, direct other/probe outside window, exact duplicate events and descendant PID reuse, refuses reused PID or out-of-window direct probe; preserves exact reconciliation and all four independent arms. Previous excess may include delayed initialization events (Add-Type compilation) or duplicate/reused PID events; this is a hypothesis, not attribution. [Microsoft TIME_CREATED format](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/krnlprov/win32-processstarttrace). No production changes. Latest CI unverified; inspect four traces, compare timestamps and excluded counts. If still inconsistent, use independent calibrated job notifications/ETW and explicit process lifetime matching (job notifications not guaranteed, [Microsoft](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)); avoid repeated guesswork. 
+- Native EXE GUI enabled integration, bounded retention, rollback and observer overhead still required. Existing Track B measurements unchanged. No host changes or manual tests; draft PR #62, release HOLD, install_approved=0, live_test_authorized=0, metadata default OFF.
 
 ### UPDATE 2026-11-24 JST — **ABBA first run FAIL: unexpected 17 job processes vs 9; independent start trace and all-arm evidence committed**
 
