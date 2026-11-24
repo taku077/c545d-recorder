@@ -111,8 +111,16 @@ try{
     $env:GST_PLUGIN_SYSTEM_PATH='';$env:GST_PLUGIN_SYSTEM_PATH_1_0=Join-Path $SdkRoot 'lib\gstreamer-1.0'
     $env:GST_REGISTRY=Join-Path $root 'registry.bin'
     # Warm the common plugin registry outside the measured arms.
-    & $gst -q videotestsrc num-buffers=1 '!' fakesink *> $null
-    if($LASTEXITCODE -ne 0){throw 'GST_WARMUP'}
+    # WinPS 5.1 turns redirected native stderr into NativeCommandError
+    # even when a plugin scan warning is unrelated to the required graph.
+    # Capture both streams privately; qualify actual process exit, not silence.
+    $warm=$null
+    try{
+        $warm=Start-Owned $gst @('-q','videotestsrc','num-buffers=1','!','fakesink') (Join-Path $root 'warmup')
+        if(-not $warm.WaitForExit(20000) -or $warm.ExitCode -ne 0){throw 'GST_WARMUP'}
+        $warn=[int]((Get-Content -LiteralPath (Join-Path $root 'warmup.err') -Raw) -match 'gstpython\.dll')
+        Write-Host "C545D_OBSERVER_WARMUP_PASS,exit=0,python_plugin_warning=$warn,real_camera=0"
+    }finally{Close-Owned $warm}
     foreach($name in @('a1','b1','b2','a2')){Run-Arm $name ($name.StartsWith('b'))}
     Write-Host 'C545D_OBSERVER_ABBA_PASS,arms=4,packaged_source=1,same_runner=1,sampling_interval_s=10,synthetic_gst=1,manual_export=1,short_fixture_only=1,real_camera=0,install_approved=0'
 }finally{
