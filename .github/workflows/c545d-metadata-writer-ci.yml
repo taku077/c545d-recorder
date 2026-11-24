@@ -1,0 +1,23 @@
+name: C545D bounded diagnostic writer (CI only)
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/C545DMetadataJournalPrototype.cs'
+      - 'tests/C545DMetadataWriterPrototype.cs'
+      - 'tests/Test-C545DMetadataWriter.ps1'
+      - '.github/workflows/c545d-metadata-writer-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  writer:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bounded writer during artificial IO stall
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tests/Test-C545DMetadataWriter.ps1
