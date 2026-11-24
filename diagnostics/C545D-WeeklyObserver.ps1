@@ -851,13 +851,14 @@ function Export-WhenDue($state,[string]$root,[datetime]$now){
  Save-ObserverState $state $root
  return $zip
 }
-function Prune-Metrics([string]$root,[datetime]$now,[datetime]$reportedBefore){
+function Prune-Metrics([string]$root,[datetime]$now,[datetime]$reportedFrom,[datetime]$reportedBefore){
  $folder=Join-Path $root 'metrics'
  if(-not(Test-Path -LiteralPath $folder)){return}
  Assert-ObserverDirectory $folder
  # Only exact, regular, fully reported daily files older than 30 days.
  # Never prune on LastWriteTime alone or delete unreported history for space.
  $items=0
+ $eligible=New-Object 'Collections.Generic.List[string]'
  foreach($old in [IO.DirectoryInfo]::new($folder).EnumerateFileSystemInfos()){
    $items++
    if($items -gt $script:ObserverMetricCountLimit){throw 'OBSERVER_STORAGE_LIMIT'}
@@ -865,11 +866,12 @@ function Prune-Metrics([string]$root,[datetime]$now,[datetime]$reportedBefore){
       ($old.Attributes -band [IO.FileAttributes]::Directory) -or
       $old.Name -cnotmatch '^process_(\d{8})\.csv$'){throw 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
    $day=[datetime]::ParseExact($Matches[1],'yyyyMMdd',$culture,[Globalization.DateTimeStyles]::AssumeUniversal).ToUniversalTime()
-   if($day.AddDays(1) -le $reportedBefore -and $day.AddDays(1) -le $now.AddDays(-30) -and
+   if($day -ge $reportedFrom -and $day.AddDays(1) -le $reportedBefore -and $day.AddDays(1) -le $now.AddDays(-30) -and
       $old.LastWriteTimeUtc -lt $now.AddDays(-30)){
-     Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop
+     $eligible.Add($old.FullName)
    }
  }
+ foreach($path in $eligible){Remove-Item -LiteralPath $path -Force -ErrorAction Stop}
 }
 function Test-Observer {
  $root=Join-Path $env:TEMP ('C545D_weekly_test_'+[guid]::NewGuid().ToString('N'))
@@ -973,6 +975,65 @@ function Test-Observer {
    if($emptyMeta.actual_samples -ne 0 -or $emptyMeta.missing_intervals -ne 'not_classified'){
      throw 'MISSING_SAMPLES_SILENTLY_MARKED_NORMAL'
    }
+   # Independent tiny-limit fixture exercises production pre-write checks
+   # without allocating hundreds of MB or touching real recorder files.
+   $capRoot=Join-Path $root 'quota-fixture'
+   New-Item -ItemType Directory -Path $capRoot|Out-Null
+   Save-ObserverRow $row $capRoot
+   $metricDir=Join-Path $capRoot 'metrics'
+   $file=@(Get-ChildItem -LiteralPath $metricDir -File)[0]
+   $originalHash=(Get-FileHash -LiteralPath $file.FullName).Hash
+   $originalLength=$file.Length
+   $oldDaily=$script:ObserverDailyLimit;$oldMetric=$script:ObserverMetricLimit
+   $oldCount=$script:ObserverReportCountLimit;$oldReport=$script:ObserverReportLimit
+   try{
+     $script:ObserverDailyLimit=$originalLength
+     $denied=$false
+     try{Save-ObserverRow $row $capRoot}catch{$denied=$_.Exception.Message -eq 'OBSERVER_STORAGE_LIMIT'}
+     if(-not $denied -or (Get-FileHash -LiteralPath $file.FullName).Hash -cne $originalHash){throw 'SELFTEST_DAILY_LIMIT'}
+     $script:ObserverDailyLimit=$oldDaily
+     $script:ObserverMetricLimit=$originalLength
+     $denied=$false
+     try{Save-ObserverRow $row $capRoot}catch{$denied=$_.Exception.Message -eq 'OBSERVER_STORAGE_LIMIT'}
+     if(-not $denied -or (Get-FileHash -LiteralPath $file.FullName).Hash -cne $originalHash){throw 'SELFTEST_GLOBAL_METRIC_LIMIT'}
+     $script:ObserverMetricLimit=$oldMetric
+     $reportDir=Join-Path $capRoot 'reports'
+     New-Item -ItemType Directory -Path $reportDir|Out-Null
+     $existing=Join-Path $reportDir 'C545D_SAFE_WEEKLY_20261124_000000_01234567.zip'
+     [IO.File]::WriteAllText($existing,'CI_EXISTING_KEEP')
+     $zipHash=(Get-FileHash -LiteralPath $existing).Hash
+     $script:ObserverReportCountLimit=1
+     $denied=$false
+     try{[void](New-SafeBundle $capRoot $now.AddHours(-1) $now.AddHours(1) 'selftest')}catch{$denied=$_.Exception.Message -eq 'OBSERVER_REPORT_LIMIT_REVIEW_NEEDED'}
+     if(-not $denied -or (Get-FileHash -LiteralPath $existing).Hash -cne $zipHash){throw 'SELFTEST_REPORT_COUNT_LIMIT'}
+     $script:ObserverReportCountLimit=$oldCount
+     $script:ObserverReportLimit=$script:ObserverReportReserve
+     $denied=$false
+     try{[void](New-SafeBundle $capRoot $now.AddHours(-1) $now.AddHours(1) 'selftest')}catch{$denied=$_.Exception.Message -eq 'OBSERVER_REPORT_LIMIT_REVIEW_NEEDED'}
+     if(-not $denied -or (Get-FileHash -LiteralPath $existing).Hash -cne $zipHash){throw 'SELFTEST_REPORT_BYTE_LIMIT'}
+     $script:ObserverReportLimit=$oldReport
+     $leftover=Join-Path $reportDir 'work_interrupted'
+     New-Item -ItemType Directory -Path $leftover|Out-Null
+     $sentinel=Join-Path $leftover 'keep.txt'
+     [IO.File]::WriteAllText($sentinel,'PRESERVE')
+     $denied=$false
+     try{[void](New-SafeBundle $capRoot $now.AddHours(-1) $now.AddHours(1) 'selftest')}catch{$denied=$_.Exception.Message -eq 'OBSERVER_STORAGE_UNKNOWN_ENTRY'}
+     if(-not $denied -or [IO.File]::ReadAllText($sentinel) -cne 'PRESERVE'){throw 'SELFTEST_CRASH_LEFTOVER'}
+     # Old unreported and already-reported files have identical ages.
+     $oldDay=$now.Date.AddDays(-40);$newerDay=$oldDay.AddDays(2)
+     $unreported=Join-Path $metricDir ('process_'+$oldDay.ToString('yyyyMMdd',$culture)+'.csv')
+     $reported=Join-Path $metricDir ('process_'+$newerDay.ToString('yyyyMMdd',$culture)+'.csv')
+     foreach($p in @($unreported,$reported)){
+       [IO.File]::WriteAllText($p,'CI_KEEP_OR_PRUNE')
+       [IO.File]::SetLastWriteTimeUtc($p,$oldDay)
+     }
+     Prune-Metrics $capRoot $now $newerDay $newerDay.AddDays(1)
+     if(-not(Test-Path -LiteralPath $unreported) -or (Test-Path -LiteralPath $reported)){throw 'SELFTEST_UNREPORTED_PRUNE'}
+     Write-Output 'C545D_OBSERVER_STORAGE_SELFTEST_PASS,daily=1,total_csv=1,zip_count=1,zip_bytes=1,crash_preserved=1,unreported_preserved=1,real_camera=0'
+   }finally{
+     $script:ObserverDailyLimit=$oldDaily;$script:ObserverMetricLimit=$oldMetric
+     $script:ObserverReportCountLimit=$oldCount;$script:ObserverReportLimit=$oldReport
+   }
    Write-Output 'C545D_WEEKLY_OBSERVER_SELFTEST_PASS,zip=1,windows51=1,schema=1,negative_redaction=1,namer_sanitized=1,closed_rename=1,watcher_loss=3,worker_eos_pair=1,reconnect=1,incomplete_session=1,72h_restart=1,72h_then_7d=1,empty_week_gap=1,recorder_untouched=1'
  }finally{
    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -1006,7 +1067,7 @@ try{
  do{
      $row=Get-ObserverRow
      try{
-       Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.window_from_utc))
+       Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.started_utc)) (ToUtc ([string]$state.window_from_utc))
        Save-ObserverRow $row $RootDirectory
      }catch{
        # Capacity failure is observable, not a reason to stop the recorder.
@@ -1017,7 +1078,7 @@ try{
      try{
        $zip=Export-WhenDue $state $RootDirectory ([datetime]::UtcNow)
        if($zip){
-         Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.window_from_utc))
+         Prune-Metrics $RootDirectory ([datetime]::UtcNow) (ToUtc ([string]$state.started_utc)) (ToUtc ([string]$state.window_from_utc))
          Write-Output ('C545D_SAFE_WEEKLY_READY: '+$zip)
        }
      }catch{
