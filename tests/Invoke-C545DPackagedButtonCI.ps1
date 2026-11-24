@@ -20,7 +20,7 @@ try{
         if($target.MainWindowHandle -ne [IntPtr]::Zero){
             $root=[System.Windows.Automation.AutomationElement]::FromHandle($target.MainWindowHandle)
             if($root.Current.ProcessId -ne $TargetPid){exit 3}
-            $condition=New-Object System.Windows.Automation.PropertyCondition(
+            $condition=[System.Windows.Automation.PropertyCondition]::new(
                 [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
                 [System.Windows.Automation.ControlType]::Button)
             $matches=@($root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition) |
