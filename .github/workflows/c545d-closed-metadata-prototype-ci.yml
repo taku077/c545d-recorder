@@ -25,15 +25,20 @@ jobs:
           $ErrorActionPreference='Stop'
           . ./tests/C545D-ClosedMetadataPrototype.ps1
           Test-C545DMetadataEvidence
-          $ffmpeg=(Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)
-          $ffprobe=(Get-Command ffprobe.exe -ErrorAction SilentlyContinue)
-          if(-not $ffmpeg -or -not $ffprobe){
-            choco install ffmpeg -y --no-progress
-            if($LASTEXITCODE -ne 0){throw 'FFMPEG_INSTALL_FAILED'}
-            $env:PATH+=';'+$env:ChocolateyInstall+'\bin'
-            $ffmpeg=Get-Command ffmpeg.exe -ErrorAction Stop
-            $ffprobe=Get-Command ffprobe.exe -ErrorAction Stop
-          }
+          # Pinned, hash-verified synthetic-test dependency; no Chocolatey feed or shim.
+          # Source: Microsoft winget-pkgs Gyan.FFmpeg 7.1.1 installer manifest.
+          $archive=Join-Path $env:RUNNER_TEMP 'c545d-ffmpeg-7.1.1.zip'
+          $toolsDir=Join-Path $env:RUNNER_TEMP 'c545d-ffmpeg-7.1.1'
+          $url='https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip'
+          $sha='D760E1B3574402ED18B4865851F87D87E73965A982E6453212DF8621FED1C508'
+          & curl.exe --fail --location --retry 2 --retry-delay 2 --max-time 180 --output $archive $url
+          if($LASTEXITCODE -ne 0){throw 'PINNED_FFMPEG_DOWNLOAD_FAILED'}
+          if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha){throw 'PINNED_FFMPEG_HASH_MISMATCH'}
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolsDir
+          $bin=Join-Path $toolsDir 'ffmpeg-7.1.1-full_build\bin'
+          $ffmpeg=Get-Command (Join-Path $bin 'ffmpeg.exe') -ErrorAction Stop
+          $ffprobe=Get-Command (Join-Path $bin 'ffprobe.exe') -ErrorAction Stop
+          Write-Host 'C545D_PINNED_FFMPEG_VERIFIED,version=7.1.1,archive_sha256_match=1,direct_exe=1'
           $dir=Join-Path $env:RUNNER_TEMP 'c545d-closed-metadata-fixtures'
           New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
           $ok=Join-Path $dir 'composite.mp4'
