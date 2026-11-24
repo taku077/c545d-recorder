@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D bounded diagnostic writer (CI only) | queued | [#45333534743](https://github.com/taku077/c545d-recorder/actions/runs/45333534743) |
+| C545D active development handoff auto-refresh | in_progress | [#45333538867](https://github.com/taku077/c545d-recorder/actions/runs/45333538867) |
+| C545D bounded diagnostic writer (CI only) | in_progress | [#45333534743](https://github.com/taku077/c545d-recorder/actions/runs/45333534743) |
 
 ## Current development findings from the active PR
 
