@@ -418,6 +418,84 @@ function Write-C545DWriterCsv($report,[string]$path){
     }
 }
 
+# Current on-disk package only. Never attribute historical samples to this snapshot.
+# Fixed paths, no raw manifest or private path copied, no executable launched.
+function Test-IdentityLocalPath([string]$path){
+    if($path -notmatch '^[A-Za-z]:\\'){return $false}
+    $d=New-Object IO.DirectoryInfo([IO.Path]::GetFullPath($path))
+    if((New-Object IO.DriveInfo($d.Root.FullName)).DriveType -ne [IO.DriveType]::Fixed){return $false}
+    while($d){
+        if(-not $d.Exists -or ($d.Attributes -band [IO.FileAttributes]::ReparsePoint)){return $false}
+        $d=$d.Parent
+    }
+    return $true
+}
+function Read-PackageIdentity {
+    $r=[ordered]@{status='not_found';source_commit='unknown';manifest_observer_version='unknown';
+        checked_files=0;matched_files=0;scope='export_time_disk_snapshot_only';
+        report_window_attribution='not_proven';loaded_runtime_identity='not_collected';
+        authenticity='not_proven';observed_utc=UtcText ([datetime]::UtcNow)}
+    try{
+        $package=Split-Path -Parent $PSScriptRoot
+        $manifestPath=Join-Path $package 'BUILD_IDENTITY.json'
+        if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){return $r}
+        if(-not(Test-IdentityLocalPath $package)){$r.status='path_rejected';return $r}
+        $item=Get-Item -LiteralPath $manifestPath
+        if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 16384){
+            $r.status='manifest_rejected';return $r
+        }
+        $stream=$null
+        try{
+            $stream=[IO.File]::Open($manifestPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            if($stream.Length -le 0 -or $stream.Length -gt 16384){throw 'IDENTITY_SIZE'}
+            $reader=New-Object IO.StreamReader($stream)
+            try{$raw=$reader.ReadToEnd()}finally{$reader.Dispose()}
+        }finally{if($stream){$stream.Dispose()}}
+        $m=ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+        $expected=@('C545D_Recorder.exe','Record.ps1','RecordGUIWorker.ps1','SegmentNamer.ps1','SegmentNamerWorker.ps1',
+          'diagnostics/C545D-WeeklyObserver.ps1','plugins/gstc545dsei.dll','diagnostics/C545DClosedProbeV04.cs',
+          'diagnostics/C545DMetadataJournalV04.cs','diagnostics/C545DMetadataWriterV04.cs',
+          'diagnostics/C545D-MetadataClassifierV04.ps1','diagnostics/C545D-MetadataIntegrationV04.ps1')
+        if($m.schema_version -ne 1 -or $m.source_commit -isnot [string] -or
+           $m.source_commit -cnotmatch '\A[0-9a-f]{40}\z' -or $m.observer_version -cne '0.4.0' -or
+           $m.metadata_candidate_version -cne '0.4.0' -or $m.metadata_default_enabled -ne 0 -or
+           $m.host_runtime_verified -ne 0 -or @($m.files.PSObject.Properties).Count -ne $expected.Count){
+            $r.status='manifest_rejected';return $r
+        }
+        foreach($name in $expected){
+            $p=$m.files.PSObject.Properties[$name]
+            if($null -eq $p -or $p.Value -isnot [string] -or $p.Value -notmatch '\A[0-9A-Fa-f]{64}\z'){
+                $r.status='manifest_rejected';return $r
+            }
+        }
+        $total=0L
+        foreach($name in $expected){
+            $file=Join-Path $package $name
+            if(-not(Test-IdentityLocalPath (Split-Path -Parent $file))){
+                $r.status='file_unavailable';return $r
+            }
+            $item=Get-Item -LiteralPath $file -ErrorAction Stop
+            if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+               $item.Length -gt 67108864){$r.status='file_rejected';return $r}
+            $total+=$item.Length
+            if($total -gt 134217728){$r.status='size_limit';return $r}
+            $beforeLength=$item.Length;$beforeWrite=$item.LastWriteTimeUtc
+            $actual=(Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop).Hash
+            $after=Get-Item -LiteralPath $file -ErrorAction Stop
+            if($after.Length -ne $beforeLength -or $after.LastWriteTimeUtc -ne $beforeWrite){
+                $r.status='file_changed';return $r
+            }
+            $r.checked_files++
+            if($actual -ieq $m.files.PSObject.Properties[$name].Value){$r.matched_files++}
+        }
+        if($r.matched_files -ne $expected.Count){$r.status='hash_mismatch';return $r}
+        $r.status='manifest_hashes_match'
+        $r.source_commit=$m.source_commit
+        $r.manifest_observer_version='0.4.0'
+    }catch{$r.status='reader_unavailable'}
+    return $r
+}
+
 function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$reason){
  if($end -le $begin -or ($end-$begin).TotalDays -gt 31){throw 'REPORT_WINDOW_INVALID'}
  $rows=Read-ValidRows $root $begin $end
@@ -439,6 +517,7 @@ function New-SafeBundle([string]$root,[datetime]$begin,[datetime]$end,[string]$r
    $manifest=[ordered]@{
      schema_version=1;diagnostics_version=$version
      recorder_version='not_collected'
+     package_identity=(Read-PackageIdentity)
      writer_receipt_source_status=$writerReport.status
      writer_completed_runs=$writerReport.completed
      writer_unfinished_or_active_runs=$writerReport.unfinished
