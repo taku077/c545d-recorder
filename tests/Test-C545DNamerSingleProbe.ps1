@@ -108,8 +108,8 @@ function Publish-C545DTestEvidence($row){
     $entry.FpsNum=$row.fps_num;$entry.FpsDen=$row.fps_den
     $entry.SampleRate=$row.sample_rate;$entry.Channels=$row.channels
     $entry.H264=$row.video_h264;$entry.Aac=$row.audio_aac
-    $status=[C545DMetadataJournalPrototype]::Append($journalRoot,$entry)
-    if($status -ne 'saved'){throw ('JOURNAL_PUBLISH_'+$status)}
+    $status=[C545DMetadataJournalPrototype]::AppendRecovering($journalRoot,$entry)
+    if($status -notin @('saved','saved_after_recovery')){throw ('JOURNAL_PUBLISH_'+$status)}
     $script:rows.Add($row)
 }
 Set-NamerProbe $ProbeExe
@@ -196,3 +196,15 @@ $readerScript=Join-Path $PSScriptRoot 'Read-C545DMetadataJournalFixture.ps1'
 & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $readerScript -JournalRoot $journalRoot
 if($LASTEXITCODE -ne 0){throw 'JOURNAL_READER_CHILD_FAILED'}
 Write-Host 'C545D_NAMER_PERSISTENT_SINK_PASS,persisted=3,busy_rename_done=1,publication_failures=2,separate_reader=1,coverage_unverified=1,host_modified=0'
+
+# Same production-source comparison, actual Move-Item, with a torn journal tail.
+[IO.File]::AppendAllText($journalFiles[0].FullName,'torn-fragment')
+$target=Set-NamerFixture $candidate $fixture $pending
+Assert-Equal (Invoke-C545DRenameOne $target $candidate) 'done' 'AUTO_RECOVERY_RENAME'
+Assert-Equal (Test-Path -LiteralPath $target) $false 'AUTO_RECOVERY_MOVED'
+$snapshot=[C545DMetadataJournalPrototype]::ReadWindow($journalRoot,$journalBegin,[datetime]::UtcNow.AddMinutes(1))
+Assert-Equal $snapshot.Rows.Count 4 'AUTO_RECOVERY_PERSISTED'
+Assert-Equal $snapshot.RecoveredSlots 1 'AUTO_RECOVERY_MARKER'
+Assert-Equal $snapshot.Status 'partial_or_unavailable' 'AUTO_RECOVERY_PARTIAL'
+Assert-Equal $script:probeCalls 5 'AUTO_RECOVERY_NO_EXTRA_PROBE'
+Write-Host 'C545D_NAMER_AUTO_RECOVERY_PASS,rename_done=1,persisted=4,recovered_slots=1,coverage_partial=1,extra_probe=0,host_modified=0'
