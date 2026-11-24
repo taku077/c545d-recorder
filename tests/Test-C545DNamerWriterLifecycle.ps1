@@ -160,37 +160,11 @@ function Run-Arm([bool]$stall){
         $receipts=@(Get-ChildItem -LiteralPath $receipt -File)
         Assert-Eq $receipts.Count 1 'RECEIPT_FILE'
         $receiptLines=@(Get-Content -LiteralPath $receipts[0].FullName)
-        if($receiptLines[0] -cnotmatch '^C545D_WRITER_V1\|\d{8}T\d{6}\.\d{7}Z\|[0-9a-f]{32},stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
-    }finally{
-        if($locked){$locked.Dispose()}
-        if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
-        $env:LOCALAPPDATA=$oldLocal
-        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_RECEIPTS,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
-    }
-}
-Run-Arm $false
-Run-Arm $true
-if([IO.File]::ReadAllText((Join-Path $repo 'SegmentNamer.ps1')) -cne $originalNamer -or
-   [IO.File]::ReadAllText((Join-Path $repo 'SegmentNamerWorker.ps1')) -cne $originalWorker){throw 'PRODUCTION_SOURCE_CHANGED'}
-Write-Host 'C545D_NAMER_WRITER_LIFECYCLE_PASS,arms=2,actual_watcher=1,locked_final_after_stop=1,normal_saved=2,stalled_unconfirmed=2,source_unchanged=1,real_eos=0,real_camera=0,host_modified=0'
-){throw 'RECEIPT_HEADER'}
+        if($receiptLines[0] -cnotmatch '^C545D_WRITER_V1\|\d{8}T\d{6}\.\d{7}Z\|[0-9a-f]{32}$'){throw 'RECEIPT_HEADER'}
         if($stall){Assert-Eq $receiptLines.Count 1 'UNFINISHED_RECEIPT'}
         else{
             Assert-Eq $receiptLines.Count 2 'FINAL_RECEIPT'
-            if($receiptLines[1] -cnotmatch '^END\|\d{8}T\d{6}\.\d{7}Z\|2\|0\|2\|0\|0,stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
-    }finally{
-        if($locked){$locked.Dispose()}
-        if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
-        $env:LOCALAPPDATA=$oldLocal
-        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
-    }
-}
-Run-Arm $false
-Run-Arm $true
-if([IO.File]::ReadAllText((Join-Path $repo 'SegmentNamer.ps1')) -cne $originalNamer -or
-   [IO.File]::ReadAllText((Join-Path $repo 'SegmentNamerWorker.ps1')) -cne $originalWorker){throw 'PRODUCTION_SOURCE_CHANGED'}
-Write-Host 'C545D_NAMER_WRITER_LIFECYCLE_PASS,arms=2,actual_watcher=1,locked_final_after_stop=1,normal_saved=2,stalled_unconfirmed=2,source_unchanged=1,real_eos=0,real_camera=0,host_modified=0'
-){throw 'RECEIPT_TOTALS'}
+            if($receiptLines[1] -cnotmatch '^END\|\d{8}T\d{6}\.\d{7}Z\|2\|0\|2\|0\|0$'){throw 'RECEIPT_TOTALS'}
         }
         Write-Host ('C545D_NAMER_WRITER_RECEIPT_ARM_PASS,stall='+[int]$stall+',start=1,final='+[int](-not $stall))
         Write-Host ('C545D_NAMER_WRITER_ARM_PASS,stall='+[int]$stall+',final_renamed=1,media_hashes=2,'+($line[0] -replace '^C545D_CI_WRITER_STOP,',''))
@@ -198,7 +172,7 @@ Write-Host 'C545D_NAMER_WRITER_LIFECYCLE_PASS,arms=2,actual_watcher=1,locked_fin
         if($locked){$locked.Dispose()}
         if($proc){if(-not $proc.HasExited){$proc.Kill();[void]$proc.WaitForExit(3000)};$proc.Dispose()}
         $env:LOCALAPPDATA=$oldLocal
-        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
+        Remove-Item Env:C545D_CI_STALL,Env:C545D_CI_JOURNAL,Env:C545D_CI_RECEIPTS,Env:C545D_CI_DIRECT_PROBE -ErrorAction SilentlyContinue
     }
 }
 Run-Arm $false
