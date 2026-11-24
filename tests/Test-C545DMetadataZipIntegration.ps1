@@ -72,6 +72,12 @@ try{
     Assert-Eq $m.writer_unfinished_or_active_runs 1 'WRITER_UNFINISHED'
     Assert-Eq $m.writer_invalid_slots 1 'WRITER_CORRUPT'
     Assert-Eq $m.writer_event_coverage 'not_proven' 'WRITER_COVERAGE'
+    Assert-Eq $m.writer_slot_capacity.status 'observed_available_not_reserved' 'CAPACITY_STATUS'
+    Assert-Eq $m.writer_slot_capacity.empty 125 'CAPACITY_EMPTY'
+    Assert-Eq $m.writer_slot_capacity.reusable 0 'CAPACITY_REUSABLE'
+    Assert-Eq $m.writer_slot_capacity.recent_final 1 'CAPACITY_RECENT'
+    Assert-Eq $m.writer_slot_capacity.preserved_unfinished 1 'CAPACITY_PRESERVED'
+    Assert-Eq $m.writer_slot_capacity.reservation 'not_proven' 'CAPACITY_NOT_RESERVED'
     $wrows=@(Import-Csv (Join-Path $new 'diagnostic_writer_runs.csv'))
     Assert-Eq $wrows.Count 2 'WRITER_ROWS'
     $done=@($wrows|Where-Object state -eq 'final_counters_saved')
@@ -121,6 +127,35 @@ try{
         if([IO.File]::ReadAllText($file.FullName) -match 'PRIVATE_SECRET|rtsp://|C:\\private\\'){throw 'RECOVERED_ZIP_SECRET_LEAK'}
     }
     Write-Host 'C545D_METADATA_ZIP_RECOVERY_PASS,rows=4,recovered_slots=1,coverage_not_proven=1,count_unclassified=1,privacy=1'
+    # Fill every receipt slot without changing any existing evidence.
+    # Outside-window unfinished entries must still count against capacity.
+    $oldDate=$now.AddDays(-40)
+    for($i=3;$i -lt 128;$i++){
+        $path=Join-Path $receiptRoot ('writer_{0:D3}.dat' -f $i)
+        $stamp=$oldDate.ToString("yyyyMMdd'T'HHmmss.fffffff'Z'",[Globalization.CultureInfo]::InvariantCulture)
+        $token=[guid]::NewGuid().ToString('N')
+        [IO.File]::WriteAllText($path,("C545D_WRITER_V1|"+$stamp+"|"+$token+"`n"),[Text.Encoding]::ASCII)
+    }
+    $before=@(Get-ChildItem -LiteralPath $receiptRoot -File | Sort-Object Name | Get-FileHash | ForEach-Object Hash)
+    if($null -ne [C545DWriterReceipts]::Start($receiptRoot,$now)){throw 'FULL_RECEIPT_STORE_ACCEPTED'}
+    $full=Run-Export $candidateFile 'full-receipts' $true
+    $c=(Get-Content (Join-Path $full 'manifest.json') -Raw|ConvertFrom-Json).writer_slot_capacity
+    Assert-Eq $c.status 'no_observed_available_slots' 'FULL_CAPACITY'
+    Assert-Eq $c.empty 0 'FULL_EMPTY'
+    Assert-Eq $c.reusable 0 'FULL_REUSABLE'
+    Assert-Eq $c.preserved_unfinished 126 'FULL_UNFINISHED'
+    $after=@(Get-ChildItem -LiteralPath $receiptRoot -File | Sort-Object Name | Get-FileHash | ForEach-Object Hash)
+    if(Compare-Object $before $after -SyncWindow 0){throw 'FULL_RECEIPT_EVIDENCE_CHANGED'}
+    # A valid old finalized slot is reusable, but an unfinished slot never is.
+    $oldPath=Join-Path $receiptRoot 'writer_127.dat'
+    [IO.File]::AppendAllText($oldPath,("END|"+$stamp+"|0|0|0|0|0`n"),[Text.Encoding]::ASCII)
+    $available=Run-Export $candidateFile 'reusable-receipt' $true
+    $c=(Get-Content (Join-Path $available 'manifest.json') -Raw|ConvertFrom-Json).writer_slot_capacity
+    Assert-Eq $c.reusable 1 'REUSABLE_FINAL'
+    Assert-Eq $c.preserved_unfinished 125 'REUSABLE_PRESERVED'
+    Assert-Eq $c.status 'observed_available_not_reserved' 'REUSABLE_STATUS'
+    if($null -eq [C545DWriterReceipts]::Start($receiptRoot,$now)){throw 'VALID_OLD_SLOT_NOT_REUSED'}
+    Write-Host 'C545D_RECEIPT_CAPACITY_ZIP_PASS,slots=128,full_refused=1,evidence_preserved=1,old_final_reusable=1,unknown_not_recycled=1'
     Remove-Item -LiteralPath $journal -Recurse -Force
     Remove-Item -LiteralPath $receiptRoot -Recurse -Force
     $missing=Run-Export $candidateFile 'missing' $true
