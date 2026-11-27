@@ -323,14 +323,18 @@ jobs:
                     throw 'resource-only workload timeout'
                   }
                   Write-Host "C545D_256_EXIT,mode=$mode,arm=$arm,code=$($proc.ExitCode)"
-                  $envRows=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_256_CHILD_ENV,cache=[01],checked=\d+,bad=\d+
+                  if((Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -le 1000000){
+                    $envRows=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_256_CHILD_ENV,cache=[01],checked=\d+,bad=\d+$'})
+                  }else{$envRows=@()}
+                  if($envRows.Count -eq 1){Write-Host $envRows[0]}
+                  if($proc.ExitCode -ne 0){
                     Observe-Probe $proc $out "$mode-$arm" 41
                     throw 'resource-only probe returned nonzero'
                   }
                   if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
                   $lines=@(Get-Content -LiteralPath $out)
                   if($envRows.Count -ne 1 -or $envRows[0] -cne "C545D_256_CHILD_ENV,cache=$cacheMode,checked=23,bad=0"){throw 'actual probe environment unqualified'}
-                  if(@($lines|Where-Object {$_ -match '^C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=[01]
+                  if(@($lines|Where-Object {$_ -match '^C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=[01]$'}).Count){throw 'unexpected unsolicited monitor sink'}
                   if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
                   $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
                   $expected=if($arm -eq 'registry'){1}else{0}
@@ -372,138 +376,4 @@ jobs:
               if($null -eq $saved[$key]){Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue}
               else{Set-Item -LiteralPath "Env:$key" -Value $saved[$key]}
             }
-          }
-})
-                  if($envRows.Count -eq 1){Write-Host $envRows[0]}
-                  if($proc.ExitCode -ne 0){
-                    Observe-Probe $proc $out "$mode-$arm" 41
-                    throw 'resource-only probe returned nonzero'
-                  }
-                  if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
-                  $lines=@(Get-Content -LiteralPath $out)
-                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
-                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
-                  $expected=if($arm -eq 'registry'){1}else{0}
-                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
-                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
-                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
-                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
-                  if(-not $w.Success){throw 'worker numeric shape invalid'}
-                  $workers["$mode-$arm"]=$w.Groups[1].Value
-                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
-                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
-                  if($mode -eq 'uncached'){
-                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
-                  }else{
-                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
-                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
-                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
-                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
-                    Write-Host $cache[-1]
-                    Write-Host $bridge[-1]
-                  }
-                  foreach($row in $res){Write-Host $row}
-                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
-                }catch{
-                  $failures++
-                  Observe-Probe $proc $out "$mode-$arm" 41
-                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
-                }finally{
-                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
-                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
-                }
-              }
-            }
-            if($failures -ne 0){throw 'one or more resource arms unqualified'}
-            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
-            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
-          }finally{
-            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
-          }
-}).Count){throw 'unexpected unsolicited monitor sink'}
-                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
-                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
-                  $expected=if($arm -eq 'registry'){1}else{0}
-                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
-                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
-                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
-                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
-                  if(-not $w.Success){throw 'worker numeric shape invalid'}
-                  $workers["$mode-$arm"]=$w.Groups[1].Value
-                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
-                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
-                  if($mode -eq 'uncached'){
-                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
-                  }else{
-                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
-                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
-                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
-                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
-                    Write-Host $cache[-1]
-                    Write-Host $bridge[-1]
-                  }
-                  foreach($row in $res){Write-Host $row}
-                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
-                }catch{
-                  $failures++
-                  Observe-Probe $proc $out "$mode-$arm" 41
-                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
-                }finally{
-                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
-                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
-                }
-              }
-            }
-            if($failures -ne 0){throw 'one or more resource arms unqualified'}
-            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
-            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
-          }finally{
-            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
-          }
-})
-                  if($envRows.Count -eq 1){Write-Host $envRows[0]}
-                  if($proc.ExitCode -ne 0){
-                    Observe-Probe $proc $out "$mode-$arm" 41
-                    throw 'resource-only probe returned nonzero'
-                  }
-                  if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
-                  $lines=@(Get-Content -LiteralPath $out)
-                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
-                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
-                  $expected=if($arm -eq 'registry'){1}else{0}
-                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
-                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
-                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
-                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
-                  if(-not $w.Success){throw 'worker numeric shape invalid'}
-                  $workers["$mode-$arm"]=$w.Groups[1].Value
-                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
-                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
-                  if($mode -eq 'uncached'){
-                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
-                  }else{
-                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
-                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
-                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
-                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
-                    Write-Host $cache[-1]
-                    Write-Host $bridge[-1]
-                  }
-                  foreach($row in $res){Write-Host $row}
-                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
-                }catch{
-                  $failures++
-                  Observe-Probe $proc $out "$mode-$arm" 41
-                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
-                }finally{
-                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
-                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
-                }
-              }
-            }
-            if($failures -ne 0){throw 'one or more resource arms unqualified'}
-            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
-            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
-          }finally{
-            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
           }
