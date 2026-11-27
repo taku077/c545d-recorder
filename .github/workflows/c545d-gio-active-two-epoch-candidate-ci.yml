@@ -157,6 +157,8 @@ jobs:
           Write-Host 'C545D_GIO_ETW_SOURCE_MSVC_BUILD_PASS,pinned_source=1,exports2047=1,debug_symbols=1,CI_only=1,host_untouched=1'
       - name: Capture continuous first-AppInfo to two active QPC source epochs and allocation birth cohorts per arm
         shell: pwsh
+        env:
+          C545D_CI_FOUR_ARM_ETW_BUDGET: '1'
         run: |
           $ErrorActionPreference='Stop'
           if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
