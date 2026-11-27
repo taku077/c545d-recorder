@@ -11,7 +11,7 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#46015823865](https://github.com/taku077/c545d-recorder/actions/runs/46015823865) |
+| C545D active development handoff auto-refresh | in_progress | [#46015823865](https://github.com/taku077/c545d-recorder/actions/runs/46015823865) |
 | C545D patched GIO active two-epoch resource and worker gate | in_progress | [#46015818820](https://github.com/taku077/c545d-recorder/actions/runs/46015818820) |
 
 ## Current development findings from the active PR
