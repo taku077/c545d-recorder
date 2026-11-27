@@ -178,13 +178,54 @@ jobs:
           try {
             $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$originalPath"
             $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
-            foreach($arm in @('nochange','registry')){
-              & ./tests/Invoke-C545DGioActiveEpochEtwCI.ps1 -Probe $exe -Root $root -Build $build -Arm $arm
-              if(-not $? -or $LASTEXITCODE -ne 0){throw 'Bounded active GIO per-phase source/worker evidence failed'}
+            # Same build and runner, fresh process per arm. Enable only the
+            # event/locale-aware bridge cache, not the permanent cache alone.
+            $keys=@('C545D_DIAG_UWP_CACHE_DISPLAYNAME','C545D_DIAG_UWP_CACHE_EVENT_BRIDGE',
+              'C545D_DIAG_UWP_CACHE_REFRESH_EVERY','C545D_DIAG_UWP_BRIDGE_INJECT_SCAN',
+              'C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER','C545D_DIAG_UWP_SKIP_CURRENT',
+              'C545D_DIAG_UWP_SKIP_DISPLAYNAME','C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN')
+            $saved=@{}
+            foreach($key in $keys){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
+            try{
+              foreach($mode in @('uncached','event-cache')){
+                foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$null,'Process')}
+                if($mode -eq 'event-cache'){
+                  $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+                  $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
+                }
+                $modeRoot=Join-Path $root $mode
+                New-Item -ItemType Directory -Path $modeRoot -ErrorAction Stop|Out-Null
+                foreach($arm in @('nochange','registry')){
+                  Write-Host "C545D_GIO_BIRTH_COMPARE_BEGIN,mode=$mode,arm=$arm"
+                  & ./tests/Invoke-C545DGioActiveEpochEtwCI.ps1 -Probe $exe -Root $modeRoot -Build $build -Arm $arm
+                  if(-not $? -or $LASTEXITCODE -ne 0){throw 'Bounded active GIO per-phase source/worker evidence failed'}
+                  $lines=@(Get-Content -LiteralPath (Join-Path $modeRoot ('active-'+$arm+'-private.txt')))
+                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
+                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
+                  if($mode -eq 'uncached'){
+                    if($cache.Count -or $bridge.Count){throw 'UNEXPECTED_CACHE'}
+                  }else{
+                    if(-not $cache.Count -or -not $bridge.Count){throw 'CACHE_ACTIVATION_NOT_OBSERVED'}
+                    $last=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
+                    if([long]$last.Groups[2].Value -lt 1 -or [long]$last.Groups[3].Value -lt 1 -or
+                       [long]$last.Groups[3].Value -gt 1024 -or
+                       ($arm -eq 'registry' -and [long]$last.Groups[1].Value -lt 1)){throw 'CACHE_NOT_EXERCISED'}
+                    foreach($b in $bridge){
+                      if($b -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'BRIDGE_NOT_QUALIFIED'}
+                    }
+                    Write-Host $cache[-1]
+                    Write-Host $bridge[-1]
+                  }
+                  Write-Host "C545D_GIO_BIRTH_COMPARE_ARM_PASS,mode=$mode,arm=$arm,cache_activation_checked=1,real_camera=0"
+                }
+              }
+              Write-Host 'C545D_GIO_BIRTH_COMPARE_PASS,arms=4,event_locale_bridge=1,cache_permanent_only=0,same_build_runner=1,release_HOLD=1'
+            }finally{
+              foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
             }
           } finally {
             $env:PATH=$originalPath
             if($null -eq $originalDll){Remove-Item Env:C545D_EXPECTED_GIO_DLL -ErrorAction SilentlyContinue}
             else{$env:C545D_EXPECTED_GIO_DLL=$originalDll}
           }
-          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_ETLX_CI_PASS,arms=2,cycles_each=2,three_QPC_cuts=1,original_source_owner=1,raw_uploaded=0,real_recorder_untouched=1,release_HOLD=1'
+          Write-Host 'C545D_GIO_ACTIVE_TWO_EPOCH_ETLX_CI_PASS,arms=4,cycles_each=2,three_QPC_cuts=1,original_source_owner=1,raw_uploaded=0,real_recorder_untouched=1,release_HOLD=1'
