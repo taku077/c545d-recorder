@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#46010825318](https://github.com/taku077/c545d-recorder/actions/runs/46010825318) |
+| C545D patched GIO active two-epoch resource and worker gate | in_progress | [#46010818919](https://github.com/taku077/c545d-recorder/actions/runs/46010818919) |
 
 ## Current development findings from the active PR
 
