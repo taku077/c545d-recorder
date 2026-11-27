@@ -12,7 +12,7 @@ permissions:
 jobs:
   offline:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: Reject mismatched worker counts and invalid allocation lineage
@@ -22,12 +22,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          status=$(gh api repos/taku077/c545d-recorder/actions/runs/46011977824 --jq '.status')
-          conclusion=$(gh api repos/taku077/c545d-recorder/actions/runs/46011977824 --jq '.conclusion // "pending"')
+          # Exact native run; bounded polling, no native rebuild or retry.
+          run=46015818820
+          job=140562531873
+          sha=0836d99bf982e22ec92dd178ecb7730cde960f8a
+          for attempt in $(seq 1 30); do
+            gh api "repos/taku077/c545d-recorder/actions/runs/$run" > "$RUNNER_TEMP/matched-run.json"
+            actual_sha=$(jq -r .head_sha "$RUNNER_TEMP/matched-run.json")
+            [ "$actual_sha" = "$sha" ] || { echo 'C545D_GIO_MATCHED_RUN_SHA_MISMATCH'; exit 1; }
+            status=$(jq -r .status "$RUNNER_TEMP/matched-run.json")
+            conclusion=$(jq -r '.conclusion // "pending"' "$RUNNER_TEMP/matched-run.json")
+            if [ "$status" = completed ]; then break; fi
+            if [ "$attempt" -lt 30 ]; then sleep 15; fi
+          done
           if [ "$status" != completed ] || [ "$conclusion" != success ]; then
             echo 'C545D_GIO_MATCHED_BIRTH_ACTUAL_PENDING_OR_FAILED,actual_qualified=0'
             exit 0
           fi
-          gh run view 46011977824 --repo taku077/c545d-recorder --job 140549518513 --log > "$RUNNER_TEMP/matched-private.log"
+          gh api "repos/taku077/c545d-recorder/actions/jobs/$job" > "$RUNNER_TEMP/matched-job.json"
+          jq -e --argjson run "$run" --arg sha "$sha" '.run_id == $run and .head_sha == $sha and .conclusion == "success"' "$RUNNER_TEMP/matched-job.json" > /dev/null
+          trap 'rm -f "$RUNNER_TEMP/matched-private.log"' EXIT
+          gh run view "$run" --repo taku077/c545d-recorder --job "$job" --log > "$RUNNER_TEMP/matched-private.log"
           python3 tests/audit_c545d_gio_matched_birth_compare.py --input "$RUNNER_TEMP/matched-private.log"
-          rm -f "$RUNNER_TEMP/matched-private.log"
