@@ -40,6 +40,16 @@ if($LASTEXITCODE -ne 0){throw 'Failed to enumerate active ETW sessions'}
 if(@($existing | Where-Object {$_ -match '(?i)\bHeapSession\b|\bNT Kernel Logger\b'}).Count){
   throw 'Unowned heap/kernel ETW session: refuse modifications'
 }
+# Fixed one-time four-arm budget, based on measured 256 MiB exhaustion.
+# Keep legacy callers at their original limits; do not use circular capture.
+$expandedBudget=$env:C545D_CI_FOUR_ARM_ETW_BUDGET -eq '1'
+$heapCapMB=if($expandedBudget){1024}else{256}
+$mergedCapBytes=if($expandedBudget){1152MB}else{256MB}
+if($expandedBudget){
+  $drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($env:RUNNER_TEMP)))
+  if($drive.AvailableFreeSpace -lt 5GB){throw 'Insufficient runner disk for fixed ETW and ETLX budget'}
+  Write-Host "C545D_GIO_ETW_FIXED_BUDGET,arm=$Arm,heap_cap_mb=$heapCapMB,kernel_cap_mb=64,merged_cap_mb=1152,event_cap=2000000,raw_uploaded=0"
+}
 $args=@('--cycles=2','--heap-summary','--vm-summary')
 if($Arm -eq 'nochange'){$args+='--no-registry-change'}
 $local=Join-Path $env:RUNNER_TEMP ("c545d_gio_etw_"+$Arm+"_"+[guid]::NewGuid().ToString('N'))
@@ -95,7 +105,7 @@ function Write-EtwObservation([string]$phase){
       $kernelListed=[int](@($sessions|Where-Object {$_ -match '(?i)^\s*NT Kernel Logger(?:\s|$)'}).Count -gt 0)
     }
   }catch{}
-  Write-Host "C545D_GIO_ETW_OBSERVATION,arm=$Arm,phase=$phase,heap_file_bytes=$heapBytes,kernel_file_bytes=$kernelBytes,heap_cap_mb=256,logman_ok=$logmanOk,heap_listed=$heapListed,kernel_listed=$kernelListed,file_length_not_event_bytes=1,raw_uploaded=0"
+  Write-Host "C545D_GIO_ETW_OBSERVATION,arm=$Arm,phase=$phase,heap_file_bytes=$heapBytes,kernel_file_bytes=$kernelBytes,heap_cap_mb=$heapCapMB,logman_ok=$logmanOk,heap_listed=$heapListed,kernel_listed=$kernelListed,file_length_not_event_bytes=1,raw_uploaded=0"
 }
 try {
   if((Test-Path $out) -or (Test-Path $err)){throw 'Refuse overwriting stale CI outputs'}
@@ -104,11 +114,13 @@ try {
   $proc=Start-Process -FilePath $Probe -WorkingDirectory $Root -ArgumentList $args -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
   Wait-Signal 'preinit_ready.signal' 60
   Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,before_first_AppInfo_call=1,workload_started=0"
-  Invoke-SafeXperf 'kernel' @('-on','BASE','-f',$kernelRaw)
+  $kernelArgs=@('-on','BASE','-f',$kernelRaw)
+  if($expandedBudget){$kernelArgs+=@('-FileMode','Sequential','-MaxFile','64')}
+  Invoke-SafeXperf 'kernel' $kernelArgs
   $kernelOn=$true
   $captureArgs=@('-start','HeapSession','-heap','-pids',"$($proc.Id)",
     '-f',$heapRaw,'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128',
-    '-FileMode','Sequential','-MaxFile','256','-stackwalk','HeapAlloc+HeapRealloc')
+    '-FileMode','Sequential','-MaxFile',"$heapCapMB",'-stackwalk','HeapAlloc+HeapRealloc')
   if(($captureArgs -join ' ') -notmatch '(?i)-FileMode Sequential' -or
      ($captureArgs -join ' ') -match '(?i)\bCircular\b|PidNewProcess'){
      throw 'Unsafe ETW capture mode'
@@ -157,9 +169,10 @@ try {
     throw 'Missing disposable two-cycle completion'
   }
   if(-not(Test-Path $etl -PathType Leaf) -or (Get-Item $etl).Length -lt 512 -or
-     (Get-Item $etl).Length -gt 256MB){
+     (Get-Item $etl).Length -gt $mergedCapBytes){
     throw 'ETW local file empty or exceeds bounded capacity'
   }
+  Write-Host "C545D_GIO_ETW_MERGED_SIZE,arm=$Arm,bytes=$((Get-Item -LiteralPath $etl).Length),cap_bytes=$mergedCapBytes,raw_uploaded=0"
   # Use the SAME private ETL and independently validated private GIO DLL
   # PDB with matching CodeView GUID+age; this is not a zero-leak verdict.
   # Before the ETLX replay, independently validate process-local numeric
