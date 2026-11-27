@@ -158,7 +158,7 @@ internal static class Program
         private const int MaxReallocGap=32;
         private readonly record struct Key(ulong Heap,ulong Address);
         private readonly record struct Entry(long Bytes,Cohort Cohort,long Birth,
-            int Reallocs,bool GetterFrame);
+            int Reallocs,bool GetterFrame,int BirthEpoch);
         private readonly record struct Held(Entry Entry,long Event,int Generation);
         private readonly Dictionary<Key,Entry> live=new();
         private readonly Dictionary<Key,Held> pending=new();
@@ -181,7 +181,7 @@ internal static class Program
                 throw new ArgumentException("cohort_overlapping_live");
             if(pending.Remove(key,out var old))
                 freed[(int)old.Entry.Cohort]++;
-            live.Add(key,new Entry(size,source,sequence,0,getterFrame));
+            live.Add(key,new Entry(size,source,sequence,0,getterFrame,generation));
             original[(int)source]++;
         }
         internal void Realloc(ulong heap,ulong oldAddress,ulong newAddress,
@@ -222,7 +222,7 @@ internal static class Program
             if(wasLive)live.Remove(before);
             else pending.Remove(before);
             live.Add(after,new Entry(newSize,parent.Cohort,parent.Birth,
-                parent.Reallocs+1,parent.GetterFrame));
+                parent.Reallocs+1,parent.GetterFrame,parent.BirthEpoch));
             reallocated[(int)parent.Cohort]++;
         }
         internal void Free(ulong heap,ulong address)
@@ -255,6 +255,26 @@ internal static class Program
                 if(e.GetterFrame&&(!onlyPackage||e.Cohort==Cohort.PackageEnum))
                 {count++;bytes=checked(bytes+e.Bytes);}
             return (count,bytes);
+        }
+        // Birth epoch is assigned only at original allocation. A realloc
+        // carries the original epoch; a freed and reused address does not.
+        // Group 0 getter/package, 1 getter/outside package, 2 nongetter/package,
+        // 3 all other allocations. These four groups are disjoint.
+        internal (long Live,long Bytes)[,] BirthCensus(int phase)
+        {
+            if(phase<0||phase>2||generation!=phase)
+                throw new ArgumentException("birth_epoch_cut_invalid");
+            var result=new (long Live,long Bytes)[4,3];
+            foreach(var e in live.Values)
+            {
+                if(e.BirthEpoch<0||e.BirthEpoch>phase)
+                    throw new ArgumentException("birth_epoch_cut_invalid");
+                bool pkg=e.Cohort==Cohort.PackageEnum;
+                int group=e.GetterFrame?(pkg?0:1):(pkg?2:3);
+                var old=result[group,e.BirthEpoch];
+                result[group,e.BirthEpoch]=(checked(old.Live+1),checked(old.Bytes+e.Bytes));
+            }
+            return result;
         }
         internal void CheckAgainst(GenericHeapLifetime generic)
         {
@@ -313,6 +333,7 @@ internal static class Program
         private readonly List<(long Count,long Bytes,(long Live,long Bytes)[] Strict,
             (long Live,long Bytes)[] Nearest,(long Live,long Bytes) GetterAll,
             (long Live,long Bytes) GetterPackage)> samples=new();
+        private readonly List<(long Live,long Bytes)[,]> birthSamples=new();
         private int next;
         private long lastQpc;
         private bool sawEventBeforeBaseline,sawEventAfterBaseline;
@@ -358,6 +379,25 @@ internal static class Program
             if(strictGetter!=nearestGetter||getterPackage.Live>nearestGetter.Live||
                getterPackage.Bytes>nearestGetter.Bytes)
                 throw new ArgumentException("active_epoch_snapshot_totals_mismatch");
+            var births=nearest.BirthCensus(next);
+            long count=0,bytes=0,getterCount=0,getterBytes=0,pkgCount=0,pkgBytes=0;
+            for(int group=0;group<4;group++)
+                for(int born=0;born<3;born++)
+                {
+                    var v=births[group,born];
+                    count=checked(count+v.Live);bytes=checked(bytes+v.Bytes);
+                    if(group<2){getterCount+=v.Live;getterBytes+=v.Bytes;}
+                    if(group==0||group==2){pkgCount+=v.Live;pkgBytes+=v.Bytes;}
+                    if(born>next&&(v.Live!=0||v.Bytes!=0))
+                        throw new ArgumentException("birth_epoch_future_allocation");
+                    if(born<next&&next>0&&v.Live>birthSamples[next-1][group,born].Live)
+                        throw new ArgumentException("birth_epoch_old_cohort_grew");
+                }
+            if(count!=all.Count||bytes!=all.Bytes||
+               (getterCount,getterBytes)!=nearestGetter||
+               (pkgCount,pkgBytes)!=b[(int)Cohort.PackageEnum])
+                throw new ArgumentException("birth_epoch_accounting_mismatch");
+            birthSamples.Add(births);
             samples.Add((all.Count,all.Bytes,a,b,nearestGetter,getterPackage));
             strict.MarkEpochCut();
             nearest.MarkEpochCut();
@@ -382,8 +422,11 @@ internal static class Program
             return nearest?samples[phase].Nearest[(int)cohort]:
                 samples[phase].Strict[(int)cohort];
         }
+        internal (long Live,long Bytes) ReadBirth(int phase,int group,int born)
+            =>birthSamples[phase][group,born];
         internal void Report(string arm)
         {
+            string[] groups={"getter_package","getter_other","package_nongetter","other"};
             for(int p=0;p<samples.Count;p++)
             {
                 foreach(bool isNearest in new[]{false,true})
@@ -398,6 +441,15 @@ internal static class Program
                             "source_heap_only=1,direct_allocator_not_proven=1,release_HOLD=1");
                     }
                 }
+                for(int group=0;group<4;group++)
+                    for(int born=0;born<=p;born++)
+                    {
+                        var value=ReadBirth(p,group,born);
+                        Console.WriteLine("C545D_GIO_BIRTH_EPOCH_SURVIVAL,"+
+                            $"arm={arm},cut={Names[p]},birth={Names[born]},group={groups[group]},"+
+                            $"live={value.Live},request_bytes_live={value.Bytes},"+
+                            "original_lineage=1,realloc_preserved=1,leak_proven=0");
+                    }
                 Console.WriteLine("C545D_GIO_ACTIVE_GETTER_FRAME_SCOPE,"+
                     $"arm={arm},phase={Names[p]},"+
                     $"live={samples[p].GetterAll.Live},"+
@@ -412,6 +464,8 @@ internal static class Program
                     $"tracked_request_bytes_live={samples[p].Bytes},"+
                     "comparable_worker_epoch_not_proven_by_etlx=1,release_HOLD=1");
             }
+            Console.WriteLine("C545D_GIO_BIRTH_EPOCH_ACCOUNTING_PASS,"+
+                $"arm={arm},cuts=3,groups=4,rows=24,crosschecked=1,leak_proven=0");
             Console.WriteLine("C545D_GIO_ACTIVE_SOURCE_EPOCH_ACCOUNTING_PASS,"+
                 $"arm={arm},phases=3,models=2,categories=10,"+
                 "crosschecked_generic_live_and_bytes=1,"+
@@ -582,6 +636,27 @@ internal static class Program
         catch(ArgumentException ex) when(ex.Message=="active_epoch_first_cut_not_inside_trace")
         {missingTraceRejected=true;}
         Expect(crosscutRejected&&missingTraceRejected);
+        // A baseline allocation reallocated in epoch 1 retains its birth.
+        // Address reuse after free must instead acquire epoch 2. The old
+        // cohort's bytes may change via realloc; its count cannot grow.
+        var birth=new MethodLedger();
+        birth.Alloc(1,10,20,Cohort.PackageEnum,true);
+        Expect(birth.BirthCensus(0)[0,0]==(1L,20L));
+        birth.MarkEpochCut();
+        birth.Realloc(1,10,11,20,40);
+        birth.Alloc(1,12,50,Cohort.PackageEnum,false);
+        Expect(birth.BirthCensus(1)[0,0]==(1L,40L)&&
+               birth.BirthCensus(1)[2,1]==(1L,50L));
+        birth.MarkEpochCut();
+        birth.Free(1,11);
+        birth.Alloc(1,11,60,Cohort.PackageEnum,true);
+        Expect(birth.BirthCensus(2)[0,0]==(0L,0L)&&
+               birth.BirthCensus(2)[0,2]==(1L,60L)&&
+               birth.BirthCensus(2)[2,1]==(1L,50L));
+        Expect(sourceCuts.ReadBirth(0,3,0)==(1L,25L)&&
+               sourceCuts.ReadBirth(1,3,0)==(1L,40L)&&
+               sourceCuts.ReadBirth(2,3,0)==(0L,0L));
+        Console.WriteLine("C545D_GIO_BIRTH_EPOCH_SELFTEST_PASS,realloc=1,address_reuse=1,old_cohort_free=1,cut_totals=1");
         var lifetime=new GenericHeapLifetime();
         lifetime.Alloc(12,100,168,GenericHeapLifetime.OriginProof.VerifiedGioMethod);
         lifetime.Free(12,100);
