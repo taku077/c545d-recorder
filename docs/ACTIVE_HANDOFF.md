@@ -11,8 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#46059512238](https://github.com/taku077/c545d-recorder/actions/runs/46059512238) |
-| C545D stack lookup key source preflight | in_progress | [#46059508392](https://github.com/taku077/c545d-recorder/actions/runs/46059508392) |
+| C545D active development handoff auto-refresh | in_progress | [#46059512238](https://github.com/taku077/c545d-recorder/actions/runs/46059512238) |
+| C545D stack lookup key source preflight | failure | [#46059508392](https://github.com/taku077/c545d-recorder/actions/runs/46059508392) |
 
 ## Current development findings from the active PR
 
