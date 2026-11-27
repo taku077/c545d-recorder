@@ -1,0 +1,382 @@
+name: C545D commit classification and localized regression
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-gio-commit-classification-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  commit-classification:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify source and native PDB identity contracts before any GLib build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          py tests/audit_c545d_gio_first_allocation_stack_readiness_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Original AppInfo source audit selftest invalid'}
+          py tests/patch_c545d_gio_etw_preinit_source_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'AppInfo preinit source fence selftest invalid'}
+          py tests/audit_c545d_private_pdb_guid_age_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'Native GUID+age PDB parser selftest failed'}
+          dotnet build tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Actual GIO ETLX source census does not compile'}
+          dotnet run --no-build --project tests/C545DGioEtlxOwnerCensus/C545DGioEtlxOwnerCensus.csproj --configuration Release -- --selftest
+          if($LASTEXITCODE -ne 0){throw 'False GIO owner/source classifier not rejected'}
+          $tokens=$null;$errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path tests/Invoke-C545DGioActiveEpochEtwCI.ps1).Path,
+            [ref]$tokens,[ref]$errors)
+          if(@($errors).Count -ne 0){
+            foreach($parseError in $errors){
+              $id=$parseError.ErrorId
+              if($id -notmatch '^[A-Za-z0-9_]+$'){$id='UNKNOWN'}
+              Write-Host "C545D_GIO_CONTROLLER_PARSE_ERROR,id=$id,line=$($parseError.Extent.StartLineNumber),column=$($parseError.Extent.StartColumnNumber)"
+            }
+            throw 'Active two-epoch disposable GIO ETW controller PowerShell source invalid'
+          }
+          # Requalify the four arms with explicit private trace file paths and numeric logger observations; no increased file cap.
+          Write-Host 'C545D_GIO_FIRST_APPINFO_PREFLIGHT_PASS,source_before_initialization=1,exact_pdb_signature_guard=1,no_host_work=1'
+      - name: Build source-pinned Combo GLib locally (CI only)
+        id: native_build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
+          if($LASTEXITCODE -ne 0){throw 'Meson tools failed'}
+          $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $src
+          if($LASTEXITCODE -ne 0){throw 'Source clone failed'}
+          $sourceSha=(git -C $src rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $sourceSha -ne 'ca20e4ac71864f08e980dc044ac96c06d5482b37'){throw 'GLib source provenance mismatch'}
+          foreach($patch in @('patch_glib_appinfo_weak_backrefs.py','patch_glib_registry_owned_path.py','patch_glib_msvc_gio_sdk_export.py')){
+            $path=Join-Path tests $patch
+            $old=(git rev-parse "035812d0059557cf82270a19eac978dc45a3f5b5:$($path.Replace('\','/'))").Trim()
+            if($LASTEXITCODE -ne 0 -or $old.Length -ne 40){throw 'Historical Core patch identity unavailable'}
+            $actual=(git hash-object $path).Trim()
+            if($LASTEXITCODE -ne 0 -or $actual -ne $old){throw 'Core patch differs from historical source'}
+          }
+          py tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'Core weakref patch failed'}
+          py tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'Core UTF16 patch failed'}
+          py tests/patch_glib_registry_watch_lifetime_ci.py "$src/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'CI-only watch lifetime trace patch failed'}
+          py tests/patch_glib_msvc_gio_sdk_export.py "$src/gio/meson.build"
+          if($LASTEXITCODE -ne 0){throw 'SDK export patch failed'}
+          py tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'UWP staging source patch failed'}
+          py tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native path patch failed'}
+          py tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Owned DisplayName cache source patch failed'}
+          py tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Dedicated WinRT epoch bridge source patch failed'}
+          py tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Generation lazy rescan source patch failed'}
+          py tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'GAppInfoMonitor worker source patch failed'}
+          py tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Native unsolicited GIO notification source patch failed'}
+          # The preceding bridge patch produces the pinned ten-space getter callsite.
+          # Its former 11-space synthetic matcher failed #45220366114 before compilation.
+          py tests/patch_c545d_gio_displayname_frame_ci.py "$src/gio/gwin32packageparser.c"
+          if($LASTEXITCODE -ne 0){throw 'Exact WinRT DisplayName getter-frame source overlay not verified'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'AppInfo phase source selftest failed'}
+          py tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'AppInfo worker/parser source phase trace patch failed'}
+          py tests/patch_c545d_gio_etw_stop_qpc_ci.py --appinfo "$src/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'QPC worker source overlay invalid'}
+          py tests/patch_c545d_winrt_spontaneous_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher signal source patch failed'}
+          py tests/patch_c545d_winrt_status_only_listener_ci.py tests/c545d_winrt_dedicated_watch.cpp
+          if($LASTEXITCODE -ne 0){throw 'Native watcher status source patch failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 /LD tests/c545d_winrt_dedicated_watch.cpp /Fe:artifacts/c545d_dedicated_watch.dll /link /IMPLIB:artifacts/c545d_dedicated_watch.lib windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'MSVC native PackageCatalog sidecar build failed'}
+          git -C $src diff --check
+          if($LASTEXITCODE -ne 0){throw 'Source diff whitespace invalid'}
+          $changed=@(git -C $src diff --name-only | Sort-Object)
+          $expected=@('gio/gwin32appinfo.c','gio/gwin32packageparser.c','gio/gwin32registrykey.c','gio/meson.build')
+          $expected=@($expected | Sort-Object)
+          if($changed.Count -ne 4 -or (Compare-Object $changed $expected)){throw 'Unexpected source changes'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          $reference=Get-Content docs/CORE_GIO_SDK_1288_REFERENCE.json -Raw|ConvertFrom-Json
+          if($refHash -ne 'A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'){throw 'SDK GIO provenance mismatch'}
+          foreach($entry in $reference.dll_sha256.PSObject.Properties){
+            if((Get-FileHash (Join-Path "$sdk/bin" $entry.Name) -Algorithm SHA256).Hash -ne $entry.Value){throw 'SDK dependency provenance mismatch'}
+          }
+          $env:LIB="$sdk/lib;$env:LIB"; $env:INCLUDE="$sdk/include;$env:INCLUDE"
+          $env:PKG_CONFIG_PATH="$sdk/lib/pkgconfig;$env:PKG_CONFIG_PATH"
+          $env:CMAKE_PREFIX_PATH="$sdk;$env:CMAKE_PREFIX_PATH"
+          $env:PATH="$sdk/bin;$env:PATH"
+          $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
+          py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=debugoptimized
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path configure failed'}
+          py -m mesonbuild.mesonmain compile -C $build -j 4
+          if($LASTEXITCODE -ne 0){throw 'MSVC native-path compile failed'}
+          $built=@(Get-ChildItem $build -Recurse -Filter gio-2.0-0.dll -File)
+          if($built.Count -ne 1){throw 'Built GIO DLL not unique'}
+          py tests/audit_c545d_private_pdb_guid_age_ci.py --dll $built[0].FullName --pdb-root $build
+          if($LASTEXITCODE -ne 0){throw 'Actual native GLib/GIO PDB does not match compiled DLL CodeView signature'}
+          Write-Host 'C545D_GIO_FIRST_SOURCE_PDB_IDENTITY_VERIFIED,source_GLIB_2824=1,actual_GIO_method_not_yet_proven=1,raw_pdb_uploaded=0'
+          function GetExports($path){
+            $rows=@(& dumpbin.exe /nologo /exports $path)
+            if($LASTEXITCODE -ne 0){throw 'dumpbin export inventory failed'}
+            return ,@($rows | ForEach-Object {
+              if($_ -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)'){$Matches[1]}
+            } | Sort-Object -Unique)
+          }
+          $official=GetExports "$sdk/bin/gio-2.0-0.dll"
+          $new=GetExports $built[0].FullName
+          if($official.Count -ne 2047 -or $new.Count -ne 2047 -or
+             @($official | Where-Object {$_ -notin $new}).Count){throw 'SDK 2047-export ABI mismatch'}
+          $dir=Join-Path (Resolve-Path artifacts).Path 'overlay-combo'
+          New-Item -ItemType Directory $dir -Force | Out-Null
+          Copy-Item $built[0].FullName (Join-Path $dir 'gio-2.0-0.dll')
+          "C545D_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+          "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          foreach($dir in @($build)){
+            $opts=Get-Content (Join-Path $dir 'meson-info/intro-buildoptions.json') -Raw|ConvertFrom-Json
+            foreach($pair in @(@{name='buildtype';value='debugoptimized'},@{name='debug';value=$true},@{name='optimization';value='2'})){
+              $opt=@($opts|Where-Object name -eq $pair.name)
+              if($opt.Count -ne 1 -or $opt[0].value -ne $pair.value){throw 'Matched build options mismatch'}
+            }
+          }
+          Write-Host 'C545D_GIO_CLEAN_BUILD_PASS,combo=debugoptimized,optimization=2,debug=1,exports2047=1,host_untouched=1'
+      - name: Compare identical short workloads without ETW or external handle census
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $sdk=$env:C545D_SDK_ROOT
+          $root=Join-Path $env:RUNNER_TEMP 'c545d-resource-only'
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          $source=Join-Path $root 'c545d_gio_preinit_probe.c'
+          Copy-Item tests/gio_appinfo_key_handle_probe.c $source
+          py tests/patch_c545d_gio_enum_substage_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'enum substage patch failed'}
+          py tests/audit_c545d_gio_16_cycle_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw '16-cycle audit selftest failed'}
+          py tests/audit_c545d_gio_16_cycle_ci.py --patch $source
+          if($LASTEXITCODE -ne 0){throw '16-cycle source patch failed'}
+          py tests/patch_c545d_gio_resource_stages_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'disposable stage patch failed'}
+          py tests/audit_c545d_gio_sparse_heap_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'sparse heap selftest failed'}
+          py tests/audit_c545d_gio_sparse_heap_ci.py --patch $source
+          if($LASTEXITCODE -ne 0){throw 'sparse heap source patch failed'}
+          py tests/audit_c545d_gio_commit_ci.py --selftest
+          if($LASTEXITCODE -ne 0){throw 'commit audit selftest failed'}
+          py tests/audit_c545d_gio_commit_ci.py --patch $source
+          if($LASTEXITCODE -ne 0){throw 'commit overlay failed'}
+          $exe=Join-Path $root 'c545d_gio_resource_only_probe.exe'
+          $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
+          & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@($source,"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $exe)){throw 'resource probe compile failed'}
+          $keys=@('PATH','C545D_EXPECTED_GIO_DLL','C545D_HANDLE_EXE','C545D_CI_ETW_PHASE_ROOT',
+            'C545D_CI_APPINFO_PHASE_TRACE','C545D_DIAG_UWP_CACHE_DISPLAYNAME','C545D_DIAG_UWP_CACHE_EVENT_BRIDGE',
+            'C545D_DIAG_UWP_CACHE_REFRESH_EVERY','C545D_DIAG_UWP_BRIDGE_INJECT_SCAN',
+            'C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER','C545D_DIAG_UWP_SKIP_CURRENT',
+            'C545D_DIAG_UWP_SKIP_DISPLAYNAME','C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN')
+          $keys+=@('C545D_DIAG_UWP_C_BRIDGE_DLL')
+          $keys+=@(Get-ChildItem Env:|Where-Object {$_.Name -match '^C545D_(DIAG_|CI_)'}|ForEach-Object Name)
+          $keys=@($keys|Sort-Object -Unique)
+          $saved=@{}
+          foreach($key in $keys){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
+          $workers=@{}
+          $failures=0
+          # Only fixed stage names and numeric counters; never emit raw stdout.
+          function Observe-Probe($proc,[string]$out,[string]$label,[int]$sample){
+            try{
+              $proc.Refresh()
+              $cpu=[long]$proc.TotalProcessorTime.Ticks
+              $private=[long]$proc.PrivateMemorySize64
+              $threads=$proc.Threads.Count
+              $handles=$proc.HandleCount
+              Write-Host "C545D_GIO_STAGE_SAMPLE,label=$label,sample=$sample,cpu100ns=$cpu,private_bytes=$private,threads=$threads,handles=$handles"
+            }catch{Write-Host "C545D_GIO_STAGE_SAMPLE_GAP,label=$label,sample=$sample"}
+            try{
+              if((Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -le 1000000){
+                $safe=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_GIO_RESOURCE_STAGE,stage=(main|monitor_begin|monitor_end|enum_begin|enum_end|drain_begin|drain_end|vm_begin|vm_end|main_done),index=(?:[0-9]|1[0-8])$'})
+                $sub=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_GIO_ENUM_SUBSTAGE,stage=(get_begin|get_end|free_begin|free_end|context_begin|context_end),index=(?:[0-9]|1[0-8]),qpc=\d+$'})
+                if($sub.Count){Write-Host "C545D_GIO_RESOURCE_SUBSTAGE_LAST,label=$label,sample=$sample,$($sub[-1].Substring('C545D_GIO_ENUM_SUBSTAGE,'.Length))"}
+                if($safe.Count){Write-Host "C545D_GIO_LAST_STAGE,label=$label,sample=$sample,$($safe[-1].Substring('C545D_GIO_RESOURCE_STAGE,'.Length))"}
+                $identity=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_GIO_RESOURCE_DLL_PATH,match=[01]$'})
+                if($identity.Count -eq 1){Write-Host "C545D_GIO_STAGE_DLL,label=$label,sample=$sample,$($identity[0].Substring('C545D_GIO_RESOURCE_DLL_PATH,'.Length))"}
+              }
+            }catch{Write-Host "C545D_GIO_STAGE_LOG_GAP,label=$label,sample=$sample"}
+          }
+          function Wait-BoundedProbe($proc,[string]$out,[string]$label){
+            for($sample=1;$sample -le 6;$sample++){
+              if($proc.WaitForExit(15000)){return $true}
+              Observe-Probe $proc $out $label $sample
+            }
+            return $false
+          }
+          try{
+            foreach($key in $keys){if($key -ne 'PATH'){[Environment]::SetEnvironmentVariable($key,$null,'Process')}}
+            $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$($saved['PATH'])"
+            $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
+            $env:C545D_CI_APPINFO_PHASE_TRACE='1'
+            foreach($mode in @('uncached','event-cache')){
+              if($mode -eq 'event-cache'){
+                $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+                $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
+                $env:C545D_DIAG_UWP_C_BRIDGE_DLL=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
+              }
+              foreach($arm in @('nochange','registry')){
+                Write-Host "C545D_COMMIT_BEGIN,mode=$mode,arm=$arm,etw=0,external_handle_census=0,heapwalk=1"
+                $out=Join-Path $root "$mode-$arm-private.txt"
+                $err=Join-Path $root "$mode-$arm-error-private.txt"
+                $arglist=@('--vm-summary','--heap-summary')
+                if($arm -eq 'nochange'){$arglist+='--no-registry-change'}
+                $sw=[Diagnostics.Stopwatch]::StartNew()
+                $proc=Start-Process -FilePath $exe -ArgumentList $arglist -WorkingDirectory $root -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+                try{
+                  if(-not (Wait-BoundedProbe $proc $out "$mode-$arm")){
+                    Write-Host "C545D_COMMIT_TIMEOUT,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds)"
+                    throw 'resource-only workload timeout'
+                  }
+                  if($proc.ExitCode -ne 0){
+                    Observe-Probe $proc $out "$mode-$arm" 7
+                    throw 'resource-only probe returned nonzero'
+                  }
+                  if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
+                  $lines=@(Get-Content -LiteralPath $out)
+                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
+                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=16,notifications=\d+,reg_changes=[01]$'})
+                  $expected=if($arm -eq 'registry'){1}else{0}
+                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
+                  $res=@(& py tests/audit_c545d_gio_16_cycle_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 27){throw '16-cycle resource audit failed'}
+                  $w=[regex]::Match($res[0],'^C545D_GIO_16_WORKERS,counts=(\d+(?::\d+){15}),hz=(\d+)$')
+                  if(-not $w.Success){throw 'worker numeric shape invalid'}
+                  $workers["$mode-$arm"]=$w.Groups[1].Value
+                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
+                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
+                  if($mode -eq 'uncached'){
+                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
+                  }else{
+                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
+                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
+                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
+                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
+                    Write-Host $cache[-1]
+                    Write-Host $bridge[-1]
+                  }
+                  $heap=@(& py tests/audit_c545d_gio_sparse_heap_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $heap.Count -ne 14){throw 'sparse heap audit failed'}
+                  foreach($row in $res){Write-Host $row}
+                  foreach($row in $heap){Write-Host $row}
+                  $commit=@(& py tests/audit_c545d_gio_commit_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $commit.Count -ne 15){throw 'commit classification audit failed'}
+                  foreach($row in $commit){Write-Host $row}
+                  Write-Host "C545D_COMMIT_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
+                }catch{
+                  $failures++
+                  Observe-Probe $proc $out "$mode-$arm" 7
+                  Write-Host "C545D_COMMIT_ARM_GAP,mode=$mode,arm=$arm"
+                }finally{
+                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            if($failures -ne 0){throw 'one or more resource arms unqualified'}
+            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
+            Write-Host 'C545D_COMMIT_COMPARE_PASS,arms=4,cycles=16,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
+          }finally{
+            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
+          }
+      - name: Verify genuine resource events on source-pinned MSVC Combo
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $tokens=$null;$errors=$null
+          $controller=(Resolve-Path tests/Invoke-C545DResourcePackageEventCI.ps1).Path
+          [void][Management.Automation.Language.Parser]::ParseFile($controller,[ref]$tokens,[ref]$errors)
+          if(@($errors).Count){throw 'resource controller parse failed'}
+          $sdk=$env:C545D_SDK_ROOT
+          $dir=(Resolve-Path artifacts/overlay-combo).Path
+          $art=(Resolve-Path artifacts).Path
+          $root=Join-Path $env:RUNNER_TEMP 'c545d-native-localized'
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          $source=Join-Path $root 'c545d_msvc_localized_scan.c'
+          Copy-Item tests/c545d_gio_real_msix_cache_scan.c $source
+          py -E tests/audit_c545d_msvc_localized_refresh_ci.py --patch $source
+          if($LASTEXITCODE -ne 0){throw 'scanner identity overlay failed'}
+          $scan=Join-Path $root 'c545d_msvc_localized_scan.dll'
+          $stub=Join-Path $root 'c545d_ci_noop.exe'
+          $probe=Join-Path $root 'c545d_ci_localized_pkg_display_probe.exe'
+          & cl.exe /nologo /W4 /MD /O2 /TC /LD "/I$sdk/include/glib-2.0" "/I$sdk/lib/glib-2.0/include" $source "/Fe:$scan" /link "/LIBPATH:$sdk/lib" gio-2.0.lib gobject-2.0.lib glib-2.0.lib advapi32.lib
+          if($LASTEXITCODE -ne 0 -or -not(Test-Path $scan)){throw 'native GIO scanner compile failed'}
+          & cl.exe /nologo /W4 /MD /O2 tests/c545d_ci_package_noop.c "/Fe:$stub" /link /SUBSYSTEM:WINDOWS
+          if($LASTEXITCODE -ne 0){throw 'fixture stub compile failed'}
+          & cl.exe /nologo /std:c++17 /EHsc /W4 /MD /O2 tests/c545d_ci_localized_pkg_display_probe.cpp "/Fe:$probe" /link windowsapp.lib runtimeobject.lib
+          if($LASTEXITCODE -ne 0){throw 'WinRT localized probe compile failed'}
+          $keys=@('PATH','C545D_EXPECTED_GIO_DLL','C545D_DIAG_UWP_C_BRIDGE_DLL','C545D_DIAG_UWP_CACHE_DISPLAYNAME','C545D_DIAG_UWP_CACHE_EVENT_BRIDGE','C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN','C545D_DIAG_APPINFO_MONITOR_UNSOLICITED')
+          $keys+=@(Get-ChildItem Env:|Where-Object {$_.Name -match '^C545D_(DIAG_|CI_)'}|ForEach-Object Name)
+          $keys=@($keys|Sort-Object -Unique)
+          $saved=@{}
+          foreach($key in $keys){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
+          $out=Join-Path $root 'resource-private.log'
+          $err=Join-Path $root 'resource-error-private.log'
+          try{
+            foreach($key in $keys){if($key -ne 'PATH'){[Environment]::SetEnvironmentVariable($key,$null,'Process')}}
+            $env:PATH="$dir;$sdk/bin;$($saved['PATH'])"
+            $env:C545D_EXPECTED_GIO_DLL=Join-Path $dir 'gio-2.0-0.dll'
+            $env:C545D_DIAG_UWP_C_BRIDGE_DLL=Join-Path $art 'c545d_dedicated_watch.dll'
+            $env:C545D_DIAG_UWP_CACHE_DISPLAYNAME='1'
+            $env:C545D_DIAG_UWP_CACHE_EVENT_BRIDGE='1'
+            $env:C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN='1'
+            $env:C545D_DIAG_APPINFO_MONITOR_UNSOLICITED='1'
+            Write-Host 'C545D_MSVC_LOCALIZED_BEGIN,cache=1,lazy=1,unsolicited=1,real_OS_events_only=1'
+            # Run the same signed disposable fixture controller as the prior
+            # successful MinGW test; keep all unfiltered output on the runner.
+            $args=@('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$controller+'"'),'-WatchDll',('"'+$env:C545D_DIAG_UWP_C_BRIDGE_DLL+'"'),'-StubExe',('"'+$stub+'"'),'-GioScanDll',('"'+$scan+'"'),'-LocalizedProbeExe',('"'+$probe+'"'),'-AssertLocalizedDisplayName','-ReverseResourceLanguage')
+            $proc=Start-Process -FilePath powershell.exe -ArgumentList $args -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -Wait
+            # Publish only fixed allowlisted stage names and numeric evidence.
+            # Never copy exception text, paths, identities, or raw logs.
+            foreach($file in @($out,$err)){
+              if((Test-Path -LiteralPath $file) -and (Get-Item -LiteralPath $file).Length -le 16000000){
+                $raw=(Get-Content -LiteralPath $file -Raw).Replace([string][char]0,'')
+                foreach($line in ($raw -split '\r?\n')){
+                  if($line -match '^(C545D_MSVC_LOCALIZED_DLL_PATH,match=[01]|C545D_RESOURCE_CI_CLEANUP_EXECUTED=1,runner_only=1|C545D_RESOURCE_GIO_PREQUERY,stage=(main_add|resource_add|resource_remove),changed=\d+,CI_only=1|C545D_GIO_RESOURCE_DISPLAY,stage=[123],fresh=[01],english=\d+,french=\d+,reverse=1,CI_only=1)$'){
+                    Write-Host $line
+                  }
+                }
+                $codes=[regex]::Matches($raw,'\b(?:C545D_RESOURCE_CI_(?:GIO_BASELINE_FAILED|GIO_MONITOR_START_FAILED|SNAPSHOT_TIMEOUT|MAIN_EVENT_MISSING|PREEXISTING_TEST_IDENTITY|PRI_OUTPUT_MISSING|PARENT_FULLNAME_CHANGED|FAILURE|OPEN_FAILED|ENTER_FAILED|RESOURCE_MISSING)|C545D_GIO_RESOURCE_VALUE_NOT_FRESH_(?:MAIN_ADD|RESOURCE_ADD|RESOURCE_REMOVE)|DllNotFoundException|EntryPointNotFoundException|BadImageFormatException|0x[89A-Fa-f][0-9A-Fa-f]{7})\b')
+                foreach($code in ($codes.Value|Sort-Object -Unique|Select-Object -First 32)){Write-Host "C545D_MSVC_LOCALIZED_SAFE_ERROR,code=$code"}
+              }
+            }
+            if($proc.ExitCode -ne 0){
+              Write-Host "C545D_MSVC_LOCALIZED_CONTROLLER_GAP,exit=$($proc.ExitCode)"
+              throw 'isolated resource controller failed'
+            }
+            py -E tests/audit_c545d_msvc_localized_refresh_ci.py --input $out
+            if($LASTEXITCODE -ne 0){throw 'native localized freshness gate failed'}
+          }finally{
+            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
+            Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
+          }
