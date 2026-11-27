@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -45,30 +47,42 @@ jobs:
           }
           # Requalify the four arms with explicit private trace file paths and numeric logger observations; no increased file cap.
           Write-Host 'C545D_GIO_FIRST_APPINFO_PREFLIGHT_PASS,source_before_initialization=1,exact_pdb_signature_guard=1,no_host_work=1'
-      - uses: actions/download-artifact@v4
-        with:
-          name: c545d-core-only-gio-2824-msvc-ci-not-for-install
-          repository: taku077/c545d-recorder
-          run-id: 44757713497
-          github-token: ${{ github.token }}
-          path: artifacts/core
-      - name: Build native+event-epoch DisplayName cache GLib from upstream 2.82.4 via MSVC x64
+      - name: Build source-pinned Core and Combo GLib controls locally (CI only)
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
-          $core=(Resolve-Path artifacts/core/gio-2.0-0.dll).Path
-          $manifest=Get-Content artifacts/core/manifest.txt -Raw
-          $hash=(Get-FileHash $core -Algorithm SHA256).Hash
-          if($hash -ne '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD' -or
-             $manifest -notmatch [regex]::Escape("CANDIDATE_GIO_SHA256=$hash") -or
-             $manifest -notmatch 'STATUS=CI_TEST_ONLY_NOT_APPROVED_FOR_HOST'){
-            throw 'Core-only candidate provenance mismatch'
-          }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           py -m pip install --disable-pip-version-check "meson>=1.4,<1.10" ninja
           if($LASTEXITCODE -ne 0){throw 'Meson tools failed'}
           $src=Join-Path $env:RUNNER_TEMP 'glib-2.82.4'
           git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git $src
           if($LASTEXITCODE -ne 0){throw 'Source clone failed'}
+          $sourceSha=(git -C $src rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $sourceSha -ne 'ca20e4ac71864f08e980dc044ac96c06d5482b37'){throw 'GLib source provenance mismatch'}
+          $coreSrc=Join-Path $env:RUNNER_TEMP 'glib-core-source'
+          git -C $src worktree add --detach $coreSrc $sourceSha
+          if($LASTEXITCODE -ne 0){throw 'Core worktree failed'}
+          foreach($patch in @('patch_glib_appinfo_weak_backrefs.py','patch_glib_registry_owned_path.py','patch_glib_msvc_gio_sdk_export.py')){
+            $path=Join-Path tests $patch
+            $old=(git rev-parse "035812d0059557cf82270a19eac978dc45a3f5b5:$($path.Replace('\','/'))").Trim()
+            if($LASTEXITCODE -ne 0 -or $old.Length -ne 40){throw 'Historical Core patch identity unavailable'}
+            $actual=(git hash-object $path).Trim()
+            if($LASTEXITCODE -ne 0 -or $actual -ne $old){throw 'Core patch differs from historical source'}
+          }
+          py tests/patch_glib_appinfo_weak_backrefs.py "$coreSrc/gio/gwin32appinfo.c"
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core weakref patch failed'}
+          py tests/patch_glib_registry_owned_path.py "$coreSrc/gio/gwin32registrykey.c"
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core UTF16 patch failed'}
+          py tests/patch_glib_msvc_gio_sdk_export.py "$coreSrc/gio/meson.build"
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core export patch failed'}
+          git -C $coreSrc diff --check
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core source diff invalid'}
+          $coreChanged=@(git -C $coreSrc diff --name-only | Sort-Object)
+          $coreExpected=@('gio/gwin32appinfo.c','gio/gwin32registrykey.c','gio/meson.build')
+          if($coreChanged.Count -ne 3 -or (Compare-Object $coreChanged $coreExpected)){throw 'Unexpected Core source changes'}
+          foreach($file in $coreExpected){
+            if(Select-String -LiteralPath (Join-Path $coreSrc $file) -Pattern 'C545D_DIAG_|C545D_CI_FORCE_|C545D_DIAG_APPINFO_' -Quiet){throw 'Unexpected diagnostic switches in Core source'}
+          }
           py tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
           if($LASTEXITCODE -ne 0){throw 'Core weakref patch failed'}
           py tests/patch_glib_registry_owned_path.py "$src/gio/gwin32registrykey.c"
@@ -120,11 +134,26 @@ jobs:
           $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
           if($p.ExitCode -ne 0){throw 'SDK install failed'}
           $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
-          if($manifest -notmatch [regex]::Escape("REFERENCE_GIO_SHA256=$refHash")){throw 'SDK provenance mismatch'}
+          $reference=Get-Content docs/CORE_GIO_SDK_1288_REFERENCE.json -Raw|ConvertFrom-Json
+          if($refHash -ne 'A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'){throw 'SDK GIO provenance mismatch'}
+          foreach($entry in $reference.dll_sha256.PSObject.Properties){
+            if((Get-FileHash (Join-Path "$sdk/bin" $entry.Name) -Algorithm SHA256).Hash -ne $entry.Value){throw 'SDK dependency provenance mismatch'}
+          }
           $env:LIB="$sdk/lib;$env:LIB"; $env:INCLUDE="$sdk/include;$env:INCLUDE"
           $env:PKG_CONFIG_PATH="$sdk/lib/pkgconfig;$env:PKG_CONFIG_PATH"
           $env:CMAKE_PREFIX_PATH="$sdk;$env:CMAKE_PREFIX_PATH"
           $env:PATH="$sdk/bin;$env:PATH"
+          $coreBuild=Join-Path $env:RUNNER_TEMP 'glib-core-build'
+          py -m mesonbuild.mesonmain setup $coreBuild $coreSrc --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=release
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core configure failed'}
+          py -m mesonbuild.mesonmain compile -C $coreBuild -j 4
+          if($LASTEXITCODE -ne 0){throw 'Rebuilt Core compile failed'}
+          $coreFiles=@(Get-ChildItem $coreBuild -Recurse -Filter gio-2.0-0.dll -File)
+          if($coreFiles.Count -ne 1){throw 'Rebuilt Core DLL not unique'}
+          $core=$coreFiles[0].FullName
+          $coreHash=(Get-FileHash $core -Algorithm SHA256).Hash
+          $same=[int]($coreHash -eq '67B9F7246E4744FEF7EE1EAD3BED4CE2179C6F0465EC68A92D01DD12B4A3CCAD')
+          Write-Host "C545D_CORE_REBUILT,source_sha=$sourceSha,patches_identical=1,sha256=$coreHash,historical_binary_match=$same,host_approved=0"
           $build=Join-Path $env:RUNNER_TEMP 'glib-native-cache-build'
           py -m mesonbuild.mesonmain setup $build $src --backend=ninja -Dtests=false -Dinstalled_tests=false -Ddocumentation=false -Dman=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dnls=disabled -Dauto_features=disabled -Ddefault_library=shared -Dbuildtype=debugoptimized
           if($LASTEXITCODE -ne 0){throw 'MSVC native-path configure failed'}
@@ -144,6 +173,8 @@ jobs:
           }
           $official=GetExports "$sdk/bin/gio-2.0-0.dll"
           $new=GetExports $built[0].FullName
+          $coreExports=GetExports $core
+          if($coreExports.Count -ne 2047 -or @($official|Where-Object {$_ -notin $coreExports}).Count){throw 'Rebuilt Core export parity mismatch'}
           if($official.Count -ne 2047 -or $new.Count -ne 2047 -or
              @($official | Where-Object {$_ -notin $new}).Count){throw 'SDK 2047-export ABI mismatch'}
           foreach($mode in @('core','combo')){
@@ -152,13 +183,7 @@ jobs:
             if($mode -eq 'core'){$file=$core}else{$file=$built[0].FullName}
             Copy-Item $file (Join-Path $dir 'gio-2.0-0.dll')
           }
-          $zip=Join-Path $env:RUNNER_TEMP 'handle.zip'
-          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zip -TimeoutSec 60
-          $dir=Join-Path $env:RUNNER_TEMP 'handle'
-          Expand-Archive -Path $zip -DestinationPath $dir -Force
-          if(-not (Test-Path "$dir/handle64.exe")){throw 'Handle64 missing'}
           "C545D_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "C545D_HANDLE_EXE=$dir/handle64.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
           "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host 'C545D_GIO_ETW_SOURCE_MSVC_BUILD_PASS,pinned_source=1,exports2047=1,debug_symbols=1,CI_only=1,host_untouched=1'
