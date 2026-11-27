@@ -22,9 +22,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run=46019612281
-          job=140575533522
-          sha=0f630225ac196cc143ee3fa7c3dec37a73ed8499
+          run=46029611369
+          job=140609786069
+          sha=8b2f65060d4f4e4a8f6b7bb623000a603fef7ccb
           gh api "repos/taku077/c545d-recorder/actions/runs/$run" > "$RUNNER_TEMP/run.json"
           jq -e --arg sha "$sha" '.head_sha == $sha' "$RUNNER_TEMP/run.json" >/dev/null
           if ! jq -e '.status == "completed" and .conclusion == "success"' "$RUNNER_TEMP/run.json" >/dev/null; then
