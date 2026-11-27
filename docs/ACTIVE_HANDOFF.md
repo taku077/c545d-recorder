@@ -3,17 +3,21 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4de1dea58874411a32215eb393773f6e98890ef7`
-- **PR updated at (UTC):** `2026-11-27T19:51:27Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4de1dea58874411a32215eb393773f6e98890ef7/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `187981785a247f5ba6b0900c59b82554f46eeae9`
+- **PR updated at (UTC):** `2026-11-27T19:51:43Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/187981785a247f5ba6b0900c59b82554f46eeae9/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46059607370](https://github.com/taku077/c545d-recorder/actions/runs/46059607370) |
+| C545D active development handoff auto-refresh | in_progress | [#46059637078](https://github.com/taku077/c545d-recorder/actions/runs/46059637078) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-28 JST — **corrected stack source preflight PASS**
+
+- [#46059586422 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46059586422) job 140710314808 exact 135ca05c. Actual logs C545D_STACK_KEY_SELFTEST_PASS (ASCII127/boundary2/nonascii2/case/empty/null/negative_patch3), C545D_STACK_KEY_CI_PATCH_PASS store_unchanged=1,epoch_guards=2 and C545D_STACK_KEY_SOURCE_PREFLIGHT_PASS native_windows=0,resource_improvement_proven=0,release_HOLD=1. Pinned source application and git diff --check passed. Not an MSVC native build, no new memory reduction proven. Next check guarded 256 run #46059020130; if qualified and residual persists, prepare a matched stack-key-only comparison, with event and media regressions before release. No host work.
 
 ### UPDATE 2026-11-28 JST — **stack helper selftest PASS; pinned source anchor mismatch fixed**
 
