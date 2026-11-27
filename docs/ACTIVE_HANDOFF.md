@@ -3,18 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `dca6e9c6e69810f334cff8303ae5f577b5f79619`
-- **PR updated at (UTC):** `2026-11-27T14:09:17Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/dca6e9c6e69810f334cff8303ae5f577b5f79619/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9cd39b0b7bceee5b4875c2ba9815c68aa44bb9d9`
+- **PR updated at (UTC):** `2026-11-27T14:09:37Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9cd39b0b7bceee5b4875c2ba9815c68aa44bb9d9/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46013343007](https://github.com/taku077/c545d-recorder/actions/runs/46013343007) |
-| C545D patched GIO active two-epoch resource and worker gate | in_progress | [#46013336741](https://github.com/taku077/c545d-recorder/actions/runs/46013336741) |
+| C545D active development handoff auto-refresh | in_progress | [#46013392476](https://github.com/taku077/c545d-recorder/actions/runs/46013392476) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 23:10 JST — **four-arm trace failed before any qualified arm; targeted ETW gap evidence added**
+
+- Resumed PR62 exact live HEAD 8c29dd5d matching main ACTIVE_HANDOFF, not stale web crawl. User trial frozen 2dc42121 ongoing, no new host request. [#46011977824 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46011977824) job 140549518513: actual MSVC source/PDB/SDK build PASS, first uncached/nochange arm reached postsettle at 14:05:48Z, xperf status lacked HeapSession (any_logger=1); failed closed at controller line 111, before any census or cache arm. No actual matched cache reduction, no evidence of cache regression. #46012578289 offline success only synthetic preflight, actual_qualified=0; #46012712912 handoff refresh success. Prior #45052226913 similar gap even with 512MB; do not blindly raise cap. Microsoft StartTraceA documents max size or I/O stop; neither proved by old logs; regex/enumeration visibility also unexcluded.
+- [8f48bd0d](https://github.com/taku077/c545d-recorder/commit/8f48bd0d3a15bafb631708842959efe62cf40619) changes only CI controller: explicit private heap/kernel trace file names (-f), numeric file length and independent logman listing at armed/postsettle/logger_gap, no raw paths or logs, retains 256MB heap cap and zero-loss/lineage gates. File length may include preallocation; logman visibility not definitive. [dca6e9c6](https://github.com/taku077/c545d-recorder/commit/dca6e9c6e69810f334cff8303ae5f577b5f79619) corrects preflight to parse actual invoked controller (previously parsed initial-source script) and triggers one targeted native four-arm requalification. No production changes. See https://learn.microsoft.com/en-us/windows-hardware/test/wpt/start and https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracea .
+- Next verify run at dca6e9c6; if successful audit actual existing logs without new build; if gap persists compare numeric file lengths and logman presence (not proof of capacity or data completeness), consider narrower validated capture or direct query of session properties, never waive zero-loss or silently truncate. No experiment result claimed before CI. PR draft, experimental GIO HOLD, recording/observer unchanged, no extra manual operation.
 
 ### UPDATE 2026-11-27 JST — **matched comparison audit preflight PASS; native four-arm measurement in progress**
 
@@ -54,12 +59,6 @@
 - User downloaded exact candidate ZIP through chat after GitHub browser link returned 404, and reported weekly observer appears to operate normally. This is user-reported startup, not independently measured host health; no ZIP or actual first segment/EOS/restart result received yet. Do not claim acceptance complete. Trial in progress, no experimental GIO DLL deployment authorized.
 - The existing Japanese acceptance plan (steps 5–6, commit b5cda2a2) remains authoritative: check first naturally finalized ~1h MP4 (both views, audio, observable synchronization, next segment), then perform ONE planned normal GUI recording stop, wait for final MP4 to finalize and check playback, restart recording. Leave detached observer running throughout; first scheduled 72h report is measured from observer state creation, not reset by recorder restart. Thereafter leave recording/observer running and submit scheduled safe ZIP; no repeated manual resource captures or deliberate network outage. If normal stop fails, do not force-stop or continue blindly; report and resolve safely. Actual long-run/reconnect and precise sync still unverified.
 - User objected to inconsistent recommendations: assistant incorrectly deferred planned stop/restart merely in response to user's proposed 72h run, then reversed when prompted. Corrected to existing plan. Keep required gates explicit, distinguish optional/deferred items, justify any change with evidence and consequences; do not omit a required check to agree with user. No new host operation beyond existing one-time acceptance, no new source changes. Continue independent Track B between uploads. Next: record actual first split and normal EOS/restart result when user provides it, then analyze first scheduled diagnostic ZIP when available.
-
-### UPDATE 2026-11-24 JST — **frozen candidate delivery and concrete Japanese single-session acceptance ready**
-
-- Resumed exact PR #62/main ACTIVE_HANDOFF HEAD ed57c216df20522886503600e95e56d3ba582c3b. User accepted ~458MiB, then asked to proceed with preparation. Verified frozen artifact 14921025945 present at [#45395330523](https://github.com/taku077/c545d-recorder/actions/runs/45395330523), name c545d-frozen-rc-unapproved-2dc42121, expiry 2026-12-24 21:37:57 JST. Inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, unchanged source 2dc42121. No new compilation or repeat qualification. GitHub signed-in Actions artifact is the prepared delivery route, not a published Releases asset.
-- [b5cda2a2](https://github.com/taku077/c545d-recorder/commit/b5cda2a291b76859ca5d6978380b11d594cdec05) adds docs/C545D_INITIAL_RC_DELIVERY_ACCEPTANCE_JA_20261124.md: actual verified download and inner ZIP hash, separate folder, one authorized normal old->new switch, preserve old app/DPAPI/settings/runtime/recordings, keep existing SEI choice (exact recording CI SEI OFF; startup ON/OFF checked), default metadata OFF/no new ffprobe or experimental GIO DLL, start detached observer after recording, natural first hourly close and one normal EOS/restart, no deliberate RTSP disconnect or repeated multi-hour test, manual ZIP optional only if useful, first 72h then 7d ongoing reports, retain existing observer schedule if present, rollback and failure limits. Read actual packaged START_WEEKLY_OBSERVER.cmd/EXPORT_WEEKLY_REPORT.cmd and observer state/cadence code. Existing automatic observer restart not implemented. User can download/inspect without stopping recording. No manual measurement until explicit trial authorization.
-- Next actual step: present ready candidate and request only specific authorization for planned real-camera switch/one integrated acceptance; do not create more preparation/test loops. If approved, guide minimal actions, retain existing old folder and observe first finalized segment/normal EOS; upload first scheduled ZIP. Track B can continue independently. No public Release created, no host change; release HOLD, install_approved=0, live_test_authorized=0, PR draft.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
