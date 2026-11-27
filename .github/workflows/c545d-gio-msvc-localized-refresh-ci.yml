@@ -167,7 +167,10 @@ jobs:
           $ErrorActionPreference='Stop'
           if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
           $tokens=$null;$errors=$null
-          $controller=(Resolve-Path tests/Invoke-C545DResourcePackageEventCI.ps1).Path
+          $controllerSource=(Resolve-Path tests/Invoke-C545DResourcePackageEventCI.ps1).Path
+          $controller=Join-Path $env:RUNNER_TEMP 'c545d_localized_stage_probe.ps1'
+          py tests/patch_c545d_localized_stage_ci.py --source $controllerSource --out $controller
+          if($LASTEXITCODE -ne 0){throw 'localized stage overlay failed'}
           [void][Management.Automation.Language.Parser]::ParseFile($controller,[ref]$tokens,[ref]$errors)
           if(@($errors).Count){throw 'resource controller parse failed'}
           $sdk=$env:C545D_SDK_ROOT
@@ -209,6 +212,17 @@ jobs:
             # successful MinGW test; keep all unfiltered output on the runner.
             $args=@('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$controller+'"'),'-WatchDll',('"'+$env:C545D_DIAG_UWP_C_BRIDGE_DLL+'"'),'-StubExe',('"'+$stub+'"'),'-GioScanDll',('"'+$scan+'"'),'-LocalizedProbeExe',('"'+$probe+'"'),'-AssertLocalizedDisplayName','-ReverseResourceLanguage')
             $proc=Start-Process -FilePath powershell.exe -ArgumentList $args -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -Wait
+            foreach($file in @($out,$err)){
+              if((Test-Path -LiteralPath $file) -and (Get-Item -LiteralPath $file).Length -le 16000000){
+                $raw=(Get-Content -LiteralPath $file -Raw).Replace([string][char]0,'')
+                $stage='identity|tools|certificate|certificate_export|certificate_import|main_fixture|resource_fixture|pri_tool|main_pri|resource_pri|main_pack|resource_pack|main_sign|resource_sign|watch_import|gio_import|gio_baseline|gio_start|watch_enter|watch_open|main_add|resource_add|resource_remove|cleanup'
+                foreach($line in ($raw -split '\r?\n')){
+                  if($line -match "^(C545D_LOCALIZED_STAGE,stage=($stage)|C545D_LOCALIZED_FAILURE,stage=($stage),line=\d+|C545D_LOCALIZED_HRESULT,depth=[0-7],value=-?\d+|C545D_MSVC_LOCALIZED_DLL_PATH,match=[01]|C545D_RESOURCE_CI_CLEANUP_EXECUTED=1,runner_only=1)$"){
+                    Write-Host $line
+                  }
+                }
+              }
+            }
             if($proc.ExitCode -ne 0){
               Write-Host "C545D_MSVC_LOCALIZED_CONTROLLER_GAP,exit=$($proc.ExitCode)"
               throw 'isolated resource controller failed'
