@@ -2,6 +2,15 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-27 JST — **matched comparison audit preflight PASS; native four-arm measurement in progress**
+
+- Resumed exact PR #62/main ACTIVE_HANDOFF c81ed7ea7d552c668aa3597558a1842e4d9ffd03. Existing #46011977824 job 140549518513 completed source/PDB preflight and native MSVC GLib build; four-arm capture step in_progress at last observation. No numeric cache effect claimed. No new native build triggered.
+- Existing audit only proves equal completed worker count within each arm, not equality between modes. [53d8dd23](https://github.com/taku077/c545d-recorder/commit/53d8dd23f0d13bd7d689cc9fb43ae1638bc8e557) adds offline audit of sanitized native job log, requires unique begin/end, all 24 birth rows per arm, QPC/resource agreement, old lineage counts nonincreasing and cross-mode registry worker parity. Reports survivors, new originals, net requested bytes/count, PrivateUsage, handles and CPU. Fixed order remains nonrandomized and descriptive, no permanent leak or long-run claim. [3648c887](https://github.com/taku077/c545d-recorder/commit/3648c887a6e03a69d3d5aab705414f792bfad958) adds Ubuntu offline CI using existing native job log only if completed successfully. [#46012578289 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46012578289) job 140551540105 actual selftest positive=1 negative=6 PASS; actual log audit skipped with explicit actual_qualified=0 since native comparison running. Do NOT treat this CI success as actual cache comparison qualification. Once native job completed, inspect raw-safe numeric markers and run existing offline workflow again or equivalent parser against actual logs, no Windows rebuild unless genuine trace failure. 
+- Official Microsoft PackageCatalog.PackageStatusChanged documentation says removal/update notification and current-user catalog scope; does not prove all resource or locale invalidations: https://learn.microsoft.com/ja-jp/uwp/api/windows.applicationmodel.packagecatalog.packagestatuschanged?view=winrt-26100 . Keep existing event+locale-aware invalidation and fail-closed freshness constraints.
+- No source changes to recorder or experimental GIO, no host modification. User's 72h trial continues. Next exact native run result and comparison, then isolate residual and decide next fix. PR draft, experimental GIO HOLD.
+
+
+
 ### UPDATE 2026-11-27 JST — **birth-epoch native Windows PASS; original getter survival confirmed, event-aware cache matched comparison started**
 
 - Resumed exact PR #62/main ACTIVE_HANDOFF 614096f52c5811a43ead9ffbc92d255e111ff458. [#46010818919 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46010818919) at dfd020f9 job 140545549118: actual MSVC pinned GLib 2.82.4, PDB verified, two arms, all 48 birth rows and reconciliation/selftest PASS. Nochange all 9960/837916 requested bytes across all cuts with no new surviving allocations.
