@@ -1,0 +1,87 @@
+name: C545D certificate provider initialization discriminator
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-msix-cert-provider-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provider:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - name: Test direct and redirected Windows PowerShell certificate provider
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $script=Join-Path $env:RUNNER_TEMP 'c545d-cert-provider.ps1'
+          @'
+          param([ValidateSet('direct','redirected','security','explicit-drive','qualified')][string]$Arm)
+          $ErrorActionPreference='Stop'
+          $cert=$null;$created=0;$removed=0;$stage='initialization'
+          try{
+            if($Arm -in @('security','explicit-drive','qualified')){
+              Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+            }
+            if($Arm -eq 'explicit-drive' -and !(Get-PSDrive -Name Cert -ErrorAction SilentlyContinue)){
+              if(!(Get-PSProvider -PSProvider Certificate -ErrorAction SilentlyContinue)){throw 'certificate provider unavailable'}
+              New-PSDrive -Name Cert -PSProvider Certificate -Root '\' -Scope Global -ErrorAction Stop | Out-Null
+            }
+            # Do not query provider/drive before the untreated arms: querying may initialize them.
+            if($Arm -in @('security','explicit-drive','qualified')){
+              $provider=[int][bool](Get-PSProvider -PSProvider Certificate -ErrorAction SilentlyContinue)
+              $drive=[int][bool](Get-PSDrive -Name Cert -ErrorAction SilentlyContinue)
+              [Console]::WriteLine("C545D_CERT_PROVIDER_STATE,arm=$Arm,provider=$provider,drive=$drive")
+            }
+            $location=if($Arm -eq 'qualified'){'Microsoft.PowerShell.Security\Certificate::CurrentUser\My'}else{'Cert:\CurrentUser\My'}
+            $stage='certificate'
+            $cert=New-SelfSignedCertificate -Type Custom -KeyUsage DigitalSignature -Subject 'CN=C545D CI Event Probe' -CertStoreLocation $location -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3') -KeyExportPolicy Exportable -HashAlgorithm SHA256
+            if(!$cert -or !$cert.HasPrivateKey){throw 'certificate key missing'}
+            $created=1
+          }catch{
+            $ex=$_.Exception
+            for($d=0;$null -ne $ex -and $d -lt 8;$d++){
+              $type=$ex.GetType().Name
+              if($type -notmatch '^[A-Za-z0-9_]+$'){$type='OTHER'}
+              $certDrive=0
+              if($ex -is [System.Management.Automation.DriveNotFoundException] -and $ex.ItemName -eq 'Cert'){$certDrive=1}
+              [Console]::WriteLine("C545D_CERT_PROVIDER_ERROR,arm=$Arm,stage=$stage,depth=$d,type=$type,hr=$([int]$ex.HResult),cert_drive_named=$certDrive")
+              $ex=$ex.InnerException
+            }
+          }finally{
+            if($cert){
+              try{
+                Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+                $path='Microsoft.PowerShell.Security\Certificate::CurrentUser\My\'+$cert.Thumbprint
+                Remove-Item -LiteralPath $path -DeleteKey -Force -ErrorAction Stop
+                if(!(Test-Path -LiteralPath $path)){$removed=1}
+              }catch{[Console]::WriteLine("C545D_CERT_PROVIDER_CLEANUP_GAP,arm=$Arm")}
+            }
+          }
+          [Console]::WriteLine("C545D_CERT_PROVIDER_RESULT,arm=$Arm,created=$created,removed=$removed")
+          if($cert -and !$removed){exit 2}
+          '@ | Set-Content -LiteralPath $script -Encoding utf8
+          $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $filter='^C545D_CERT_PROVIDER_(?:STATE,arm=(direct|redirected|security|explicit-drive|qualified),provider=[01],drive=[01]|ERROR,arm=(direct|redirected|security|explicit-drive|qualified),stage=(initialization|certificate),depth=[0-7],type=[A-Za-z0-9_]+,hr=-?\d+,cert_drive_named=[01]|RESULT,arm=(direct|redirected|security|explicit-drive|qualified),created=[01],removed=[01]|CLEANUP_GAP,arm=(direct|redirected|security|explicit-drive|qualified))$'
+          foreach($arm in @('direct','redirected','security','explicit-drive','qualified')){
+            $out=Join-Path $env:RUNNER_TEMP "$arm-provider-private.txt"
+            $err=Join-Path $env:RUNNER_TEMP "$arm-provider-error-private.txt"
+            try{
+              if($arm -eq 'direct'){
+                $lines=@(& $exe -NoProfile -ExecutionPolicy Bypass -File $script -Arm $arm 2>$err)
+                $exit=$LASTEXITCODE
+              }else{
+                $proc=Start-Process -FilePath $exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-Arm',$arm) -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+                if(!$proc.WaitForExit(45000)){Stop-Process -Id $proc.Id -Force;throw 'provider timeout'}
+                $exit=$proc.ExitCode
+                if((Get-Item $out).Length -gt 1000000){throw 'output cap'}
+                $lines=@(Get-Content -LiteralPath $out)
+              }
+              foreach($line in $lines){if($line -match $filter){Write-Host $line}}
+              if($exit -ne 0 -or @($lines|Where-Object {$_ -match "^C545D_CERT_PROVIDER_RESULT,arm=$arm,created=[01],removed=[01]$"}).Count -ne 1){throw 'provider infrastructure or cleanup gap'}
+            }finally{Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue}
+          }
+          Write-Host 'C545D_CERT_PROVIDER_DONE,arms=5,glib_build=0,package_install=0,trust_store_modified=0'
