@@ -35,7 +35,14 @@ jobs:
           [void][Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path tests/Invoke-C545DGioActiveEpochEtwCI.ps1).Path,
             [ref]$tokens,[ref]$errors)
-          if(@($errors).Count -ne 0){throw 'Active two-epoch disposable GIO ETW controller PowerShell source invalid'}
+          if(@($errors).Count -ne 0){
+            foreach($parseError in $errors){
+              $id=$parseError.ErrorId
+              if($id -notmatch '^[A-Za-z0-9_]+$'){$id='UNKNOWN'}
+              Write-Host "C545D_GIO_CONTROLLER_PARSE_ERROR,id=$id,line=$($parseError.Extent.StartLineNumber),column=$($parseError.Extent.StartColumnNumber)"
+            }
+            throw 'Active two-epoch disposable GIO ETW controller PowerShell source invalid'
+          }
           # Requalify the four arms with explicit private trace file paths and numeric logger observations; no increased file cap.
           Write-Host 'C545D_GIO_FIRST_APPINFO_PREFLIGHT_PASS,source_before_initialization=1,exact_pdb_signature_guard=1,no_host_work=1'
       - uses: actions/download-artifact@v4
