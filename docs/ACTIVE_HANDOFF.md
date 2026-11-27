@@ -3,18 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `da3598113cab5518fbcf248a68dcf72840a6089f`
-- **PR updated at (UTC):** `2026-11-27T16:10:51Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/da3598113cab5518fbcf248a68dcf72840a6089f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `e5fdb431ea2192b0b408ff33d0b8e64861d95058`
+- **PR updated at (UTC):** `2026-11-27T16:11:14Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/e5fdb431ea2192b0b408ff33d0b8e64861d95058/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46031382213](https://github.com/taku077/c545d-recorder/actions/runs/46031382213) |
-| C545D sixteen-cycle cache resource comparison | in_progress | [#46031377095](https://github.com/taku077/c545d-recorder/actions/runs/46031377095) |
+| C545D active development handoff auto-refresh | in_progress | [#46031438293](https://github.com/taku077/c545d-recorder/actions/runs/46031438293) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-28 01:09 JST — **16-cycle clean four-arm resource experiment implemented and running**
+
+- Resumed exact PR62/main 2ddff740, independent previous 2-cycle audit #46030829124 SUCCESS confirmed. No new measured reduction yet; prior active epoch2 +106496 vs 0 B, two-epoch 14.6341% reduction remains the qualified evidence.
+- [3a51a1df](https://github.com/taku077/c545d-recorder/commit/3a51a1df756c36788a1ad9ea946a3b1adce0cd2d) new audit_c545d_gio_16_cycle_ci.py generalizes existing disposable two-epoch patch for the base probe's default 16 cycles without modifying the two-cycle file. 17 QPC/CPU and absolute resource checkpoints plus after/settled cleanup totals, QueryPerformanceFrequency, worker ordinal/full-phase join and per-cycle parity, monotonic clock/CPU and notification guard, seven signed interval summaries (0-1,1-4,4-8,8-12,12-16,1-16,0-16). Synthetic positive3 negative6 planned, not yet confirmed; no allocation ownership or global quiescence proof. QPC frequency fixed per system boot per https://learn.microsoft.com/en-us/windows/win32/api/profileapi/nf-profileapi-queryperformancefrequency ; PrivateUsage private commit per https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex .
+- [da359811](https://github.com/taku077/c545d-recorder/commit/da3598113cab5518fbcf248a68dcf72840a6089f) separate .github/workflows/c545d-gio-16-cycle-resource-ci.yml reuses qualified Combo-only build, clean environment, cached/uncached x registry/nochange, 16 cycles per process, no ETW/heapwalk/external census, 90s bounded per arm (six 15s observations, longer planned workload, not extending failed 2-cycle timeout), remaining arms attempted on failure; retains last stage on failure but full 27-line numeric summaries only for qualified completed arms. Existing two-cycle probe/workflow unchanged. [#46031377095](https://github.com/taku077/c545d-recorder/actions/runs/46031377095) in progress, actual build/patch/selftest and results pending. Cross-mode worker vector parity required. Fixed order and one run per arm; 16-cycle resource trend not lifetime zero-leak, actual cache invalidation or Key-type proof.
+- Next verify exact run logs, calculate signed baseline-to16 and 1-to16 contrasts, window changes, absolute settled cleanup and CPU/handle/cache trends. If invalid inspect specific failure, don't treat partial arm as complete. No new duplicate build; production recorder 2dc42121 unchanged, actual 72h trial not reported, no host action, experimental GIO HOLD. Keep protected historical evidence and archive boundary.
 
 ### UPDATE 2026-11-28 JST — **actual clean four-arm resource comparison PASS; cached epoch2 PrivateUsage delta zero**
 
@@ -47,17 +53,6 @@
 - [#46023254189 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46023254189) job 140587991398 final log obtained after previous pending status. Rebuilt Core SHA256 D5685A07779CEFC5CDA8BDDAE7FF8FCF9668C41198451F7B5317AD723279D106, historical_binary_match=0; exact source/patches but NOT same historical binary. SDK nochange 7592ms valid=1, Core 7292ms valid=1, both main_done index2 and loaded path match=1. Combo uncached/nochange timeout 60116ms, every sample DLL match=1. 15/30/45/60s CPU100ns 114687500/234531250/362812500/481718750, private bytes 6156288/6492160/7004160/7544832, threads 12/12/12/9, handles 695/1000/642/977, stage enum_begin indices 1/2/2/3. Between samples CPU increases 11.984375/12.828125/11.890625s, process progress to cleanup index3. Not a global permanent stall; no proof about all threads. No complete resource-only four-arm result or cache benefit. SDK/Core post-exit sample private/threads zero and handles blank are invalid for resource comparison.
 - Source review: enumerate_apps wraps g_app_info_get_all, g_list_free_full and drain_context, so stage does not isolate internal call. Combo patch set includes opt-in UWP/native/bridge/lazy/monitor/worker trace changes; not yet isolated. Core buildtype=release vs Combo=debugoptimized is a concrete confound, as are phase trace and fixed order; do not attribute slowdown to cache (disabled in failing arm), a particular patch, or WinRT alone. Next source-review unconditional code and build flags; design focused same-buildtype comparison with distinct list-get/free/drain stage and whitelisted worker/parser phase summaries retained even on timeout. Do not increase timeout or ETW cap, do not initiate another broad four-arm comparison before this discriminator. WCT not first choice given active CPU/progress. No new native job launched this turn. Recorder unchanged, user action NONE, release HOLD.
 - Handoff compacted in 7c69ed74; full history linked below. Latest exact PR and main pointer must be checked on resume.
-
-### UPDATE 2026-11-28 JST — **source-pinned Core and Combo build PASS; stage comparison running**
-
-- PR62 HEAD on resume 9ff29ae5; main ACTIVE_HANDOFF still d3e34722 at observed read. [#46023254189](https://github.com/taku077/c545d-recorder/actions/runs/46023254189) job 140587991398 exact d3e34722: source/PDB preflight and entire source-pinned local Core+Combo build step SUCCESS (upstream SHA, historical patch identity, six SDK hashes and both 2047 export inventories). Stage comparison in progress. Job logs unavailable (404 BlobNotFound while running), rebuilt Core SHA/historical binary match and individual samples not yet verified. No duplicate native run.
-- Reused qualified uncached two-arm [#46010818919](https://github.com/taku077/c545d-recorder/actions/runs/46010818919) job 140545549118: pre-first AppInfo to postsettle barrier elapsed approx 8.752s nochange / 9.934s registry. Epoch1/2 PrivateUsage +45056/0 B nochange and +81920/+81920 B registry; handles +3/0 vs +3/+1; CPU100ns 0/0 vs 10312500/10156250 (1.03125/1.015625s); workers 0/0 vs 1/1. Descriptive epoch2 registry-minus-control +81920 B and +1 total handle, not cache improvement. Previous ETW barrier elapsed differs in scope from current resource-only arm stopwatch (includes audits), so no direct timing ratio. No new native measurement or claim of sustained leak.
-- Next inspect #46023254189 completed logs for rebuilt Core hash, SDK/Core stage controls, Combo marker and CPU deltas; if fully successful reuse strict resource-only audit on exact new log. If timeout, use last-stage and CPU deltas before deciding whether WCT is needed. Microsoft GetThreadWaitChain documents deadlock flag and WCT supported wait types: https://learn.microsoft.com/en-us/windows/win32/api/wct/nf-wct-getthreadwaitchain and https://learn.microsoft.com/en-us/windows/win32/debug/wait-chain-traversal . Absence of detected deadlock is not proof of no deadlock. No WCT implementation or new CI needed while existing discriminator running.
-- Frozen recorder 2dc42121, user verified hourly split and stop/restart. Actual 72h trial result not yet supplied. No host changes, extra manual request, production edits or release approval. GIO HOLD. Preserve stream1-left/stream6-right 2560x720 15fps x264 medium QP24 AAC mono48k 192kbps hourly MP4 AV sync/EOS and avdec_h264 priority.
-
-### Handoff archival maintenance
-
-The previous full 1MB handoff is preserved verbatim at [immutable archive 9ff29ae5](https://github.com/taku077/c545d-recorder/blob/9ff29ae5b0623aea6ca7f168e66a644a629ba0ec/docs/HANDOFF_CURRENT.md). Standard connector returned empty content due to its size; exact API content was retrieved. Keep this current file concise; consult the immutable archive for older release/diagnostic history and prior experiments before any new experiment. No historical evidence deleted from Git history. Below are seven immediately preceding update blocks.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
