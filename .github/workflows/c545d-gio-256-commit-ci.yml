@@ -180,6 +180,63 @@ jobs:
           if($LASTEXITCODE -ne 0){throw '256-cycle source patch failed'}
           py tests/patch_c545d_gio_resource_stages_ci.py $source
           if($LASTEXITCODE -ne 0){throw 'disposable stage patch failed'}
+          # Check real probe child's flags before AppInfo, without GIO calls.
+          $anchor='    c545d_stage("main",0);'
+          $guard=@'
+          {
+              int mode=-1, modes=0, j, k, bad=0;
+              const wchar_t *off[]={
+                  L"C545D_CI_PACKAGE_PARSE_FAIL_ONCE",
+                  L"C545D_CI_WATCH_LIFETIME_TRACE",
+                  L"C545D_DIAG_APPINFO_MONITOR_UNSOLICITED",
+                  L"C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE",
+                  L"C545D_DIAG_UWP_CALL_DISPLAYNAME_DISCARD",
+                  L"C545D_DIAG_UWP_NATIVE_COMPARE",
+                  L"C545D_DIAG_UWP_NATIVE_PATH",
+                  L"C545D_DIAG_UWP_NOOP_CALLBACK",
+                  L"C545D_DIAG_UWP_SKIP_LOCATION",
+                  L"C545D_DIAG_UWP_SKIP_MANIFEST",
+                  L"C545D_DIAG_UWP_SKIP_PATH",
+                  L"C545D_HANDLE_EXE",
+                  L"C545D_CI_ETW_PHASE_ROOT",
+                  L"C545D_DIAG_UWP_CACHE_REFRESH_EVERY",
+                  L"C545D_DIAG_UWP_BRIDGE_INJECT_SCAN",
+                  L"C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER",
+                  L"C545D_DIAG_UWP_SKIP_CURRENT",
+                  L"C545D_DIAG_UWP_SKIP_DISPLAYNAME",
+                  L"C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN"
+              };
+              const wchar_t *flags[]={L"C545D_DIAG_UWP_CACHE_DISPLAYNAME",L"C545D_DIAG_UWP_CACHE_EVENT_BRIDGE"};
+              wchar_t value[4];
+              DWORD n;
+              for(j=1;j<argc;j++){
+                  if(strcmp(argv[j],"--c545d-cache-expected=0")==0){mode=0;modes++;}
+                  if(strcmp(argv[j],"--c545d-cache-expected=1")==0){mode=1;modes++;}
+              }
+              if(modes!=1) return 31;
+              for(k=0;k<(int)(sizeof(off)/sizeof(off[0]));k++){
+                  SetLastError(ERROR_SUCCESS);
+                  n=GetEnvironmentVariableW(off[k],value,4);
+                  if(n!=0 || GetLastError()!=ERROR_ENVVAR_NOT_FOUND) bad++;
+              }
+              for(k=0;k<2;k++){
+                  SetLastError(ERROR_SUCCESS);
+                  n=GetEnvironmentVariableW(flags[k],value,4);
+                  if(mode ? (n!=1 || value[0]!=L'1') : (n!=0 || GetLastError()!=ERROR_ENVVAR_NOT_FOUND)) bad++;
+              }
+              SetLastError(ERROR_SUCCESS);
+              n=GetEnvironmentVariableW(L"C545D_DIAG_UWP_C_BRIDGE_DLL",value,4);
+              if(mode ? n==0 : (n!=0 || GetLastError()!=ERROR_ENVVAR_NOT_FOUND)) bad++;
+              n=GetEnvironmentVariableW(L"C545D_CI_APPINFO_PHASE_TRACE",value,4);
+              if(n!=1 || value[0]!=L'1') bad++;
+              printf("C545D_256_CHILD_ENV,cache=%d,checked=%d,bad=%d\n",mode,(int)(sizeof(off)/sizeof(off[0]))+4,bad);
+              fflush(stdout);
+              if(bad) return 32;
+          }
+          '@
+          $probeText=[IO.File]::ReadAllText($source)
+          if([regex]::Matches($probeText,[regex]::Escape($anchor)).Count -ne 1){throw 'child env source anchor invalid'}
+          [IO.File]::WriteAllText($source,$probeText.Replace($anchor,($anchor+"`n"+$guard)))
           $exe=Join-Path $root 'c545d_gio_resource_only_probe.exe'
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@($source,"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
@@ -189,7 +246,18 @@ jobs:
             'C545D_DIAG_UWP_CACHE_REFRESH_EVERY','C545D_DIAG_UWP_BRIDGE_INJECT_SCAN',
             'C545D_DIAG_UWP_NO_DISPLAYNAME_GETTER','C545D_DIAG_UWP_SKIP_CURRENT',
             'C545D_DIAG_UWP_SKIP_DISPLAYNAME','C545D_DIAG_UWP_LAZY_PACKAGE_RESCAN')
-          $keys+=@('C545D_DIAG_UWP_C_BRIDGE_DLL')
+          $keys+=@('C545D_DIAG_UWP_C_BRIDGE_DLL',
+            'C545D_CI_PACKAGE_PARSE_FAIL_ONCE',
+            'C545D_CI_WATCH_LIFETIME_TRACE',
+            'C545D_DIAG_APPINFO_MONITOR_UNSOLICITED',
+            'C545D_DIAG_APPINFO_MONITOR_WORKER_FIRE',
+            'C545D_DIAG_UWP_CALL_DISPLAYNAME_DISCARD',
+            'C545D_DIAG_UWP_NATIVE_COMPARE',
+            'C545D_DIAG_UWP_NATIVE_PATH',
+            'C545D_DIAG_UWP_NOOP_CALLBACK',
+            'C545D_DIAG_UWP_SKIP_LOCATION',
+            'C545D_DIAG_UWP_SKIP_MANIFEST',
+            'C545D_DIAG_UWP_SKIP_PATH')
           $keys+=@(Get-ChildItem Env:|Where-Object {$_.Name -match '^C545D_(DIAG_|CI_)'}|ForEach-Object Name)
           $keys=@($keys|Sort-Object -Unique)
           $saved=@{}
@@ -225,7 +293,12 @@ jobs:
             return $false
           }
           try{
-            foreach($key in $keys){if($key -ne 'PATH'){[Environment]::SetEnvironmentVariable($key,$null,'Process')}}
+            foreach($key in $keys){
+              if($key -ne 'PATH'){
+                Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+                if(Test-Path "Env:$key"){throw 'diagnostic environment not removed'}
+              }
+            }
             $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$($saved['PATH'])"
             $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
             $env:C545D_CI_APPINFO_PHASE_TRACE='1'
@@ -239,7 +312,8 @@ jobs:
                 Write-Host "C545D_256_BEGIN,mode=$mode,arm=$arm,etw=0,external_handle_census=0,heapwalk=0,heapsummary=1"
                 $out=Join-Path $root "$mode-$arm-private.txt"
                 $err=Join-Path $root "$mode-$arm-error-private.txt"
-                $arglist=@('--cycles=256','--vm-summary','--heap-summary')
+                $cacheMode=[int]($mode -eq 'event-cache')
+                $arglist=@('--cycles=256','--vm-summary','--heap-summary',"--c545d-cache-expected=$cacheMode")
                 if($arm -eq 'nochange'){$arglist+='--no-registry-change'}
                 $sw=[Diagnostics.Stopwatch]::StartNew()
                 $proc=Start-Process -FilePath $exe -ArgumentList $arglist -WorkingDirectory $root -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
@@ -248,6 +322,146 @@ jobs:
                     Write-Host "C545D_256_TIMEOUT,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds)"
                     throw 'resource-only workload timeout'
                   }
+                  Write-Host "C545D_256_EXIT,mode=$mode,arm=$arm,code=$($proc.ExitCode)"
+                  $envRows=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_256_CHILD_ENV,cache=[01],checked=\d+,bad=\d+
+                    Observe-Probe $proc $out "$mode-$arm" 41
+                    throw 'resource-only probe returned nonzero'
+                  }
+                  if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
+                  $lines=@(Get-Content -LiteralPath $out)
+                  if($envRows.Count -ne 1 -or $envRows[0] -cne "C545D_256_CHILD_ENV,cache=$cacheMode,checked=23,bad=0"){throw 'actual probe environment unqualified'}
+                  if(@($lines|Where-Object {$_ -match '^C545D_CI_NATIVE_MONITOR_SINK_REGISTRATION,ok=[01]
+                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
+                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
+                  $expected=if($arm -eq 'registry'){1}else{0}
+                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
+                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
+                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
+                  if(-not $w.Success){throw 'worker numeric shape invalid'}
+                  $workers["$mode-$arm"]=$w.Groups[1].Value
+                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
+                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
+                  if($mode -eq 'uncached'){
+                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
+                  }else{
+                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
+                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
+                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
+                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
+                    Write-Host $cache[-1]
+                    Write-Host $bridge[-1]
+                  }
+                  foreach($row in $res){Write-Host $row}
+                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
+                }catch{
+                  $failures++
+                  Observe-Probe $proc $out "$mode-$arm" 41
+                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
+                }finally{
+                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            if($failures -ne 0){throw 'one or more resource arms unqualified'}
+            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
+            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
+          }finally{
+            foreach($key in $keys){
+              if($null -eq $saved[$key]){Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue}
+              else{Set-Item -LiteralPath "Env:$key" -Value $saved[$key]}
+            }
+          }
+})
+                  if($envRows.Count -eq 1){Write-Host $envRows[0]}
+                  if($proc.ExitCode -ne 0){
+                    Observe-Probe $proc $out "$mode-$arm" 41
+                    throw 'resource-only probe returned nonzero'
+                  }
+                  if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
+                  $lines=@(Get-Content -LiteralPath $out)
+                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
+                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
+                  $expected=if($arm -eq 'registry'){1}else{0}
+                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
+                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
+                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
+                  if(-not $w.Success){throw 'worker numeric shape invalid'}
+                  $workers["$mode-$arm"]=$w.Groups[1].Value
+                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
+                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
+                  if($mode -eq 'uncached'){
+                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
+                  }else{
+                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
+                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
+                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
+                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
+                    Write-Host $cache[-1]
+                    Write-Host $bridge[-1]
+                  }
+                  foreach($row in $res){Write-Host $row}
+                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
+                }catch{
+                  $failures++
+                  Observe-Probe $proc $out "$mode-$arm" 41
+                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
+                }finally{
+                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            if($failures -ne 0){throw 'one or more resource arms unqualified'}
+            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
+            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
+          }finally{
+            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
+          }
+}).Count){throw 'unexpected unsolicited monitor sink'}
+                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
+                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=256,notifications=\d+,reg_changes=[01]$'})
+                  $expected=if($arm -eq 'registry'){1}else{0}
+                  if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
+                  $res=@(& py tests/audit_c545d_gio_256_commit_ci.py --input $out --arm $arm)
+                  if($LASTEXITCODE -ne 0 -or $res.Count -ne 282){throw '256-cycle resource and commit audit failed'}
+                  $w=[regex]::Match($res[0],'^C545D_256_WORKERS,counts=(\d+(?::\d+){255}),hz=(\d+)$')
+                  if(-not $w.Success){throw 'worker numeric shape invalid'}
+                  $workers["$mode-$arm"]=$w.Groups[1].Value
+                  $cache=@($lines|Where-Object {$_ -match '^C545D_DISPLAY_CACHE,hits=\d+,misses=\d+,entries=\d+$'})
+                  $bridge=@($lines|Where-Object {$_ -match '^C545D_WINRT_BRIDGE,scans=\d+,injections=\d+,evictions=\d+,errors=\d+,ready=[01]$'})
+                  if($mode -eq 'uncached'){
+                    if($cache.Count -or $bridge.Count){throw 'unexpected cache'}
+                  }else{
+                    if(-not $cache.Count -or -not $bridge.Count){throw 'cache activation missing'}
+                    $m=[regex]::Match($cache[-1],'^C545D_DISPLAY_CACHE,hits=(\d+),misses=(\d+),entries=(\d+)$')
+                    if([long]$m.Groups[2].Value -lt 1 -or [long]$m.Groups[3].Value -lt 1 -or [long]$m.Groups[3].Value -gt 1024 -or ($arm -eq 'registry' -and [long]$m.Groups[1].Value -lt 1)){throw 'cache not exercised'}
+                    foreach($row in $bridge){if($row -notmatch ',injections=0,evictions=\d+,errors=0,ready=1$'){throw 'bridge not qualified'}}
+                    Write-Host $cache[-1]
+                    Write-Host $bridge[-1]
+                  }
+                  foreach($row in $res){Write-Host $row}
+                  Write-Host "C545D_256_ARM_PASS,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds),etw=0,lineage_proven=0"
+                }catch{
+                  $failures++
+                  Observe-Probe $proc $out "$mode-$arm" 41
+                  Write-Host "C545D_256_ARM_GAP,mode=$mode,arm=$arm"
+                }finally{
+                  if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+                  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            if($failures -ne 0){throw 'one or more resource arms unqualified'}
+            if($workers['uncached-registry'] -ne $workers['event-cache-registry']){throw 'cross-mode worker mismatch'}
+            Write-Host 'C545D_256_COMPARE_PASS,arms=4,cycles=256,cross_mode_worker_parity=1,etw=0,lineage_proven=0,release_HOLD=1'
+          }finally{
+            foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$saved[$key],'Process')}
+          }
+})
+                  if($envRows.Count -eq 1){Write-Host $envRows[0]}
                   if($proc.ExitCode -ne 0){
                     Observe-Probe $proc $out "$mode-$arm" 41
                     throw 'resource-only probe returned nonzero'
