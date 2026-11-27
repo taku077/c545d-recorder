@@ -3,18 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1de5ef8ea614ebe0c7d841900fa56de918050c91`
-- **PR updated at (UTC):** `2026-11-27T14:20:15Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1de5ef8ea614ebe0c7d841900fa56de918050c91/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `ade53bf284b7d120d4f11fc1aa615bc605875976`
+- **PR updated at (UTC):** `2026-11-27T14:20:33Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/ade53bf284b7d120d4f11fc1aa615bc605875976/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | pending | [#46015012534](https://github.com/taku077/c545d-recorder/actions/runs/46015012534) |
-| C545D patched GIO active two-epoch resource and worker gate | in_progress | [#46015004863](https://github.com/taku077/c545d-recorder/actions/runs/46015004863) |
+| Same-SHA CI not found | unknown | - |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 23:20 JST — **actual heap ETW cap hit diagnosed; one fixed-budget requalification triggered**
+
+- Resumed matching main/PR62 HEAD 9cd39b0b. [#46013336741 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46013336741) job 140554111439 actual MSVC/PDB/2047-export build and controller preflight PASS, first uncached/nochange failed before qualified census. Armed heap/kernel 1048576/1048576 bytes, both listed; postsettle heap exactly 268435456 bytes (256MiB configured cap), kernel 5963776 bytes, independent logman heap_listed=0/kernel_listed=1, repeated at logger_gap. Strong evidence of sequential cap exhaustion, not merely regex. Microsoft StartTraceA confirms max-file stop behavior; https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracea and xperf https://learn.microsoft.com/en-us/windows-hardware/test/wpt/start . No actual matched cache effect. Earlier successful two-arm #46010818919 nochange/registry workload windows ~9/10 seconds and 167538/1257108 typed events, current nochange ~67s, not directly comparable; runner/workload differences unresolved.
+- Given measured cap (unlike previous blind retries), one fixed opt-in capture budget: [9da51514](https://github.com/taku077/c545d-recorder/commit/9da515147db44738fee821de85d9eba7f0e9ae86) active-mode replay max 1152MiB only with C545D_CI_FOUR_ARM_ETW_BUDGET=1, other callers unchanged, event cap remains 2M; [6714c7f9](https://github.com/taku077/c545d-recorder/commit/6714c7f9f8cdb69932487b6f2dbc2f0adbcc6221) controller 1024MiB heap/64MiB kernel sequential, merged <=1152MiB, disk >=5GiB per arm, numeric merged length, private files deleted; [e4b6f0b2](https://github.com/taku077/c545d-recorder/commit/e4b6f0b29efa1863646d162069e18eeaa904d651) require kernel zero loss in addition to heap; [1de5ef8e](https://github.com/taku077/c545d-recorder/commit/1de5ef8ea614ebe0c7d841900fa56de918050c91) enables opt-in on four-arm workflow only and triggers CI. New limits are CI-only, actual validation pending. Do NOT repeatedly raise cap if this fails; consider bounded later-window alternative with explicit lost baseline lineage, or real-time streaming complete ledger design; do not pretend circular trace is complete. No user work, no new recorder version, 72h trial ongoing, experimental GIO HOLD.
+- Next verify workflow run at 1de5ef8e (push event; connector PR-only run lookup may return empty), then logs. If PASS reuse actual safe logs with matched audit; if failure diagnose exact new gate incl disk, kernel loss, event count and size, no blind retry. Existing actual qualified evidence remains prior two-arm uncached data, not cache reduction.
 
 ### UPDATE 2026-11-27 23:10 JST — **four-arm trace failed before any qualified arm; targeted ETW gap evidence added**
 
@@ -54,12 +59,6 @@
 - User reports normal MP4 splitting and successful recording stop/restart on the initial limited candidate (2dc42121). Earlier user-reported detached observer startup normal. Record these as host user observations, not independent CI or media analysis. Actual playback of both views/audio/visible sync and final EOS MP4 not explicitly confirmed in this message; do not mark those individually proven. No repeat stop/restart or long manual test requested. If playback already checked, no additional check needed.
 - Proceed with ongoing monitored operation, observer left running, first scheduled safe ZIP 72h from existing observer state creation (not recorder restart), then every seven days. Exact observer start time not established. No deliberate disconnect, periodic restart, or WPR/UMDH. Report abnormalities if they occur; long-run CPU/private/handles, actual reconnect and precise A/V sync remain unverified. Do not claim leak resolution.
 - Candidate remains frozen, no experimental GIO deployment. Continue independent Track B between uploads from latest tagged residual evidence; no waiting for host ZIP. User-reported basic host trial success is not approval for patched DLL or public production release. No host modifications by assistant.
-
-### UPDATE 2026-11-27 JST — **initial host trial reported started; acceptance criteria remain fixed**
-
-- User downloaded exact candidate ZIP through chat after GitHub browser link returned 404, and reported weekly observer appears to operate normally. This is user-reported startup, not independently measured host health; no ZIP or actual first segment/EOS/restart result received yet. Do not claim acceptance complete. Trial in progress, no experimental GIO DLL deployment authorized.
-- The existing Japanese acceptance plan (steps 5–6, commit b5cda2a2) remains authoritative: check first naturally finalized ~1h MP4 (both views, audio, observable synchronization, next segment), then perform ONE planned normal GUI recording stop, wait for final MP4 to finalize and check playback, restart recording. Leave detached observer running throughout; first scheduled 72h report is measured from observer state creation, not reset by recorder restart. Thereafter leave recording/observer running and submit scheduled safe ZIP; no repeated manual resource captures or deliberate network outage. If normal stop fails, do not force-stop or continue blindly; report and resolve safely. Actual long-run/reconnect and precise sync still unverified.
-- User objected to inconsistent recommendations: assistant incorrectly deferred planned stop/restart merely in response to user's proposed 72h run, then reversed when prompted. Corrected to existing plan. Keep required gates explicit, distinguish optional/deferred items, justify any change with evidence and consequences; do not omit a required check to agree with user. No new host operation beyond existing one-time acceptance, no new source changes. Continue independent Track B between uploads. Next: record actual first split and normal EOS/restart result when user provides it, then analyze first scheduled diagnostic ZIP when available.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
