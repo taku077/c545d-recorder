@@ -3,18 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `0836d99bf982e22ec92dd178ecb7730cde960f8a`
-- **PR updated at (UTC):** `2026-11-27T14:25:35Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/0836d99bf982e22ec92dd178ecb7730cde960f8a/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `4f00b3374e3318f8de94aa075ce85ecc6e9a5e90`
+- **PR updated at (UTC):** `2026-11-27T14:25:57Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/4f00b3374e3318f8de94aa075ce85ecc6e9a5e90/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46015823865](https://github.com/taku077/c545d-recorder/actions/runs/46015823865) |
-| C545D patched GIO active two-epoch resource and worker gate | in_progress | [#46015818820](https://github.com/taku077/c545d-recorder/actions/runs/46015818820) |
+| C545D active development handoff auto-refresh | in_progress | [#46015880122](https://github.com/taku077/c545d-recorder/actions/runs/46015880122) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 JST — **fixed-budget preflight caught generated syntax corruption; literal restoration committed**
+
+- Resumed exact PR62/main ACTIVE_HANDOFF ade53bf2. [#46015004863 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46015004863) job 140559773684: C# build 0 warnings/errors; birth selftest PASS, classifier positive=12 negative=12 PASS, then actual PowerShell controller parse gate failed before native GLib build or capture. Not a new capacity failure. No matched cache measurements.
+- Root cause verified from bad controller at e4b6f0b2: JavaScript String.replace replacement-string special pattern dollar+apostrophe in three regex anchors expanded the remaining script, 464 lines became 1387. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace documents this. [1414feff](https://github.com/taku077/c545d-recorder/commit/1414feff3f14c9dbcc718748064d358f3ce65fb7) restores exact 6714c7f9 controller and inserts 14 lines with callback literal replacement, checks exact byte-length delta, reversible insertion and unique stop_and_merge anchor; 478 lines. Preserves expanded budget, kernel loss guard, heap loss guard, original lineage. [0836d99b](https://github.com/taku077/c545d-recorder/commit/0836d99bf982e22ec92dd178ecb7730cde960f8a) emits safe parse error ID/line/column and triggers candidate CI again. Actual syntax validation and comparison pending. Microsoft parser API https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.parser.parsefile .
+- Next check actual CI at 0836d99b; if syntax passed then inspect fixed-budget four-arm result; do not increase capacity again if actual capture fails. Prior exact 256MiB cap exhaustion remains evidence. Use literal callback substitutions and verify resulting file diff before commits. User trial unchanged, no host work or production changes, GIO release HOLD.
 
 ### UPDATE 2026-11-27 23:20 JST — **actual heap ETW cap hit diagnosed; one fixed-budget requalification triggered**
 
@@ -54,12 +59,6 @@
 - User initially reported 1GB splits, then confirmed they had viewed the wrong folder; actual candidate correctly splits at one hour. Normal stop/restart also reported successful. No demonstrated split defect; do not reopen or demand the one-shot check. Left/right/audio/visible sync and final playback not separately reported; do not independently certify. Current deployed candidate remains exact frozen 2dc42121. User will continue three-day monitoring. Keep recorder and observer running, first scheduled report from existing observer state (not restart). No repeated stop or additional manual measurement.
 - During initial discrepancy investigation, [59dee348](https://github.com/taku077/c545d-recorder/commit/59dee348561221207ff0191202dd68703ae68fe7) added actual mux property assertions, [8fbbf85b](https://github.com/taku077/c545d-recorder/commit/8fbbf85bcb1b7b431bc9e58d7ed3a1a7da497286) temporarily made byte limit zero explicit. GStreamer default already zero ([official docs](https://gstreamer.freedesktop.org/documentation/multifile/splitmuxsink.html)). After correction, [fc78745d](https://github.com/taku077/c545d-recorder/commit/fc78745d943375f47acd7c47db7f9fd0fedf5874) restored Record.ps1 byte-identically to pinned source; no deployment or rebuild required. Keep CI property assertions and read-only one-shot split tool as optional future regression/diagnostic assets, not a requested host operation. [#45989481263 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/45989481263) qualified tool header parsing and synthetic report, artifact 15193022071 unused. Temporary candidate build #45989249374 graph gate passed; remaining transient CI results do not supersede frozen RC or require install. Restoration-triggered CI is regression only.
 - Next independent work is Track B root-cause investigation from latest tagged residual evidence; no need to wait for first ZIP. Actual long-term resource slope, precise sync and natural reconnection remain open. User trial ongoing, no experimental GIO DLL authorized; no manual split investigation, no new package or host modifications.
-
-### UPDATE 2026-11-27 20:13 JST — **first real-camera split and normal stop/restart reported successful**
-
-- User reports normal MP4 splitting and successful recording stop/restart on the initial limited candidate (2dc42121). Earlier user-reported detached observer startup normal. Record these as host user observations, not independent CI or media analysis. Actual playback of both views/audio/visible sync and final EOS MP4 not explicitly confirmed in this message; do not mark those individually proven. No repeat stop/restart or long manual test requested. If playback already checked, no additional check needed.
-- Proceed with ongoing monitored operation, observer left running, first scheduled safe ZIP 72h from existing observer state creation (not recorder restart), then every seven days. Exact observer start time not established. No deliberate disconnect, periodic restart, or WPR/UMDH. Report abnormalities if they occur; long-run CPU/private/handles, actual reconnect and precise A/V sync remain unverified. Do not claim leak resolution.
-- Candidate remains frozen, no experimental GIO deployment. Continue independent Track B between uploads from latest tagged residual evidence; no waiting for host ZIP. User-reported basic host trial success is not approval for patched DLL or public production release. No host modifications by assistant.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
