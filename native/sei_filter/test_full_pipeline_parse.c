@@ -34,8 +34,22 @@ int main(int argc, char **argv) {
   }else if(!pipeline){
     fputs("GSTREAMER PARSE FAILED: null pipeline\n",stderr);
   }else{
-    fprintf(stdout,"PASS actual assembled production graph: %zu tokens\n",count);
-    result=0;
+    GstElement *mux=GST_IS_BIN(pipeline)?gst_bin_get_by_name(GST_BIN(pipeline),"mux"):NULL;
+    guint64 time_ns=0,bytes=G_MAXUINT64;
+    gboolean async_finalize=TRUE,keyframe=FALSE;
+    if(!mux){
+      fputs("Production splitmuxsink missing\n",stderr);
+    }else{
+      g_object_get(mux,"max-size-time",&time_ns,"max-size-bytes",&bytes,
+        "async-finalize",&async_finalize,"send-keyframe-requests",&keyframe,NULL);
+      fprintf(stdout,"C545D_EFFECTIVE_SPLIT_POLICY,time_ns=%" G_GUINT64_FORMAT ",bytes=%" G_GUINT64_FORMAT ",async=%d,keyframe=%d\n",
+        time_ns,bytes,async_finalize,keyframe);
+      if(time_ns==G_GUINT64_CONSTANT(3600000000000)&&bytes==0&&!async_finalize&&keyframe){
+        fprintf(stdout,"PASS actual assembled production graph: %zu tokens\n",count);
+        result=0;
+      }else fputs("Production hourly split policy mismatch\n",stderr);
+      gst_object_unref(mux);
+    }
   }
   if(pipeline)gst_object_unref(pipeline);
 done:
