@@ -708,7 +708,12 @@ internal static class Program
            !build.StartsWith(dir+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("untrusted_etl_or_build_dir");
         var fi=new FileInfo(etl);
-        if(!fi.Exists||fi.Length<512||fi.Length>256*1024*1024)
+        // The four-arm controller may use one fixed, larger sequential capture
+        // after an observed 256 MiB cap hit. Legacy captures keep 256 MiB.
+        // EventCap remains unchanged; no permission to accept partial traces.
+        long fileCap=activeMode && Environment.GetEnvironmentVariable("C545D_CI_FOUR_ARM_ETW_BUDGET")=="1"
+            ?1152L*1024*1024:256L*1024*1024;
+        if(!fi.Exists||fi.Length<512||fi.Length>fileCap)
             throw new ArgumentException("etlx_trace_missing_or_unbounded");
         if(!int.TryParse(a[3],out int pid) || pid<=0)
             throw new ArgumentException("invalid_owned_pid");
