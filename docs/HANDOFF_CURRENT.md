@@ -2,6 +2,11 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-28 JST — **stack helper selftest PASS; pinned source anchor mismatch fixed**
+
+- [#46059508392 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46059508392) job 140710060336 exact c2eb36e6: actual C helper selftest PASS ascii127/boundary2/nonascii2/case1/empty1/null1/negative_patch3; pinned source and preceding overlays PASS; new patch rejected bridge_race_guard. Dedicated bridge replaces historical direct polls with C545DBridgeEpoch before=c545d_bridge_read_epoch(), before.valid and c545d_bridge_epoch_still_valid(before), comparing generation and locale. This was our incorrect source anchor, not a runtime/cache failure. [135ca05c](https://github.com/taku077/c545d-recorder/commit/135ca05ca3d622172b7179dcf7003de73bd25973) corrects exact expected epoch anchors and synthetic fixture/negative test; preserves both guards and original fallback, store and result ownership. Workflow push triggered by script path; new run not returned yet, verify exact SHA/path. No new native Windows build for candidate. Guarded 256 run #46059020130 native build passed, measurement in progress at last check. No new host work, GIO HOLD.
+
+
 ### UPDATE 2026-11-28 JST — **guarded 256 measurement running; stack-only temporary lookup key candidate prepared**
 
 - Resumed exact PR62/main 00eb7a0d. [#46059020130](https://github.com/taku077/c545d-recorder/actions/runs/46059020130) job 140708458387 exact 90c37773: source/PDB and native build SUCCESS, measurement step in progress at latest check. No new 256 measurements; do not duplicate.
