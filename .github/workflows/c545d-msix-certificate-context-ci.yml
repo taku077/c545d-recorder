@@ -1,0 +1,103 @@
+name: C545D MSIX certificate context discriminator
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-msix-certificate-context-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  context:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install and verify exact SDK without GLib build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+          $sdk=Join-Path $env:RUNNER_TEMP 'gst-1.28.8'
+          $installer=Join-Path $env:RUNNER_TEMP 'sdk.exe'
+          Invoke-WebRequest 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.8/msvc/gstreamer-1.0-msvc-x86_64-1.28.8.exe' -OutFile $installer -TimeoutSec 180
+          if((Get-Item $installer).Length -lt 15000000){throw 'SDK download truncated'}
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TYPE=devel',"/DIR=$sdk") -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'SDK install failed'}
+          $refHash=(Get-FileHash "$sdk/bin/gio-2.0-0.dll" -Algorithm SHA256).Hash
+          $reference=Get-Content docs/CORE_GIO_SDK_1288_REFERENCE.json -Raw|ConvertFrom-Json
+          if($refHash -ne 'A875107C180FB248236D1E96E14F362F117124DF2FEE1237FA2142B7B363941B'){throw 'SDK GIO provenance mismatch'}
+          foreach($entry in $reference.dll_sha256.PSObject.Properties){
+            if((Get-FileHash (Join-Path "$sdk/bin" $entry.Name) -Algorithm SHA256).Hash -ne $entry.Value){throw 'SDK dependency provenance mismatch'}
+          }
+          "C545D_CONTEXT_SDK=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compare certificate creation in fresh redirected child processes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script=Join-Path $env:RUNNER_TEMP 'c545d-cert-context.ps1'
+          @'
+          param([ValidateSet('clean','sdk','appx','sdk-appx','sdk-appx-pki')][string]$Context)
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          $cert=$null;$stage='start';$ok=0;$removed=0
+          try{
+            if($Context -like '*appx*'){
+              $stage='identity'
+              if(@(Get-AppxPackage -Name 'C545D.CI.PackageEvents' -ErrorAction Stop).Count){throw 'fixture already present'}
+              $stage='tools'
+              $base=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
+              foreach($exe in @('MakeAppx.exe','SignTool.exe')){
+                $all=@(Get-ChildItem $base -Recurse -File -Filter $exe -ErrorAction SilentlyContinue | Where-Object {$_.DirectoryName -match '[\\/]x64$'} | Sort-Object FullName)
+                if(!$all.Count){throw 'missing SDK tool'}
+              }
+            }
+            if($Context -eq 'sdk-appx-pki'){
+              $stage='pki_import'
+              Import-Module (Join-Path $PSHOME 'Modules\PKI\PKI.psd1') -ErrorAction Stop
+            }
+            $stage='certificate'
+            $cert=New-SelfSignedCertificate -Type Custom -KeyUsage DigitalSignature -Subject 'CN=C545D CI Event Probe' -CertStoreLocation 'Cert:\CurrentUser\My' -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3') -KeyExportPolicy Exportable -HashAlgorithm SHA256
+            if(!$cert -or !$cert.HasPrivateKey){throw 'certificate key missing'}
+            $ok=1
+          }catch{
+            $ex=$_.Exception
+            for($d=0;$null -ne $ex -and $d -lt 8;$d++){
+              $type=$ex.GetType().Name
+              if($type -notmatch '^[A-Za-z0-9_]+$'){$type='OTHER'}
+              [Console]::WriteLine("C545D_CERT_CONTEXT_ERROR,context=$Context,stage=$stage,depth=$d,type=$type,hr=$([int]$ex.HResult)")
+              $ex=$ex.InnerException
+            }
+          }finally{
+            if($cert){
+              $path='Cert:\CurrentUser\My\'+$cert.Thumbprint
+              try{
+                Remove-Item -LiteralPath $path -DeleteKey -Force -ErrorAction Stop
+                if(-not(Test-Path -LiteralPath $path)){$removed=1}
+              }catch{[Console]::WriteLine("C545D_CERT_CONTEXT_CLEANUP_GAP,context=$Context")}
+            }
+          }
+          [Console]::WriteLine("C545D_CERT_CONTEXT_RESULT,context=$Context,created=$ok,removed=$removed")
+          if($cert -and !$removed){exit 2}
+          '@ | Set-Content -LiteralPath $script -Encoding utf8
+          $original=$env:PATH
+          try{
+            foreach($context in @('clean','sdk','appx','sdk-appx','sdk-appx-pki')){
+              $env:PATH=if($context -like 'sdk*'){"$env:C545D_CONTEXT_SDK/bin;$original"}else{$original}
+              $out=Join-Path $env:RUNNER_TEMP "$context-cert-private.txt"
+              $err=Join-Path $env:RUNNER_TEMP "$context-cert-error-private.txt"
+              try{
+                $proc=Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-Context',$context) -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+                if(!$proc.WaitForExit(60000)){Stop-Process -Id $proc.Id -Force;throw 'certificate context timeout'}
+                if((Get-Item $out).Length -gt 1000000){throw 'certificate output cap'}
+                $lines=@(Get-Content -LiteralPath $out)
+                foreach($line in $lines){
+                  if($line -match '^C545D_CERT_CONTEXT_(?:ERROR,context=(clean|sdk|appx|sdk-appx|sdk-appx-pki),stage=(start|identity|tools|pki_import|certificate),depth=[0-7],type=[A-Za-z0-9_]+,hr=-?\d+|RESULT,context=(clean|sdk|appx|sdk-appx|sdk-appx-pki),created=[01],removed=[01]|CLEANUP_GAP,context=(clean|sdk|appx|sdk-appx|sdk-appx-pki))$'){Write-Host $line}
+                }
+                if($proc.ExitCode -ne 0 -or @($lines|Where-Object {$_ -match "^C545D_CERT_CONTEXT_RESULT,context=$context,created=[01],removed=[01]$"}).Count -ne 1){throw 'certificate context infrastructure or cleanup gap'}
+              }finally{Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue}
+            }
+          }finally{$env:PATH=$original}
+          Write-Host 'C545D_CERT_CONTEXT_DONE,arms=5,glib_build=0,package_install=0,trust_store_modified=0'
