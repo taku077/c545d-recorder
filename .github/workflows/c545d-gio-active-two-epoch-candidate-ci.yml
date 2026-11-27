@@ -154,7 +154,7 @@ jobs:
           $watch=(Resolve-Path artifacts/c545d_dedicated_watch.dll).Path
           "C545D_DIAG_UWP_C_BRIDGE_DLL=$watch" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host 'C545D_GIO_ETW_SOURCE_MSVC_BUILD_PASS,pinned_source=1,exports2047=1,debug_symbols=1,CI_only=1,host_untouched=1'
-      - name: Capture continuous first-AppInfo to two active QPC source epochs per arm
+      - name: Capture continuous first-AppInfo to two active QPC source epochs and allocation birth cohorts per arm
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
