@@ -47,7 +47,7 @@ NEW = """  gchar stack_key[128];
   if (key == NULL)
     return NULL;"""
 FREE = """  g_free (key);
-  if (result != NULL && !c545d_bridge_poll ())"""
+  if (result != NULL && !c545d_bridge_epoch_still_valid (before))"""
 def once(s, a, b):
     if s.count(a) != 1:
         raise ValueError("stack_lookup_anchor")
@@ -59,7 +59,7 @@ def patch(s):
     start = s.index(ANCHOR)
     end = s.index("\nstatic void\nc545d_cache_display_store", start)
     body = s[start:end]
-    if body.count("c545d_bridge_poll ()") != 2:
+    if body.count("c545d_bridge_read_epoch ()") != 1 or body.count("c545d_bridge_epoch_still_valid (before)") != 1 or body.count("if (!before.valid)") != 1:
         raise ValueError("bridge_race_guard")
     body = once(body, OLD, NEW)
     body = once(body, FREE, FREE.replace("g_free (key)", "g_free (owned_key)"))
@@ -67,11 +67,11 @@ def patch(s):
     return s[:start] + HELPER + "\n" + body + s[end:]
 
 def selftest():
-    fixture = ANCHOR + "\n{\n  if (!c545d_bridge_poll ()) return NULL;\n" + OLD + "\n" + FREE + "\n    g_clear_pointer (&result, g_free);\n  return result;\n}\nstatic void\nc545d_cache_display_store (void) { /* unchanged */ }\n"
+    fixture = ANCHOR + "\n{\n  C545DBridgeEpoch before = c545d_bridge_read_epoch ();\n  if (!before.valid) return NULL;\n" + OLD + "\n" + FREE + "\n    g_clear_pointer (&result, g_free);\n  return result;\n}\nstatic void\nc545d_cache_display_store (void) { /* unchanged */ }\n"
     got = patch(fixture)
-    if got.count("c545d_bridge_poll ()") != 2 or got.count("g_free (owned_key)") != 1 or not got.endswith(fixture[fixture.index("\nstatic void"):]):
+    if got.count("c545d_bridge_read_epoch ()") != 1 or got.count("c545d_bridge_epoch_still_valid (before)") != 1 or got.count("g_free (owned_key)") != 1 or not got.endswith(fixture[fixture.index("\nstatic void"):]):
         raise ValueError("ownership_guard")
-    for bad in (got, fixture.replace("c545d_bridge_poll ()", "bad ()", 1), fixture.replace(OLD, "")):
+    for bad in (got, fixture.replace("c545d_bridge_epoch_still_valid (before)", "bad ()", 1), fixture.replace(OLD, "")):
         try:
             patch(bad)
         except ValueError:
@@ -134,7 +134,7 @@ def main():
         nl = "\r\n" if b"\r\n" in raw else "\n"
         s = patch(raw.decode("utf-8").replace("\r\n", "\n"))
         a.patch.write_bytes(s.replace("\n", nl).encode("utf-8"))
-        print("C545D_STACK_KEY_CI_PATCH_PASS,store_unchanged=1,bridge_polls=2")
+        print("C545D_STACK_KEY_CI_PATCH_PASS,store_unchanged=1,epoch_guards=2")
     else:
         p.error("mode required")
 if __name__ == "__main__":
