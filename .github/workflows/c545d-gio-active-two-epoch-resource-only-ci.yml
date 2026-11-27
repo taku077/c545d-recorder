@@ -174,6 +174,8 @@ jobs:
           Copy-Item tests/gio_appinfo_key_handle_probe.c $source
           py tests/patch_c545d_gio_active_two_epoch_ci.py $source
           if($LASTEXITCODE -ne 0){throw 'active checkpoint source patch invalid'}
+          py tests/patch_c545d_gio_resource_stages_ci.py $source
+          if($LASTEXITCODE -ne 0){throw 'disposable stage patch failed'}
           $exe=Join-Path $root 'c545d_gio_resource_only_probe.exe'
           $include=@("/I$sdk/include/glib-2.0","/I$sdk/lib/glib-2.0/include")
           & cl.exe @(@('/nologo','/W4','/MD','/O2','/TC')+$include+@($source,"/Fe:$exe",'/link',"/LIBPATH:$sdk/lib",'gio-2.0.lib','gobject-2.0.lib','glib-2.0.lib','psapi.lib','advapi32.lib'))
@@ -186,8 +188,60 @@ jobs:
           $saved=@{}
           foreach($key in $keys){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
           $workers=@{}
+          # Only fixed stage names and numeric counters; never emit raw stdout.
+          function Observe-Probe($proc,[string]$out,[string]$label,[int]$sample){
+            try{
+              $proc.Refresh()
+              $cpu=[long]$proc.TotalProcessorTime.Ticks
+              $private=[long]$proc.PrivateMemorySize64
+              $threads=$proc.Threads.Count
+              $handles=$proc.HandleCount
+              Write-Host "C545D_GIO_STAGE_SAMPLE,label=$label,sample=$sample,cpu100ns=$cpu,private_bytes=$private,threads=$threads,handles=$handles"
+            }catch{Write-Host "C545D_GIO_STAGE_SAMPLE_GAP,label=$label,sample=$sample"}
+            try{
+              if((Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -le 1000000){
+                $safe=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_GIO_RESOURCE_STAGE,stage=(main|monitor_begin|monitor_end|enum_begin|enum_end|drain_begin|drain_end|vm_begin|vm_end|main_done),index=[0-4]$'})
+                if($safe.Count){Write-Host "C545D_GIO_LAST_STAGE,label=$label,sample=$sample,$($safe[-1].Substring('C545D_GIO_RESOURCE_STAGE,'.Length))"}
+                $identity=@(Get-Content -LiteralPath $out|Where-Object {$_ -match '^C545D_GIO_RESOURCE_DLL_PATH,match=[01]$'})
+                if($identity.Count -eq 1){Write-Host "C545D_GIO_STAGE_DLL,label=$label,sample=$sample,$($identity[0].Substring('C545D_GIO_RESOURCE_DLL_PATH,'.Length))"}
+              }
+            }catch{Write-Host "C545D_GIO_STAGE_LOG_GAP,label=$label,sample=$sample"}
+          }
+          function Wait-BoundedProbe($proc,[string]$out,[string]$label){
+            for($sample=1;$sample -le 4;$sample++){
+              if($proc.WaitForExit(15000)){return $true}
+              Observe-Probe $proc $out $label $sample
+            }
+            return $false
+          }
           try{
             foreach($key in $keys){if($key -ne 'PATH'){[Environment]::SetEnvironmentVariable($key,$null,'Process')}}
+            # Independent controls before combo; same runner, no registry mutation.
+            # A failed control is recorded, not a reason to skip the other control.
+            foreach($control in @('sdk','core')){
+              $dir=if($control -eq 'sdk'){(Resolve-Path "$sdk/bin").Path}else{(Resolve-Path artifacts/overlay-core).Path}
+              $env:PATH="$dir;$sdk/bin;$($saved['PATH'])"
+              $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path "$dir/gio-2.0-0.dll").Path
+              $co=Join-Path $root "$control-control-private.txt"
+              $ce=Join-Path $root "$control-control-error-private.txt"
+              $timer=[Diagnostics.Stopwatch]::StartNew()
+              $cp=Start-Process -FilePath $exe -ArgumentList @('--cycles=2','--vm-summary','--no-registry-change') -WorkingDirectory $root -PassThru -RedirectStandardOutput $co -RedirectStandardError $ce
+              try{
+                $finished=Wait-BoundedProbe $cp $co $control
+                $valid=0
+                if($finished -and $cp.ExitCode -eq 0 -and (Get-Item -LiteralPath $co).Length -le 1000000){
+                  $lines=@(Get-Content -LiteralPath $co)
+                  $identity=@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'})
+                  $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=2,notifications=\d+,reg_changes=0$'})
+                  if($identity.Count -eq 1 -and $done.Count -eq 1){$valid=1}
+                }
+                Write-Host "C545D_GIO_STAGE_CONTROL,label=$control,finished=$([int]$finished),valid=$valid,elapsed_ms=$($timer.ElapsedMilliseconds)"
+                Observe-Probe $cp $co $control 5
+              }finally{
+                if(-not $cp.HasExited){Stop-Process -Id $cp.Id -Force -ErrorAction SilentlyContinue}
+                Remove-Item -LiteralPath $co,$ce -Force -ErrorAction SilentlyContinue
+              }
+            }
             $env:PATH="$(Resolve-Path artifacts/overlay-combo);$sdk/bin;$($saved['PATH'])"
             $env:C545D_EXPECTED_GIO_DLL=(Resolve-Path artifacts/overlay-combo/gio-2.0-0.dll).Path
             $env:C545D_CI_APPINFO_PHASE_TRACE='1'
@@ -205,13 +259,17 @@ jobs:
                 $sw=[Diagnostics.Stopwatch]::StartNew()
                 $proc=Start-Process -FilePath $exe -ArgumentList $arglist -WorkingDirectory $root -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
                 try{
-                  if(-not $proc.WaitForExit(60000)){
+                  if(-not (Wait-BoundedProbe $proc $out "$mode-$arm")){
                     Write-Host "C545D_GIO_RESOURCE_ONLY_TIMEOUT,mode=$mode,arm=$arm,elapsed_ms=$($sw.ElapsedMilliseconds)"
                     throw 'resource-only workload timeout'
                   }
-                  if($proc.ExitCode -ne 0){throw 'resource-only probe returned nonzero'}
+                  if($proc.ExitCode -ne 0){
+                    Observe-Probe $proc $out "$mode-$arm" 5
+                    throw 'resource-only probe returned nonzero'
+                  }
                   if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'unbounded probe output'}
                   $lines=@(Get-Content -LiteralPath $out)
+                  if(@($lines|Where-Object {$_ -ceq 'C545D_GIO_RESOURCE_DLL_PATH,match=1'}).Count -ne 1){throw 'loaded GIO path not verified'}
                   $done=@($lines|Where-Object {$_ -match '^GIO_PROBE_DONE,cycles=2,notifications=\d+,reg_changes=[01]$'})
                   $expected=if($arm -eq 'registry'){1}else{0}
                   if($done.Count -ne 1 -or $done[0] -notmatch ",reg_changes=$expected$"){throw 'resource-only completion missing'}
