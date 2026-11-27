@@ -3,22 +3,22 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7e4029c7797ea76ec78849ae1b61f46be3b2fe65`
-- **PR updated at (UTC):** `2026-11-27T15:51:04Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7e4029c7797ea76ec78849ae1b61f46be3b2fe65/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7bd5f1af1bf639f6979e736fa8cd0eb4f8fab3dc`
+- **PR updated at (UTC):** `2026-11-27T15:51:23Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7bd5f1af1bf639f6979e736fa8cd0eb4f8fab3dc/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46028535887](https://github.com/taku077/c545d-recorder/actions/runs/46028535887) |
+| C545D active development handoff auto-refresh | in_progress | [#46028579186](https://github.com/taku077/c545d-recorder/actions/runs/46028579186) |
 
 ## Current development findings from the active PR
 
 ### UPDATE 2026-11-28 JST — **mirror restored; offline complete/partial enum interval audit prepared**
 
 - Resumed PR62/main exact 62d1b958, [mirror #46028207712 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46028207712) job 140604977599, verified actual main snapshot SHA matches live PR. [#46028073129](https://github.com/taku077/c545d-recorder/actions/runs/46028073129) job 140604509865 preflight passed, matched source-pinned Core/Combo build still running; no measured substage result yet. No duplicate Windows build.
-- [a210b35e](https://github.com/taku077/c545d-recorder/commit/a210b35e96207d7c1b0a05a1b9bcd0a40f039115) adds offline parser for exact three-arm enum log, strict arm order, QPC stage prefix, final identity and completion qualification, completed intervals only for retrieval/free/context. A missing end marker is not a zero-length interval; partial arms clearly labeled, next missing boundary reported, no guessed duration. QPC ticks only because existing probe does not record QueryPerformanceFrequency; compare within same runner cautiously, no conversion to seconds without frequency evidence. Microsoft https://learn.microsoft.com/ja-jp/windows/win32/sysinfo/acquiring-high-resolution-time-stamps and GLib https://docs.gtk.org/gio/type_func.AppInfo.get_all.html . No causal, release or long-run claim. [94a8b3b0](https://github.com/taku077/c545d-recorder/commit/94a8b3b098b03f3d59b337d6d4ed68aac5557929) adds Ubuntu selftest and exact successful native log reuse; [#46028489908](https://github.com/taku077/c545d-recorder/actions/runs/46028489908) queued at check, positive/negative tests not yet confirmed.
+- [a210b35e](https://github.com/taku077/c545d-recorder/commit/a210b35e96207d7c1b0a05a1b9bcd0a40f039115) adds offline parser for exact three-arm enum log, strict arm order, QPC stage prefix, final identity and completion qualification, completed intervals only for retrieval/free/context. A missing end marker is not a zero-length interval; partial arms clearly labeled, next missing boundary reported, no guessed duration. QPC ticks only because existing probe does not record QueryPerformanceFrequency; compare within same runner cautiously, no conversion to seconds without frequency evidence. Microsoft https://learn.microsoft.com/ja-jp/windows/win32/sysinfo/acquiring-high-resolution-time-stamps and GLib https://docs.gtk.org/gio/type_func.AppInfo.get_all.html . No causal, release or long-run claim. [94a8b3b0](https://github.com/taku077/c545d-recorder/commit/94a8b3b098b03f3d59b337d6d4ed68aac5557929) adds Ubuntu selftest and exact successful native log reuse; [#46028489908](https://github.com/taku077/c545d-recorder/actions/runs/46028489908) SUCCESS, job 140605928361 logs verified positive=3 negative=7 PASS, actual_qualified=0 because native build pending; no new measured intervals.
 - Next inspect actual native completion, individual arm validity, QPC intervals and worker/parser counters. If offline run precedes native completion, reuse existing native log after completion without rebuilding. No host changes, no additional measurement request, trial outcome not reported, GIO HOLD. Preserve archival boundary and protected evidence below.
 
 ### UPDATE 2026-11-28 JST — **matched-build three-arm enum discriminator queued; handoff mirror contract restored**
