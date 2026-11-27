@@ -3,18 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `f01c4435bf6e335ae090aac1485d98a9978da82f`
-- **PR updated at (UTC):** `2026-11-27T17:34:45Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/f01c4435bf6e335ae090aac1485d98a9978da82f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `5b7f280bc2395cebf818fcedd2551f527ffae391`
+- **PR updated at (UTC):** `2026-11-27T17:35:13Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/5b7f280bc2395cebf818fcedd2551f527ffae391/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46042948183](https://github.com/taku077/c545d-recorder/actions/runs/46042948183) |
-| C545D 256-cycle heap commit trend | in_progress | [#46042941217](https://github.com/taku077/c545d-recorder/actions/runs/46042941217) |
+| C545D active development handoff auto-refresh | in_progress | [#46043011318](https://github.com/taku077/c545d-recorder/actions/runs/46043011318) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-28 02:33 JST — **native MSVC genuine localized refresh PASS; 256-cycle commit trend implemented**
+
+- Resumed exact PR62/main c8df1166. [#46039757115 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46039757115) job 140644179651 exact e89f1a92: source-pinned native build and direct child invocation passed; actual all 23 controller stages reached plus cleanup. DLL path match=1; actual GAppInfo and original WinRT display value FR→EN→FR with unchanged parent FullName, unsolicited prequery counts 1/2/3, genuine terminal install/remove events, zero synthetic registry stimulus, C545D_GIO_SAME_FULLNAME_LOCALIZED_DISPLAY_PASS and C545D_MSVC_LOCALIZED_REFRESH_PASS present. Direct invocation fixed observed certificate obstacle in full fixture; no general provider mechanism proof. Cleanup-executed marker not independent absence-of-artifacts audit; no mapped-memory hash or Japanese/Win10 host/production proof. Flags cache+bridge+lazy+unsolicited differ from memory comparison cache+bridge+trace; exact combined configuration still needs qualification. Microsoft PackageCatalog event semantics https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.packagecatalog .
+- [f31f3006](https://github.com/taku077/c545d-recorder/commit/f31f30065b343426f671b4b539ecea2e8045ea3e) separate 256-cycle parser/overlay derives proven 64-cycle implementation, base probe already accepts --cycles=256. 257 active resource/QPC/worker points, 259 VM points, 11 HeapSummary points (0,1,16,32,64,128,192,224,256,257,258), 12 windows, 282 numeric rows per arm. Default and other heap allocated/committed/reserved, cleanup totals, 256-worker vector parity, no HeapWalk/ETW/Handle64. [f01c4435](https://github.com/taku077/c545d-recorder/commit/f01c4435bf6e335ae090aac1485d98a9978da82f) separate four-arm workflow, same clean env and pinned native Combo build as 64-cycle, 600s per-arm cap (planned 256 cycles minimum 230.4s sleep; extrapolated previous ~99s/64 workload is ~396s, not a timeout extension of failed run), 55min overall cap, remaining arms attempted after failure, bounded numeric stage diagnostics. CI push run not returned at first query; verify exact workflow path/SHA, selftest/compilation/results pending. No new measured reduction. Prior 256-cycle historical experiment used different configurations and did not include current matched cache/HeapSummary scope. 
+- Evaluation: compare raw and control-adjusted post-first, 128–192/192–224/224–256 windows and late max-min of all-cycle PrivateUsage; record exact signed deltas, CPU/worker/cache/handles, heap count/reserve, settled values. Zero or negative late allocated/committed deltas are observed plateau only; positive late deltas remain open, classify by metric and consider repeats only if needed for a decision. No arbitrary leak tolerance or release approval. HeapSummary includes overlapping views; committed pages include metadata/free space https://learn.microsoft.com/en-us/previous-versions/windows/desktop/xperf/heap-extents . 64-cycle 99.58% adjusted allocation reduction and 75.83% private reduction unchanged. No host work; recorder frozen 2dc42121, trial outcome not yet supplied, GIO HOLD. Preserve archive boundary and historical evidence.
 
 ### UPDATE 2026-11-28 JST — **same-run certificate invocation failure reproduced; direct call fix applied to native regression**
 
