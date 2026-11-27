@@ -19,7 +19,7 @@ jobs:
         run: |
           python3 tests/audit_c545d_gio_16_cycle_ci.py --selftest
           python3 tests/audit_c545d_gio_16_matched_ci.py --selftest
-      - name: Reuse qualified exact native log if available
+      - name: Independently verify completed sixteen-cycle native log
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
