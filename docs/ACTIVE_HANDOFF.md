@@ -3,17 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `9b5f1f702fac73674e9e2d1584c4f535bf7cecf9`
-- **PR updated at (UTC):** `2026-11-24T12:53:33Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/9b5f1f702fac73674e9e2d1584c4f535bf7cecf9/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6320ef1e6bb8aba5830a0f12c46a83c8fc9592b9`
+- **PR updated at (UTC):** `2026-11-27T09:08:28Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6320ef1e6bb8aba5830a0f12c46a83c8fc9592b9/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | success | [#45397917073](https://github.com/taku077/c545d-recorder/actions/runs/45397917073) |
+| C545D active development handoff auto-refresh | in_progress | [#45971215387](https://github.com/taku077/c545d-recorder/actions/runs/45971215387) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 JST — **initial host trial reported started; acceptance criteria remain fixed**
+
+- User downloaded exact candidate ZIP through chat after GitHub browser link returned 404, and reported weekly observer appears to operate normally. This is user-reported startup, not independently measured host health; no ZIP or actual first segment/EOS/restart result received yet. Do not claim acceptance complete. Trial in progress, no experimental GIO DLL deployment authorized.
+- The existing Japanese acceptance plan (steps 5–6, commit b5cda2a2) remains authoritative: check first naturally finalized ~1h MP4 (both views, audio, observable synchronization, next segment), then perform ONE planned normal GUI recording stop, wait for final MP4 to finalize and check playback, restart recording. Leave detached observer running throughout; first scheduled 72h report is measured from observer state creation, not reset by recorder restart. Thereafter leave recording/observer running and submit scheduled safe ZIP; no repeated manual resource captures or deliberate network outage. If normal stop fails, do not force-stop or continue blindly; report and resolve safely. Actual long-run/reconnect and precise sync still unverified.
+- User objected to inconsistent recommendations: assistant incorrectly deferred planned stop/restart merely in response to user's proposed 72h run, then reversed when prompted. Corrected to existing plan. Keep required gates explicit, distinguish optional/deferred items, justify any change with evidence and consequences; do not omit a required check to agree with user. No new host operation beyond existing one-time acceptance, no new source changes. Continue independent Track B between uploads. Next: record actual first split and normal EOS/restart result when user provides it, then analyze first scheduled diagnostic ZIP when available.
 
 ### UPDATE 2026-11-24 JST — **frozen candidate delivery and concrete Japanese single-session acceptance ready**
 
