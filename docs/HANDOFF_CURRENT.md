@@ -2,6 +2,14 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-27 20:13 JST — **first real-camera split and normal stop/restart reported successful**
+
+- User reports normal MP4 splitting and successful recording stop/restart on the initial limited candidate (2dc42121). Earlier user-reported detached observer startup normal. Record these as host user observations, not independent CI or media analysis. Actual playback of both views/audio/visible sync and final EOS MP4 not explicitly confirmed in this message; do not mark those individually proven. No repeat stop/restart or long manual test requested. If playback already checked, no additional check needed.
+- Proceed with ongoing monitored operation, observer left running, first scheduled safe ZIP 72h from existing observer state creation (not recorder restart), then every seven days. Exact observer start time not established. No deliberate disconnect, periodic restart, or WPR/UMDH. Report abnormalities if they occur; long-run CPU/private/handles, actual reconnect and precise A/V sync remain unverified. Do not claim leak resolution.
+- Candidate remains frozen, no experimental GIO deployment. Continue independent Track B between uploads from latest tagged residual evidence; no waiting for host ZIP. User-reported basic host trial success is not approval for patched DLL or public production release. No host modifications by assistant.
+
+
+
 ### UPDATE 2026-11-27 JST — **initial host trial reported started; acceptance criteria remain fixed**
 
 - User downloaded exact candidate ZIP through chat after GitHub browser link returned 404, and reported weekly observer appears to operate normally. This is user-reported startup, not independently measured host health; no ZIP or actual first segment/EOS/restart result received yet. Do not claim acceptance complete. Trial in progress, no experimental GIO DLL deployment authorized.
