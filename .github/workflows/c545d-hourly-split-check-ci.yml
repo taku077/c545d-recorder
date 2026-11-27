@@ -1,0 +1,38 @@
+name: C545D one-shot hourly split evidence CI
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tools/Check-C545DHourlySplit.ps1'
+      - '.github/workflows/c545d-hourly-split-check-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check MP4 header reader and command policy on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/Check-C545DHourlySplit.ps1 -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'SELFTEST_FAILED'}
+      - name: Assemble single-use read-only diagnostic
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path split-check -ErrorAction Stop|Out-Null
+          Copy-Item -LiteralPath tools/Check-C545DHourlySplit.ps1 -Destination split-check
+          @'
+          @echo off
+          "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0Check-C545DHourlySplit.ps1"
+          pause
+          '@ | Set-Content -LiteralPath split-check/CHECK_HOURLY_SPLIT.cmd -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c545d-hourly-split-check-readonly
+          path: split-check/
+          if-no-files-found: error
