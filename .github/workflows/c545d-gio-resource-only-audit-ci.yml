@@ -1,0 +1,38 @@
+name: C545D offline resource-only comparison audit
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_gio_resource_only_compare.py'
+      - '.github/workflows/c545d-gio-resource-only-audit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify resource-only parser and comparison
+        run: python3 tests/audit_c545d_gio_resource_only_compare.py --selftest
+      - name: Reuse qualified exact native log if available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=46019612281
+          job=140575533522
+          sha=0f630225ac196cc143ee3fa7c3dec37a73ed8499
+          gh api "repos/taku077/c545d-recorder/actions/runs/$run" > "$RUNNER_TEMP/run.json"
+          jq -e --arg sha "$sha" '.head_sha == $sha' "$RUNNER_TEMP/run.json" >/dev/null
+          if ! jq -e '.status == "completed" and .conclusion == "success"' "$RUNNER_TEMP/run.json" >/dev/null; then
+            echo 'C545D_GIO_RESOURCE_ONLY_AUDIT_PENDING_OR_FAILED,actual_qualified=0'
+            exit 0
+          fi
+          gh api "repos/taku077/c545d-recorder/actions/jobs/$job" > "$RUNNER_TEMP/job.json"
+          jq -e --argjson run "$run" --arg sha "$sha" '.run_id == $run and .head_sha == $sha and .conclusion == "success"' "$RUNNER_TEMP/job.json" >/dev/null
+          trap 'rm -f "$RUNNER_TEMP/resource-private.log"' EXIT
+          gh run view "$run" --repo taku077/c545d-recorder --job "$job" --log > "$RUNNER_TEMP/resource-private.log"
+          python3 tests/audit_c545d_gio_resource_only_compare.py --input "$RUNNER_TEMP/resource-private.log"
