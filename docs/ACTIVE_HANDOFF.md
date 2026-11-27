@@ -3,22 +3,22 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `79fd6ef069abd6594821bf42e24a76bc8f96bdbd`
-- **PR updated at (UTC):** `2026-11-27T16:16:06Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/79fd6ef069abd6594821bf42e24a76bc8f96bdbd/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `173a8611c249ff9963d28982b20e52d225a94043`
+- **PR updated at (UTC):** `2026-11-27T16:16:30Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/173a8611c249ff9963d28982b20e52d225a94043/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46032155079](https://github.com/taku077/c545d-recorder/actions/runs/46032155079) |
+| C545D active development handoff auto-refresh | in_progress | [#46032211460](https://github.com/taku077/c545d-recorder/actions/runs/46032211460) |
 
 ## Current development findings from the active PR
 
 ### UPDATE 2026-11-28 JST — **16-cycle native build running; independent matched-window audit added**
 
 - Resumed exact PR62/main e5fdb431; [#46031377095](https://github.com/taku077/c545d-recorder/actions/runs/46031377095) job 140615753329, source/PDB preflight PASS, native Combo build still running; 16-cycle measurements not yet available. No duplicate native build.
-- [4137243f](https://github.com/taku077/c545d-recorder/commit/4137243f36ba4cebdc4f58b0d7fb2e171944ce08) adds independent sanitized CI log audit with exact 4-arm order/completion, all 17 absolute checkpoints per arm, recalculation of seven reported windows, QPC frequency equality, worker vector parity, cache/bridge guards, 36 descriptive paired contrasts including baseline and settled absolute/delta and cycles 8–16 peak-to-trough ranges (range is not slope). Synthetic positive1 negative7 planned; not measured evidence. [393dd487](https://github.com/taku077/c545d-recorder/commit/393dd487a71fd08d210e6892a722de51c810b9e7) Ubuntu workflow checks both audit layers and consumes exact native run/job/SHA only when success, no new Windows execution. Offline run ID not yet returned on first API query; check via actions/runs?head_sha=393dd487... . If offline finishes first, reuse actual existing native logs after completion, not native replay. Microsoft PrivateUsage is private commit charge, not live allocations; QPC frequency fixed per boot: https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex and https://learn.microsoft.com/en-us/windows/win32/api/profileapi/nf-profileapi-queryperformancefrequency .
+- [4137243f](https://github.com/taku077/c545d-recorder/commit/4137243f36ba4cebdc4f58b0d7fb2e171944ce08) adds independent sanitized CI log audit with exact 4-arm order/completion, all 17 absolute checkpoints per arm, recalculation of seven reported windows, QPC frequency equality, worker vector parity, cache/bridge guards, 36 descriptive paired contrasts including baseline and settled absolute/delta and cycles 8–16 peak-to-trough ranges (range is not slope). Synthetic positive1 negative7 planned; not measured evidence. [393dd487](https://github.com/taku077/c545d-recorder/commit/393dd487a71fd08d210e6892a722de51c810b9e7) Ubuntu workflow checks both audit layers and consumes exact native run/job/SHA only when success, no new Windows execution. Actual [#46032108334 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46032108334) job 140618212032 logs verified both layers positive3/negative6 and positive1/negative7 PASS, actual_qualified=0 because native pending. If offline finishes first, reuse actual existing native logs after completion, not native replay. Microsoft PrivateUsage is private commit charge, not live allocations; QPC frequency fixed per boot: https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex and https://learn.microsoft.com/en-us/windows/win32/api/profileapi/nf-profileapi-queryperformancefrequency .
 - Next inspect native and offline CI results; if all four arms valid, calculate actual 16-cycle trends, including after initial increase, late range and cleanup, CPU/handles/cache. If failure, inspect specific stage and completed arms, not blindly rerun. No new measured reduction; 2-cycle result remains qualified. Fixed arm order and single repetition; no allocation ownership, actual invalidation or long-run proof. No host change, no manual request, recorder 2dc42121 frozen, trial status not reported, GIO HOLD. Preserve archive boundary and protected historical evidence.
 
 ### UPDATE 2026-11-28 01:09 JST — **16-cycle clean four-arm resource experiment implemented and running**
