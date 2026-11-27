@@ -353,6 +353,25 @@ try {
   if($Arm -eq 'registry' -and [long]$hits.Groups[1].Value -eq 0){
     throw 'Getter function exact PDB frame not exercised in registry path'
   }
+  # Require exactly 24 disjoint birth-epoch rows, all numeric. No stack,
+  # allocation address, package name or path leaves the runner.
+  $birthRows=@($source|Where-Object {$_ -like "C545D_GIO_BIRTH_EPOCH_SURVIVAL,arm=$Arm,*"})
+  $birthPass=@($source|Where-Object {$_ -ceq "C545D_GIO_BIRTH_EPOCH_ACCOUNTING_PASS,arm=$Arm,cuts=3,groups=4,rows=24,crosschecked=1,leak_proven=0"})
+  if($birthRows.Count -ne 24 -or $birthPass.Count -ne 1){throw 'BIRTH_EPOCH_ROWS_MISSING'}
+  $birthNames=@('baseline','cycle1','cycle2')
+  $birthSeen=@{}
+  foreach($row in $birthRows){
+    $m=[regex]::Match($row,('^C545D_GIO_BIRTH_EPOCH_SURVIVAL,arm='+[regex]::Escape($Arm)+',cut=(baseline|cycle1|cycle2),birth=(baseline|cycle1|cycle2),group=(getter_package|getter_other|package_nongetter|other),live=(\d+),request_bytes_live=(\d+),original_lineage=1,realloc_preserved=1,leak_proven=0$'))
+    if(-not $m.Success){throw 'BIRTH_EPOCH_ROW_INVALID'}
+    $cut=[array]::IndexOf($birthNames,$m.Groups[1].Value)
+    $born=[array]::IndexOf($birthNames,$m.Groups[2].Value)
+    $key=$m.Groups[1].Value+'-'+$m.Groups[2].Value+'-'+$m.Groups[3].Value
+    if($born -gt $cut -or $birthSeen.ContainsKey($key)){throw 'BIRTH_EPOCH_ROW_DUPLICATE_OR_FUTURE'}
+    $birthSeen[$key]=1
+  }
+  foreach($row in $birthRows){Write-Host $row}
+  Write-Host $birthPass[0]
+
   foreach($row in $getters){Write-Host $row}
   Write-Host $rawGetter[0]
   Write-Host "C545D_GIO_GETTER_FRAME_QPC_ACCOUNTING_PASS,arm=$Arm,phases=3,source_private_marker=1,release_HOLD=1"
