@@ -1,0 +1,40 @@
+name: C545D offline sixteen-cycle matched audit
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_gio_16_matched_ci.py'
+      - '.github/workflows/c545d-gio-16-matched-audit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify both independent audit layers
+        run: |
+          python3 tests/audit_c545d_gio_16_cycle_ci.py --selftest
+          python3 tests/audit_c545d_gio_16_matched_ci.py --selftest
+      - name: Reuse qualified exact native log if available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=46031377095
+          job=140615753329
+          sha=da3598113cab5518fbcf248a68dcf72840a6089f
+          gh api "repos/taku077/c545d-recorder/actions/runs/$run" > "$RUNNER_TEMP/run.json"
+          jq -e --arg sha "$sha" '.head_sha == $sha' "$RUNNER_TEMP/run.json" >/dev/null
+          if ! jq -e '.status == "completed" and .conclusion == "success"' "$RUNNER_TEMP/run.json" >/dev/null; then
+            echo 'C545D_16_MATCHED_PENDING_OR_FAILED,actual_qualified=0'
+            exit 0
+          fi
+          gh api "repos/taku077/c545d-recorder/actions/jobs/$job" > "$RUNNER_TEMP/job.json"
+          jq -e --argjson run "$run" --arg sha "$sha" '.run_id == $run and .head_sha == $sha and .conclusion == "success"' "$RUNNER_TEMP/job.json" >/dev/null
+          trap 'rm -f "$RUNNER_TEMP/resource-private.log"' EXIT
+          gh run view "$run" --repo taku077/c545d-recorder --job "$job" --log > "$RUNNER_TEMP/resource-private.log"
+          python3 tests/audit_c545d_gio_16_matched_ci.py --input "$RUNNER_TEMP/resource-private.log"
