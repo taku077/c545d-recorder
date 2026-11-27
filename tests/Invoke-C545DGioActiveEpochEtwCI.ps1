@@ -49,6 +49,8 @@ New-Item -ItemType File -Path (Join-Path $local 'ci_owned.signal') | Out-Null
 $rawLocal=Join-Path $local 'xperf_output_private.txt'
 $loggers=Join-Path $local 'xperf_status_private.txt'
 $etl=Join-Path $local 'heap_private.etl'
+$heapRaw=Join-Path $local 'heap_session_private.etl'
+$kernelRaw=Join-Path $local 'kernel_session_private.etl'
 $stack=Join-Path $local 'stacks_private.txt'
 $out=Join-Path $Root ('active-'+$Arm+'-private.txt')
 $err=Join-Path $Root ($Arm+'-error-private.txt')
@@ -78,6 +80,23 @@ function Invoke-SafeXperf([string]$phase,[string[]]$arguments){
     throw 'Xperf capture or offline action failed'
   }
 }
+# Observations only: file length may include preallocation and logman may not
+# enumerate every private logger. Neither can substitute for xperf zero-loss.
+function Write-EtwObservation([string]$phase){
+  $heapBytes=-1L;$kernelBytes=-1L
+  try{if(Test-Path -LiteralPath $heapRaw -PathType Leaf){$heapBytes=[long](Get-Item -LiteralPath $heapRaw -ErrorAction Stop).Length}}catch{}
+  try{if(Test-Path -LiteralPath $kernelRaw -PathType Leaf){$kernelBytes=[long](Get-Item -LiteralPath $kernelRaw -ErrorAction Stop).Length}}catch{}
+  $logmanOk=0;$heapListed=-1;$kernelListed=-1
+  try{
+    $sessions=@(& logman.exe query -ets 2>$null)
+    if($LASTEXITCODE -eq 0){
+      $logmanOk=1
+      $heapListed=[int](@($sessions|Where-Object {$_ -match '(?i)^\s*HeapSession(?:\s|$)'}).Count -gt 0)
+      $kernelListed=[int](@($sessions|Where-Object {$_ -match '(?i)^\s*NT Kernel Logger(?:\s|$)'}).Count -gt 0)
+    }
+  }catch{}
+  Write-Host "C545D_GIO_ETW_OBSERVATION,arm=$Arm,phase=$phase,heap_file_bytes=$heapBytes,kernel_file_bytes=$kernelBytes,heap_cap_mb=256,logman_ok=$logmanOk,heap_listed=$heapListed,kernel_listed=$kernelListed,file_length_not_event_bytes=1,raw_uploaded=0"
+}
 try {
   if((Test-Path $out) -or (Test-Path $err)){throw 'Refuse overwriting stale CI outputs'}
   $env:C545D_CI_ETW_PHASE_ROOT=$local
@@ -85,10 +104,10 @@ try {
   $proc=Start-Process -FilePath $Probe -WorkingDirectory $Root -ArgumentList $args -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
   Wait-Signal 'preinit_ready.signal' 60
   Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,before_first_AppInfo_call=1,workload_started=0"
-  Invoke-SafeXperf 'kernel' @('-on','BASE')
+  Invoke-SafeXperf 'kernel' @('-on','BASE','-f',$kernelRaw)
   $kernelOn=$true
   $captureArgs=@('-start','HeapSession','-heap','-pids',"$($proc.Id)",
-    '-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128',
+    '-f',$heapRaw,'-BufferSize','1024','-MinBuffers','128','-MaxBuffers','128',
     '-FileMode','Sequential','-MaxFile','256','-stackwalk','HeapAlloc+HeapRealloc')
   if(($captureArgs -join ' ') -notmatch '(?i)-FileMode Sequential' -or
      ($captureArgs -join ' ') -match '(?i)\bCircular\b|PidNewProcess'){
@@ -96,9 +115,11 @@ try {
   }
   Invoke-SafeXperf 'preworkload_heap' $captureArgs
   $heapOn=$true
+  Write-EtwObservation 'armed'
   Signal 'trace_armed.signal'
   Wait-Signal 'postsettle_ready.signal' 90
   Write-Host "C545D_GIO_ETW_WINDOW_STAGE,arm=$Arm,total_cycles=2,before_first_AppInfo=1,after_settled_cleanup=1,process_alive_at_stop=1"
+  Write-EtwObservation 'postsettle'
   & $xperf -loggers *> $loggers
   if($LASTEXITCODE -ne 0){throw 'ETW loss status unavailable'}
   # Parse only the HeapSession logger section. Other loggers may have
@@ -108,7 +129,8 @@ try {
   if(-not $heapEntry.Success){
     $anyLogger=[int]([regex]::IsMatch($stats,'(?im)^\s*Logger Name\s*:'))
     Write-Host "C545D_GIO_ETW_LOGGER_GAP,arm=$Arm,heap_session_present=0,any_logger=$anyLogger,raw_uploaded=0"
-    throw 'HeapSession disappeared before stop; fail closed'
+    Write-EtwObservation 'logger_gap'
+    throw 'HeapSession not found in xperf logger status before stop; fail closed'
   }
   $begin=$heapEntry.Index+$heapEntry.Length
   $next=[regex]::Match($stats.Substring($begin),'(?im)^\s*Logger Name\s*:')
