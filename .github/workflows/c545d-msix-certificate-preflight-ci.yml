@@ -1,0 +1,65 @@
+name: C545D MSIX certificate-only preflight
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - '.github/workflows/c545d-msix-certificate-preflight-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  certificate:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - name: Create disposable certificate-only comparison
+        shell: pwsh
+        run: |
+          $script=Join-Path $env:RUNNER_TEMP 'c545d-cert-preflight.ps1'
+          @'
+          param([ValidateSet('base','msvc')][string]$Context)
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows'){throw 'isolated runner required'}
+          foreach($variant in @('historical','documented')){
+            $cert=$null
+            $ok=0
+            $removed=0
+            $ext=@('2.5.29.37={text}1.3.6.1.5.5.7.3.3')
+            if($variant -eq 'documented'){$ext+='2.5.29.19={text}'}
+            try{
+              $cert=New-SelfSignedCertificate -Type Custom -KeyUsage DigitalSignature -Subject 'CN=C545D CI Event Probe' -CertStoreLocation 'Cert:\CurrentUser\My' -TextExtension $ext -KeyExportPolicy Exportable -HashAlgorithm SHA256
+              if($null -eq $cert -or -not $cert.HasPrivateKey){throw 'certificate or key missing'}
+              $eku=@($cert.Extensions|Where-Object {$_.Oid.Value -eq '2.5.29.37'})
+              if($eku.Count -ne 1 -or @($eku[0].EnhancedKeyUsages|Where-Object Value -eq '1.3.6.1.5.5.7.3.3').Count -ne 1){throw 'code signing extension missing'}
+              $ok=1
+            }catch{
+              $ex=$_.Exception
+              for($d=0;$null -ne $ex -and $d -lt 8;$d++){
+                $type=$ex.GetType().Name
+                if($type -notmatch '^[A-Za-z0-9_]+$'){$type='OTHER'}
+                Write-Host "C545D_CERT_FAILURE,context=$Context,variant=$variant,depth=$d,type=$type,hr=$([int]$ex.HResult)"
+                $ex=$ex.InnerException
+              }
+            }finally{
+              if($cert){
+                $path='Cert:\CurrentUser\My\'+$cert.Thumbprint
+                try{
+                  Remove-Item -LiteralPath $path -DeleteKey -Force -ErrorAction Stop
+                  if(-not(Test-Path -LiteralPath $path)){$removed=1}
+                }catch{Write-Host "C545D_CERT_CLEANUP_GAP,context=$Context,variant=$variant"}
+              }
+            }
+            Write-Host "C545D_CERT_RESULT,context=$Context,variant=$variant,created=$ok,removed=$removed,trust_store_modified=0"
+            if($cert -and -not $removed){throw 'disposable certificate cleanup failed'}
+          }
+          '@ | Set-Content -LiteralPath $script -Encoding utf8
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Context base
+          if($LASTEXITCODE -ne 0){throw 'base certificate preflight infrastructure failure'}
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Repeat only certificate creation under MSVC environment
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:RUNNER_TEMP 'c545d-cert-preflight.ps1') -Context msvc
+          if($LASTEXITCODE -ne 0){throw 'MSVC certificate preflight infrastructure failure'}
