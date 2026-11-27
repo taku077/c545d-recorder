@@ -3,18 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3648c887a6e03a69d3d5aab705414f792bfad958`
-- **PR updated at (UTC):** `2026-11-27T14:04:15Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3648c887a6e03a69d3d5aab705414f792bfad958/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8c29dd5d24ac063ba19b045856936088f5c5053b`
+- **PR updated at (UTC):** `2026-11-27T14:05:06Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8c29dd5d24ac063ba19b045856936088f5c5053b/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46012584749](https://github.com/taku077/c545d-recorder/actions/runs/46012584749) |
-| C545D offline matched birth comparison audit | success | [#46012578289](https://github.com/taku077/c545d-recorder/actions/runs/46012578289) |
+| C545D active development handoff auto-refresh | in_progress | [#46012712912](https://github.com/taku077/c545d-recorder/actions/runs/46012712912) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 JST — **matched comparison audit preflight PASS; native four-arm measurement in progress**
+
+- Resumed exact PR #62/main ACTIVE_HANDOFF c81ed7ea7d552c668aa3597558a1842e4d9ffd03. Existing #46011977824 job 140549518513 completed source/PDB preflight and native MSVC GLib build; four-arm capture step in_progress at last observation. No numeric cache effect claimed. No new native build triggered.
+- Existing audit only proves equal completed worker count within each arm, not equality between modes. [53d8dd23](https://github.com/taku077/c545d-recorder/commit/53d8dd23f0d13bd7d689cc9fb43ae1638bc8e557) adds offline audit of sanitized native job log, requires unique begin/end, all 24 birth rows per arm, QPC/resource agreement, old lineage counts nonincreasing and cross-mode registry worker parity. Reports survivors, new originals, net requested bytes/count, PrivateUsage, handles and CPU. Fixed order remains nonrandomized and descriptive, no permanent leak or long-run claim. [3648c887](https://github.com/taku077/c545d-recorder/commit/3648c887a6e03a69d3d5aab705414f792bfad958) adds Ubuntu offline CI using existing native job log only if completed successfully. [#46012578289 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46012578289) job 140551540105 actual selftest positive=1 negative=6 PASS; actual log audit skipped with explicit actual_qualified=0 since native comparison running. Do NOT treat this CI success as actual cache comparison qualification. Once native job completed, inspect raw-safe numeric markers and run existing offline workflow again or equivalent parser against actual logs, no Windows rebuild unless genuine trace failure. 
+- Official Microsoft PackageCatalog.PackageStatusChanged documentation says removal/update notification and current-user catalog scope; does not prove all resource or locale invalidations: https://learn.microsoft.com/ja-jp/uwp/api/windows.applicationmodel.packagecatalog.packagestatuschanged?view=winrt-26100 . Keep existing event+locale-aware invalidation and fail-closed freshness constraints.
+- No source changes to recorder or experimental GIO, no host modification. User's 72h trial continues. Next exact native run result and comparison, then isolate residual and decide next fix. PR draft, experimental GIO HOLD.
 
 ### UPDATE 2026-11-27 JST — **birth-epoch native Windows PASS; original getter survival confirmed, event-aware cache matched comparison started**
 
@@ -53,13 +59,6 @@
 - Resumed exact PR #62/main ACTIVE_HANDOFF HEAD ed57c216df20522886503600e95e56d3ba582c3b. User accepted ~458MiB, then asked to proceed with preparation. Verified frozen artifact 14921025945 present at [#45395330523](https://github.com/taku077/c545d-recorder/actions/runs/45395330523), name c545d-frozen-rc-unapproved-2dc42121, expiry 2026-12-24 21:37:57 JST. Inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, unchanged source 2dc42121. No new compilation or repeat qualification. GitHub signed-in Actions artifact is the prepared delivery route, not a published Releases asset.
 - [b5cda2a2](https://github.com/taku077/c545d-recorder/commit/b5cda2a291b76859ca5d6978380b11d594cdec05) adds docs/C545D_INITIAL_RC_DELIVERY_ACCEPTANCE_JA_20261124.md: actual verified download and inner ZIP hash, separate folder, one authorized normal old->new switch, preserve old app/DPAPI/settings/runtime/recordings, keep existing SEI choice (exact recording CI SEI OFF; startup ON/OFF checked), default metadata OFF/no new ffprobe or experimental GIO DLL, start detached observer after recording, natural first hourly close and one normal EOS/restart, no deliberate RTSP disconnect or repeated multi-hour test, manual ZIP optional only if useful, first 72h then 7d ongoing reports, retain existing observer schedule if present, rollback and failure limits. Read actual packaged START_WEEKLY_OBSERVER.cmd/EXPORT_WEEKLY_REPORT.cmd and observer state/cadence code. Existing automatic observer restart not implemented. User can download/inspect without stopping recording. No manual measurement until explicit trial authorization.
 - Next actual step: present ready candidate and request only specific authorization for planned real-camera switch/one integrated acceptance; do not create more preparation/test loops. If approved, guide minimal actions, retain existing old folder and observe first finalized segment/normal EOS; upload first scheduled ZIP. Track B can continue independently. No public Release created, no host change; release HOLD, install_approved=0, live_test_authorized=0, PR draft.
-
-### UPDATE 2026-11-24 21:45 JST — **user accepted approximately 458 MiB storage budget; frozen candidate retained**
-
-- User explicitly accepted the proposed approximately 458 MiB limit for initial limited release preparation, preferring headroom. Current nominal combined limits 458.14 MiB (200 CSV + 256 reports/workspace + 2 journal + 128KiB receipt + 12KiB state), logical owned files only; not physical allocation or recorder logs. Supersedes earlier 200 MiB overall proposal. No quota/source changes or recompile required. Capacity maintenance/fail-safe limits unchanged.
-- Updated operational checklist [a126f35a](https://github.com/taku077/c545d-recorder/commit/a126f35a9f107c71ba6cc21a8c62b54845a9a754), current gateboard [ad9af8a2](https://github.com/taku077/c545d-recorder/commit/ad9af8a29b7eda26c3d476c4a199273d093da8e5), agreed parallel policy [ba9d00de](https://github.com/taku077/c545d-recorder/commit/ba9d00ded2aad4c81facfd4747c020f60d2a9e23).
-- Verified frozen artifact 14921025945 still present, expiry 2026-12-24 12:37:57 UTC; exact candidate source 2dc4212131eb7a367564e260bcaf9d35dc6271bd, inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, freeze CI #45395330523 PASS. Do not rebuild just for documentation. No experimental GIO DLL in this ZIP.
-- Next: prepare concrete limited-release delivery and single integrated real-camera acceptance/rollback plan using existing baseline and frozen package; distinguish capacity approval from explicit install/live-test authorization. No repeat of qualified tests unless changed code/evidence. Continue Track B independently. PR #62 draft, release HOLD until applicable approval, install_approved=0, live_test_authorized=0, no host modification or manual action requested this turn.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
