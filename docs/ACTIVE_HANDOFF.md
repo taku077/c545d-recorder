@@ -3,18 +3,24 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `3520ff10948fc317ca5fbdd81ad69634961548dd`
-- **PR updated at (UTC):** `2026-11-27T14:54:37Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/3520ff10948fc317ca5fbdd81ad69634961548dd/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8a9fcf4a13f3df412a8ccbca711f59255e2747ba`
+- **PR updated at (UTC):** `2026-11-27T14:54:58Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8a9fcf4a13f3df412a8ccbca711f59255e2747ba/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46020141632](https://github.com/taku077/c545d-recorder/actions/runs/46020141632) |
-| C545D offline resource-only comparison audit | success | [#46020135763](https://github.com/taku077/c545d-recorder/actions/runs/46020135763) |
+| C545D active development handoff auto-refresh | in_progress | [#46020191540](https://github.com/taku077/c545d-recorder/actions/runs/46020191540) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 JST — **resource-only comparison audit prepared during existing native build**
+
+- Resumed matching main/PR62 HEAD 88319fe0. Existing native [#46019612281](https://github.com/taku077/c545d-recorder/actions/runs/46019612281) exact 0f630225 job 140575533522: source/PDB preflight and core artifact download passed, MSVC build still in progress; no four-arm measurements yet. No native job duplicated.
+- [4590d7b7](https://github.com/taku077/c545d-recorder/commit/4590d7b7089cccb3828c4d0d6c6551f71e06ec7c) adds strict resource-only four-arm log parser, independent of birth-ledger qualification, rejecting duplicate/missing boundaries, worker/QPC disagreement, missing/invalid cache bridge and counter values. Computes 13 descriptive signed paired contrasts (six metrics per epoch plus elapsed including post-exit audit); no zero-leak or causal claim, no ownership, no Key type census. QPC values are ticks, CPU is 100ns units; do not compare total elapsed with previous ETW barrier as equivalent duration. Current source emits stopwatch after audits, not pure workload duration. Expected DLL path env alone does not prove loaded binary identity; patched worker markers and cache qualification are supporting evidence, not hash verification. No native workflow changes.
+- [3520ff10](https://github.com/taku077/c545d-recorder/commit/3520ff10948fc317ca5fbdd81ad69634961548dd) adds Ubuntu offline positive=1 negative=8 fixture preflight and exact run/job/SHA reuse only if native succeeds. CI status not yet observed. Microsoft documents lower-overhead direct APIs and PrivateUsage private commit, not live allocation bytes: https://learn.microsoft.com/en-us/windows/win32/perfctrs/about-performance-counters and https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex .
+- Next check existing native and new offline run, reuse actual logs without native rebuild if successful. If native fails, inspect exact failure; do not increase ETW cap or timeout. User trial frozen 2dc42121 unchanged; no new host work, production changes, or release approval.
 
 ### UPDATE 2026-11-27 JST — **fixed-budget ETW timeout; separate resource-only discriminator launched**
 
@@ -52,13 +58,6 @@
 - Resumed PR62 exact live HEAD 8c29dd5d matching main ACTIVE_HANDOFF, not stale web crawl. User trial frozen 2dc42121 ongoing, no new host request. [#46011977824 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46011977824) job 140549518513: actual MSVC source/PDB/SDK build PASS, first uncached/nochange arm reached postsettle at 14:05:48Z, xperf status lacked HeapSession (any_logger=1); failed closed at controller line 111, before any census or cache arm. No actual matched cache reduction, no evidence of cache regression. #46012578289 offline success only synthetic preflight, actual_qualified=0; #46012712912 handoff refresh success. Prior #45052226913 similar gap even with 512MB; do not blindly raise cap. Microsoft StartTraceA documents max size or I/O stop; neither proved by old logs; regex/enumeration visibility also unexcluded.
 - [8f48bd0d](https://github.com/taku077/c545d-recorder/commit/8f48bd0d3a15bafb631708842959efe62cf40619) changes only CI controller: explicit private heap/kernel trace file names (-f), numeric file length and independent logman listing at armed/postsettle/logger_gap, no raw paths or logs, retains 256MB heap cap and zero-loss/lineage gates. File length may include preallocation; logman visibility not definitive. [dca6e9c6](https://github.com/taku077/c545d-recorder/commit/dca6e9c6e69810f334cff8303ae5f577b5f79619) corrects preflight to parse actual invoked controller (previously parsed initial-source script) and triggers one targeted native four-arm requalification. No production changes. See https://learn.microsoft.com/en-us/windows-hardware/test/wpt/start and https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracea .
 - Next verify run at dca6e9c6; if successful audit actual existing logs without new build; if gap persists compare numeric file lengths and logman presence (not proof of capacity or data completeness), consider narrower validated capture or direct query of session properties, never waive zero-loss or silently truncate. No experiment result claimed before CI. PR draft, experimental GIO HOLD, recording/observer unchanged, no extra manual operation.
-
-### UPDATE 2026-11-27 JST — **matched comparison audit preflight PASS; native four-arm measurement in progress**
-
-- Resumed exact PR #62/main ACTIVE_HANDOFF c81ed7ea7d552c668aa3597558a1842e4d9ffd03. Existing #46011977824 job 140549518513 completed source/PDB preflight and native MSVC GLib build; four-arm capture step in_progress at last observation. No numeric cache effect claimed. No new native build triggered.
-- Existing audit only proves equal completed worker count within each arm, not equality between modes. [53d8dd23](https://github.com/taku077/c545d-recorder/commit/53d8dd23f0d13bd7d689cc9fb43ae1638bc8e557) adds offline audit of sanitized native job log, requires unique begin/end, all 24 birth rows per arm, QPC/resource agreement, old lineage counts nonincreasing and cross-mode registry worker parity. Reports survivors, new originals, net requested bytes/count, PrivateUsage, handles and CPU. Fixed order remains nonrandomized and descriptive, no permanent leak or long-run claim. [3648c887](https://github.com/taku077/c545d-recorder/commit/3648c887a6e03a69d3d5aab705414f792bfad958) adds Ubuntu offline CI using existing native job log only if completed successfully. [#46012578289 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46012578289) job 140551540105 actual selftest positive=1 negative=6 PASS; actual log audit skipped with explicit actual_qualified=0 since native comparison running. Do NOT treat this CI success as actual cache comparison qualification. Once native job completed, inspect raw-safe numeric markers and run existing offline workflow again or equivalent parser against actual logs, no Windows rebuild unless genuine trace failure. 
-- Official Microsoft PackageCatalog.PackageStatusChanged documentation says removal/update notification and current-user catalog scope; does not prove all resource or locale invalidations: https://learn.microsoft.com/ja-jp/uwp/api/windows.applicationmodel.packagecatalog.packagestatuschanged?view=winrt-26100 . Keep existing event+locale-aware invalidation and fail-closed freshness constraints.
-- No source changes to recorder or experimental GIO, no host modification. User's 72h trial continues. Next exact native run result and comparison, then isolate residual and decide next fix. PR draft, experimental GIO HOLD.
 
 Older UPDATE sections remain at the exact-commit source link above; do not treat their omission here as forgotten validation.
 
