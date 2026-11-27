@@ -31,6 +31,34 @@ jobs:
           "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0Check-C545DHourlySplit.ps1"
           pause
           '@ | Set-Content -LiteralPath split-check/CHECK_HOURLY_SPLIT.cmd -Encoding ASCII
+      - name: Exercise actual report path with private synthetic settings and finalized file
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $old=$env:LOCALAPPDATA
+          $fixture=Join-Path $env:RUNNER_TEMP ('split-report-'+[guid]::NewGuid().ToString('N'))
+          try{
+            $env:LOCALAPPDATA=$fixture
+            $config=Join-Path $fixture 'C545D_GStreamer'
+            $output=Join-Path $fixture 'PRIVATE_SYNTHETIC_OUTPUT'
+            New-Item -ItemType Directory -Path $config,$output|Out-Null
+            @{output_folder=$output;camera_user='SYNTHETIC_SECRET_NEVER_EXPORT'}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $config 'settings.json') -Encoding UTF8
+            $hex='000000246d6f6f760000001c6d766864000000000000000000000000000003e80036ee80'
+            $b=[byte[]]$(for($i=0;$i -lt $hex.Length;$i+=2){[Convert]::ToByte($hex.Substring($i,2),16)})
+            $name=(Get-Date -Format yyyy-MM-dd)+'_00-00_01-00.mp4'
+            [IO.File]::WriteAllBytes((Join-Path $output $name),$b)
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File split-check/Check-C545DHourlySplit.ps1
+            if($LASTEXITCODE -ne 0){throw 'REPORT_EXIT'}
+            $report='split-check/C545D_SPLIT_CHECK_RESULT.txt'
+            $t=Get-Content -LiteralPath $report -Raw
+            if($t -notmatch 'selected=1' -or $t -notmatch 'segment=1,bytes=36,duration_s=3600,' -or
+               $t -match 'PRIVATE_SYNTHETIC_OUTPUT|SYNTHETIC_SECRET_NEVER_EXPORT'){throw 'REPORT_QUALIFICATION'}
+            Remove-Item -LiteralPath $report
+            Write-Host 'C545D_SPLIT_REPORT_PATH_PASS,private_settings=1,header_duration=1,redacted=1'
+          }finally{
+            $env:LOCALAPPDATA=$old
+            Remove-Item -LiteralPath $fixture -Recurse -Force
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: c545d-hourly-split-check-readonly
