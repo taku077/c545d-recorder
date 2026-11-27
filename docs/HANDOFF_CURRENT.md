@@ -2,6 +2,12 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-27 JST — **corrected controller preflight PASS; exact-run offline audit updated**
+
+- Resumed matching main/PR62 HEAD 4f00b337. Push-triggered native run [#46015818820](https://github.com/taku077/c545d-recorder/actions/runs/46015818820) exact 0836d99b job 140562531873 located via REST actions/runs?head_sha= (PR-only workflow helper returns empty). Actual corrected PowerShell source/PDB preflight and core artifact download SUCCESS, native MSVC build in progress, four-arm capture pending. No new native build triggered this turn. No actual cache effect yet.
+- Prior offline workflow referenced failed #46011977824 permanently. [be6016d2](https://github.com/taku077/c545d-recorder/commit/be6016d2b7fa1e40627ddb14dde9a0baf2c58825) retargets to exact current run/job/SHA, checks run and job success/provenance, bounded 30 x 15s polling in Ubuntu CI (12min job limit), deletes local log, runs unchanged matched audit only on qualified success. If pending/failed it explicitly emits actual_qualified=0, not a measured comparison. No rebuild, no raw ETL upload. New offline run ID not yet observed at first API query. Verify actual job status/results next; if pending timeout use existing logs after native completion, do not rerun native merely for audit. Microsoft xperf examples confirm both HeapSession and NT Kernel Logger zero-loss counters https://learn.microsoft.com/en-us/previous-versions/windows/desktop/xperf/avoiding-lost-buffers .
+- Next check #46015818820 actual completion and any failing gate, then offline CI or equivalent parser of existing log; if native failure do not increase 1GiB limit again. No recorder source or host changes, current 72h trial continues, GIO HOLD.
+
 ### UPDATE 2026-11-27 JST — **fixed-budget preflight caught generated syntax corruption; literal restoration committed**
 
 - Resumed exact PR62/main ACTIVE_HANDOFF ade53bf2. [#46015004863 FAILURE](https://github.com/taku077/c545d-recorder/actions/runs/46015004863) job 140559773684: C# build 0 warnings/errors; birth selftest PASS, classifier positive=12 negative=12 PASS, then actual PowerShell controller parse gate failed before native GLib build or capture. Not a new capacity failure. No matched cache measurements.
