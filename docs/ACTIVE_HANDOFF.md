@@ -11,7 +11,8 @@
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| Same-SHA CI not found | unknown | - |
+| C545D active development handoff auto-refresh | in_progress | [#46059024473](https://github.com/taku077/c545d-recorder/actions/runs/46059024473) |
+| C545D 256-cycle heap commit trend | in_progress | [#46059020130](https://github.com/taku077/c545d-recorder/actions/runs/46059020130) |
 
 ## Current development findings from the active PR
 
