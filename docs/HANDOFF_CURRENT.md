@@ -2,6 +2,14 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-27 JST — **initial host trial reported started; acceptance criteria remain fixed**
+
+- User downloaded exact candidate ZIP through chat after GitHub browser link returned 404, and reported weekly observer appears to operate normally. This is user-reported startup, not independently measured host health; no ZIP or actual first segment/EOS/restart result received yet. Do not claim acceptance complete. Trial in progress, no experimental GIO DLL deployment authorized.
+- The existing Japanese acceptance plan (steps 5–6, commit b5cda2a2) remains authoritative: check first naturally finalized ~1h MP4 (both views, audio, observable synchronization, next segment), then perform ONE planned normal GUI recording stop, wait for final MP4 to finalize and check playback, restart recording. Leave detached observer running throughout; first scheduled 72h report is measured from observer state creation, not reset by recorder restart. Thereafter leave recording/observer running and submit scheduled safe ZIP; no repeated manual resource captures or deliberate network outage. If normal stop fails, do not force-stop or continue blindly; report and resolve safely. Actual long-run/reconnect and precise sync still unverified.
+- User objected to inconsistent recommendations: assistant incorrectly deferred planned stop/restart merely in response to user's proposed 72h run, then reversed when prompted. Corrected to existing plan. Keep required gates explicit, distinguish optional/deferred items, justify any change with evidence and consequences; do not omit a required check to agree with user. No new host operation beyond existing one-time acceptance, no new source changes. Continue independent Track B between uploads. Next: record actual first split and normal EOS/restart result when user provides it, then analyze first scheduled diagnostic ZIP when available.
+
+
+
 ### UPDATE 2026-11-24 JST — **frozen candidate delivery and concrete Japanese single-session acceptance ready**
 
 - Resumed exact PR #62/main ACTIVE_HANDOFF HEAD ed57c216df20522886503600e95e56d3ba582c3b. User accepted ~458MiB, then asked to proceed with preparation. Verified frozen artifact 14921025945 present at [#45395330523](https://github.com/taku077/c545d-recorder/actions/runs/45395330523), name c545d-frozen-rc-unapproved-2dc42121, expiry 2026-12-24 21:37:57 JST. Inner ZIP SHA256 FA03D4882AF16650ED8057CD74B80CDC2D34BB6390353476CF60994C3E7A19E3, unchanged source 2dc42121. No new compilation or repeat qualification. GitHub signed-in Actions artifact is the prepared delivery route, not a published Releases asset.
