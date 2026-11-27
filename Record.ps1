@@ -491,7 +491,7 @@ Add-Gst @(
     # detached muxer/sink pair on every hourly fragment. Does NOT prove or fix
     # the separate continuous Heap growth. Verify possible pause at each split.
     '!','splitmuxsink','name=mux',"location=$(Gst-Value $pattern)",
-         'max-size-time=3600000000000',
+         'max-size-time=3600000000000','max-size-bytes=0',
          'async-finalize=false','send-keyframe-requests=true'
 )
 
