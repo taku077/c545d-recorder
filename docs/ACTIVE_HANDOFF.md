@@ -3,15 +3,15 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8a9fcf4a13f3df412a8ccbca711f59255e2747ba`
-- **PR updated at (UTC):** `2026-11-27T14:54:58Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8a9fcf4a13f3df412a8ccbca711f59255e2747ba/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `07d067b2d29c86c8ae45a296b5ded49cfe7150f6`
+- **PR updated at (UTC):** `2026-11-27T14:55:21Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/07d067b2d29c86c8ae45a296b5ded49cfe7150f6/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46020191540](https://github.com/taku077/c545d-recorder/actions/runs/46020191540) |
+| C545D active development handoff auto-refresh | in_progress | [#46020250237](https://github.com/taku077/c545d-recorder/actions/runs/46020250237) |
 
 ## Current development findings from the active PR
 
@@ -19,7 +19,7 @@
 
 - Resumed matching main/PR62 HEAD 88319fe0. Existing native [#46019612281](https://github.com/taku077/c545d-recorder/actions/runs/46019612281) exact 0f630225 job 140575533522: source/PDB preflight and core artifact download passed, MSVC build still in progress; no four-arm measurements yet. No native job duplicated.
 - [4590d7b7](https://github.com/taku077/c545d-recorder/commit/4590d7b7089cccb3828c4d0d6c6551f71e06ec7c) adds strict resource-only four-arm log parser, independent of birth-ledger qualification, rejecting duplicate/missing boundaries, worker/QPC disagreement, missing/invalid cache bridge and counter values. Computes 13 descriptive signed paired contrasts (six metrics per epoch plus elapsed including post-exit audit); no zero-leak or causal claim, no ownership, no Key type census. QPC values are ticks, CPU is 100ns units; do not compare total elapsed with previous ETW barrier as equivalent duration. Current source emits stopwatch after audits, not pure workload duration. Expected DLL path env alone does not prove loaded binary identity; patched worker markers and cache qualification are supporting evidence, not hash verification. No native workflow changes.
-- [3520ff10](https://github.com/taku077/c545d-recorder/commit/3520ff10948fc317ca5fbdd81ad69634961548dd) adds Ubuntu offline positive=1 negative=8 fixture preflight and exact run/job/SHA reuse only if native succeeds. CI status not yet observed. Microsoft documents lower-overhead direct APIs and PrivateUsage private commit, not live allocation bytes: https://learn.microsoft.com/en-us/windows/win32/perfctrs/about-performance-counters and https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex .
+- [3520ff10](https://github.com/taku077/c545d-recorder/commit/3520ff10948fc317ca5fbdd81ad69634961548dd) adds Ubuntu offline positive=1 negative=8 fixture preflight and exact run/job/SHA reuse only if native succeeds. Actual [#46020135763 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46020135763) job 140577337890 confirmed positive=1 negative=8 PASS and actual_qualified=0 (native pending); not measured resource reduction. Microsoft documents lower-overhead direct APIs and PrivateUsage private commit, not live allocation bytes: https://learn.microsoft.com/en-us/windows/win32/perfctrs/about-performance-counters and https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex .
 - Next check existing native and new offline run, reuse actual logs without native rebuild if successful. If native fails, inspect exact failure; do not increase ETW cap or timeout. User trial frozen 2dc42121 unchanged; no new host work, production changes, or release approval.
 
 ### UPDATE 2026-11-27 JST — **fixed-budget ETW timeout; separate resource-only discriminator launched**
