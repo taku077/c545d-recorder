@@ -3,16 +3,25 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1e7dd1e7b7462f9d642cc8239a6903ec7921a575`
-- **PR updated at (UTC):** `2026-11-27T11:19:10Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1e7dd1e7b7462f9d642cc8239a6903ec7921a575/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `fc78745d943375f47acd7c47db7f9fd0fedf5874`
+- **PR updated at (UTC):** `2026-11-27T11:20:39Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/fc78745d943375f47acd7c47db7f9fd0fedf5874/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45989488033](https://github.com/taku077/c545d-recorder/actions/runs/45989488033) |
-| C545D one-shot hourly split evidence CI | in_progress | [#45989481263](https://github.com/taku077/c545d-recorder/actions/runs/45989481263) |
+| C545D active development handoff auto-refresh | in_progress | [#45989695848](https://github.com/taku077/c545d-recorder/actions/runs/45989695848) |
+| C545D real GUI worker Ctrl+C EOS dual localhost RTSP Windows CI ONLY | in_progress | [#45989690291](https://github.com/taku077/c545d-recorder/actions/runs/45989690291) |
+| C545D real Record.ps1 finite localhost RTSP Windows CI ONLY | in_progress | [#45989690152](https://github.com/taku077/c545d-recorder/actions/runs/45989690152) |
+| C545D actual WinForms Start Stop real dual synthetic RTSP and EOS CI ONLY | in_progress | [#45989690135](https://github.com/taku077/c545d-recorder/actions/runs/45989690135) |
+| C545D production Record.ps1 exact mirror source CI ONLY | in_progress | [#45989690100](https://github.com/taku077/c545d-recorder/actions/runs/45989690100) |
+| C545D WinForms EOS split-boundary timing matrix (0ms 1s 5s) CI ONLY | in_progress | [#45989690088](https://github.com/taku077/c545d-recorder/actions/runs/45989690088) |
+| Windows native EXE controller (stage 2) | in_progress | [#45989690067](https://github.com/taku077/c545d-recorder/actions/runs/45989690067) |
+| C545D production mirror real pinned GStreamer media CI ONLY | in_progress | [#45989690065](https://github.com/taku077/c545d-recorder/actions/runs/45989690065) |
+| C545D production 2xRTSP hourly MP4 configuration invariants (STATIC ONLY) | success | [#45989690023](https://github.com/taku077/c545d-recorder/actions/runs/45989690023) |
+| C545D accelerated splitmux MP4 segments dual localhost RTSP CI ONLY | in_progress | [#45989690022](https://github.com/taku077/c545d-recorder/actions/runs/45989690022) |
+| C545D original in-stream MP4 event namer with dual synthetic RTSP CI ONLY | in_progress | [#45989689982](https://github.com/taku077/c545d-recorder/actions/runs/45989689982) |
 
 ## Current development findings from the active PR
 
