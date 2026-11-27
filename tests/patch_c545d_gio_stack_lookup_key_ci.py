@@ -14,6 +14,8 @@ HELPER = r'''static gboolean
 c545d_ascii_stack_key (const gunichar2 *input, gchar out[128])
 {
   guint i;
+  if (input == NULL)
+    return FALSE;
   for (i = 0; i < 128; i++)
     {
       gunichar2 ch = input[i];
@@ -78,6 +80,7 @@ def selftest():
     # Compile and execute the EXACT C helper, not a Python reimplementation.
     c = r'''#include <stdint.h>
 #include <string.h>
+#include <stddef.h>
 typedef uint16_t gunichar2;
 typedef char gchar;
 typedef unsigned guint;
@@ -89,6 +92,7 @@ int main(void) {
   gunichar2 in[130] = {0};
   gchar out[128];
   unsigned i;
+  if (c545d_ascii_stack_key(NULL,out)) return 8;
   if (!c545d_ascii_stack_key(in,out) || out[0]) return 1;
   for (i=1;i<128;i++) {
     in[0]=(gunichar2)i; in[1]=0;
@@ -114,7 +118,7 @@ int main(void) {
         src.write_text(c, encoding="utf-8")
         subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(src), "-o", str(exe)], check=True)
         subprocess.run([str(exe)], check=True)
-    print("C545D_STACK_KEY_SELFTEST_PASS,ascii=127,boundary=2,nonascii=2,case=1,empty=1,negative_patch=3,native_windows=0")
+    print("C545D_STACK_KEY_SELFTEST_PASS,ascii=127,boundary=2,nonascii=2,case=1,empty=1,null=1,negative_patch=3,native_windows=0")
 
 def main():
     p = argparse.ArgumentParser()
