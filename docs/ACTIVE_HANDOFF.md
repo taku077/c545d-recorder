@@ -3,17 +3,23 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `6320ef1e6bb8aba5830a0f12c46a83c8fc9592b9`
-- **PR updated at (UTC):** `2026-11-27T09:08:28Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/6320ef1e6bb8aba5830a0f12c46a83c8fc9592b9/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `545b519e560e332dae72cdb1624321b2bfda6f38`
+- **PR updated at (UTC):** `2026-11-27T11:14:20Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/545b519e560e332dae72cdb1624321b2bfda6f38/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#45971215387](https://github.com/taku077/c545d-recorder/actions/runs/45971215387) |
+| C545D active development handoff auto-refresh | in_progress | [#45988819454](https://github.com/taku077/c545d-recorder/actions/runs/45988819454) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-27 20:13 JST — **first real-camera split and normal stop/restart reported successful**
+
+- User reports normal MP4 splitting and successful recording stop/restart on the initial limited candidate (2dc42121). Earlier user-reported detached observer startup normal. Record these as host user observations, not independent CI or media analysis. Actual playback of both views/audio/visible sync and final EOS MP4 not explicitly confirmed in this message; do not mark those individually proven. No repeat stop/restart or long manual test requested. If playback already checked, no additional check needed.
+- Proceed with ongoing monitored operation, observer left running, first scheduled safe ZIP 72h from existing observer state creation (not recorder restart), then every seven days. Exact observer start time not established. No deliberate disconnect, periodic restart, or WPR/UMDH. Report abnormalities if they occur; long-run CPU/private/handles, actual reconnect and precise A/V sync remain unverified. Do not claim leak resolution.
+- Candidate remains frozen, no experimental GIO deployment. Continue independent Track B between uploads from latest tagged residual evidence; no waiting for host ZIP. User-reported basic host trial success is not approval for patched DLL or public production release. No host modifications by assistant.
 
 ### UPDATE 2026-11-27 JST — **initial host trial reported started; acceptance criteria remain fixed**
 
