@@ -3,22 +3,22 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `8c32ce09790a28c5449d5210219a0765fa277ee6`
-- **PR updated at (UTC):** `2026-11-27T14:32:51Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/8c32ce09790a28c5449d5210219a0765fa277ee6/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `7f10a303176522a918aac5b76ba6f5edd65db9f4`
+- **PR updated at (UTC):** `2026-11-27T14:33:10Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/7f10a303176522a918aac5b76ba6f5edd65db9f4/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46016912175](https://github.com/taku077/c545d-recorder/actions/runs/46016912175) |
+| C545D active development handoff auto-refresh | in_progress | [#46016958905](https://github.com/taku077/c545d-recorder/actions/runs/46016958905) |
 
 ## Current development findings from the active PR
 
 ### UPDATE 2026-11-27 JST — **four-arm build still in progress; offline signed paired contrasts prepared**
 
 - Resumed matching main/PR62 HEAD a80ae181. Native [#46015818820](https://github.com/taku077/c545d-recorder/actions/runs/46015818820), exact 0836d99b job 140562531873, still building at last checked; previous source/PDB preflight and download passed. Offline [#46016493048](https://github.com/taku077/c545d-recorder/actions/runs/46016493048) job 140564854154 synthetic parity/lineage selftest passed, actual-log step in progress. No qualified four-arm actual numbers yet; no new native job triggered.
-- [0243ccd6](https://github.com/taku077/c545d-recorder/commit/0243ccd6ee5f6bad09973de175951cbbda1679cb) adds independent offline audit_c545d_gio_matched_birth_contrast.py reusing strict existing parse(): 44 signed metrics for each four-arm allocation group and aggregate (baseline, epoch2 net, cycle1 survivors, cycle2 newborn count/requested bytes) plus resource deltas. Outputs cached minus uncached in nochange and registry and descriptive difference of differences; baseline level difference is NOT pure cache ownership, control adjustment NOT causal given fixed order and potentially different baselines, negative values are not automatically improvement. No division by near-zero or percentage claims. Eight selftest assertions. [7ca5beb4](https://github.com/taku077/c545d-recorder/commit/7ca5beb46a509746883f3ffff6ef768a4b24758a) adds short Ubuntu selftest and exact successful run reuse if available, no waiting loop, no new Windows capture. CI result not yet observed, do not claim pass until confirmed.
+- [0243ccd6](https://github.com/taku077/c545d-recorder/commit/0243ccd6ee5f6bad09973de175951cbbda1679cb) adds independent offline audit_c545d_gio_matched_birth_contrast.py reusing strict existing parse(): 44 signed metrics for each four-arm allocation group and aggregate (baseline, epoch2 net, cycle1 survivors, cycle2 newborn count/requested bytes) plus resource deltas. Outputs cached minus uncached in nochange and registry and descriptive difference of differences; baseline level difference is NOT pure cache ownership, control adjustment NOT causal given fixed order and potentially different baselines, negative values are not automatically improvement. No division by near-zero or percentage claims. Eight selftest assertions. [7ca5beb4](https://github.com/taku077/c545d-recorder/commit/7ca5beb46a509746883f3ffff6ef768a4b24758a) adds short Ubuntu selftest and exact successful run reuse if available, no waiting loop, no new Windows capture. Actual [#46016855649 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46016855649) job 140566068744 log confirmed existing parser positive=1 negative=6 and new contrast checks=8 PASS; native pending, explicit actual_qualified=0. Do not equate selftest with measured contrast.
 - Source review: dedicated cache compares generation and locale before/after getter and lookup, prior single AppInfo worker source proof remains; do not claim concurrency or locale freshness fully proven. If fixed-budget capture fails, real-time ETW consumer is supported by Microsoft ProcessTrace and EVENT_TRACE_PROPERTIES (https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-processtrace and https://learn.microsoft.com/en-us/windows/desktop/ETW/event-trace-properties), but would require complete stack/QPC/realloc lineage and EventsLost/RealTimeBuffersLost zero, not a drop-in validated replacement. No change to capture limits or source this turn.
 - Next check native/old audit/new contrast CI, reuse actual logs if successful; if failed inspect exact gate and do not grow ETW cap further. User's frozen recorder 2dc42121 and 72h diagnostic trial unchanged; no manual work, experimental GIO HOLD.
 
