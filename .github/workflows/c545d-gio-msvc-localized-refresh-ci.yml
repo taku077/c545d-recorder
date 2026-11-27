@@ -210,8 +210,15 @@ jobs:
             Write-Host 'C545D_MSVC_LOCALIZED_BEGIN,cache=1,lazy=1,unsolicited=1,real_OS_events_only=1'
             # Run the same signed disposable fixture controller as the prior
             # successful MinGW test; keep all unfiltered output on the runner.
-            $args=@('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$controller+'"'),'-WatchDll',('"'+$env:C545D_DIAG_UWP_C_BRIDGE_DLL+'"'),'-StubExe',('"'+$stub+'"'),'-GioScanDll',('"'+$scan+'"'),'-LocalizedProbeExe',('"'+$probe+'"'),'-AssertLocalizedDisplayName','-ReverseResourceLanguage')
-            $proc=Start-Process -FilePath powershell.exe -ArgumentList $args -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -Wait
+            $childArgs=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$controller,'-WatchDll',$env:C545D_DIAG_UWP_C_BRIDGE_DLL,'-StubExe',$stub,'-GioScanDll',$scan,'-LocalizedProbeExe',$probe,'-AssertLocalizedDisplayName','-ReverseResourceLanguage')
+            # Direct call operator: same invocation mode that passed certificate provider CI.
+            # Do not use Start-Process -RedirectStandardOutput/-RedirectStandardError here.
+            $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $captured=@(& $exe @childArgs 2>$err)
+            $controllerExit=$LASTEXITCODE
+            $captured | Set-Content -LiteralPath $out -Encoding utf8
+            Remove-Variable captured -ErrorAction SilentlyContinue
+            Write-Host 'C545D_MSVC_LOCALIZED_INVOKE,direct_child=1,raw_uploaded=0'
             foreach($file in @($out,$err)){
               if((Test-Path -LiteralPath $file) -and (Get-Item -LiteralPath $file).Length -le 16000000){
                 $raw=(Get-Content -LiteralPath $file -Raw).Replace([string][char]0,'')
@@ -223,8 +230,8 @@ jobs:
                 }
               }
             }
-            if($proc.ExitCode -ne 0){
-              Write-Host "C545D_MSVC_LOCALIZED_CONTROLLER_GAP,exit=$($proc.ExitCode)"
+            if($controllerExit -ne 0){
+              Write-Host "C545D_MSVC_LOCALIZED_CONTROLLER_GAP,exit=$controllerExit"
               throw 'isolated resource controller failed'
             }
             py -E tests/audit_c545d_msvc_localized_refresh_ci.py --input $out
