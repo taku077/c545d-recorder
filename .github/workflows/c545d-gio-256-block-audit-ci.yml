@@ -1,0 +1,38 @@
+name: C545D offline 256-cycle block trend audit
+on:
+  push:
+    branches: ['investigate/c545d-status-only-monitor-20261120']
+    paths:
+      - 'tests/audit_c545d_gio_256_block_trend.py'
+      - '.github/workflows/c545d-gio-256-block-audit-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify numeric parser and negative cases
+        run: python3 tests/audit_c545d_gio_256_block_trend.py --selftest
+      - name: Audit two completed exact historical runs without native rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'rm -f "$RUNNER_TEMP/block-private.log"' EXIT
+          while read -r run job sha; do
+            gh api "repos/taku077/c545d-recorder/actions/runs/$run" > "$RUNNER_TEMP/run.json"
+            jq -e --arg sha "$sha" '.head_sha == $sha and .status == "completed" and .conclusion == "success"' "$RUNNER_TEMP/run.json" >/dev/null
+            gh api "repos/taku077/c545d-recorder/actions/jobs/$job" > "$RUNNER_TEMP/job.json"
+            jq -e --argjson run "$run" --arg sha "$sha" '.run_id == $run and .head_sha == $sha and .conclusion == "success"' "$RUNNER_TEMP/job.json" >/dev/null
+            gh run view "$run" --repo taku077/c545d-recorder --job "$job" --log > "$RUNNER_TEMP/block-private.log"
+            echo "C545D_BLOCK_AUDIT_RUN,run=$run,job=$job"
+            python3 tests/audit_c545d_gio_256_block_trend.py --input "$RUNNER_TEMP/block-private.log"
+            rm -f "$RUNNER_TEMP/block-private.log"
+          done <<'RUNS'
+          46042941217 140654982483 f01c4435bf6e335ae090aac1485d98a9978da82f
+          46059020130 140708458387 90c37773339ec7b7c3bceefac860047215cc2b0d
+          RUNS
