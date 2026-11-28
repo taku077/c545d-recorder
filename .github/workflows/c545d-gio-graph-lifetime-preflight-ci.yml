@@ -1,0 +1,36 @@
+name: C545D graph lifetime source preflight
+on:
+  push:
+    branches: [investigate/c545d-status-only-monitor-20261120]
+    paths:
+      - '.github/workflows/c545d-gio-graph-lifetime-preflight-ci.yml'
+      - 'tests/patch_c545d_gio_graph_lifetime_ci.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply to pinned source and verify bounded change
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/glib-2.82.4"
+          git clone --depth 1 --branch 2.82.4 https://github.com/GNOME/glib.git "$src"
+          test "$(git -C "$src" rev-parse HEAD)" = ca20e4ac71864f08e980dc044ac96c06d5482b37
+          python3 tests/patch_glib_appinfo_weak_backrefs.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_uwp_api_isolation.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_native_path_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_displayname_cache_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_uwp_bridge_dedicated_integration_diagnostic.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_lazy_package_epoch_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_monitor_worker_diagnostic.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_glib_appinfo_native_spontaneous_diagnostic.py "$src/gio/gwin32appinfo.c" "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_c545d_gio_displayname_frame_ci.py "$src/gio/gwin32packageparser.c"
+          python3 tests/patch_glib_appinfo_phase_trace_ci.py "$src/gio/gwin32appinfo.c"
+          python3 tests/patch_c545d_gio_graph_lifetime_ci.py "$src/gio/gwin32appinfo.c"
+          git -C "$src" diff --check
+          echo 'C545D_GRAPH_SOURCE_PREFLIGHT_PASS,native_windows=0,lifetime_measured=0,release_HOLD=1'
