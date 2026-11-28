@@ -3,17 +3,21 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `35e960d6e03db1dc5eefd34bf91ec50a67ebbfac`
-- **PR updated at (UTC):** `2026-11-28T06:37:44Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/35e960d6e03db1dc5eefd34bf91ec50a67ebbfac/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `39a155d032e878e19b37d4dcd0d50279ff23bcdd`
+- **PR updated at (UTC):** `2026-11-28T06:37:58Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/39a155d032e878e19b37d4dcd0d50279ff23bcdd/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46117489262](https://github.com/taku077/c545d-recorder/actions/runs/46117489262) |
+| C545D active development handoff auto-refresh | in_progress | [#46117506199](https://github.com/taku077/c545d-recorder/actions/runs/46117506199) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-28 JST — **offline block audit actual PASS**
+
+- [#46117452188 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46117452188) job140894336187 exact 25486df4. Actual selftest positive1/negative6 and both original runs' exact log audit passed (257 resources/11 heap points each across four arms per run). Final cached block median raw/adjusted old +268288/+444416 B, strict +442368/+647168 B; gap raw/adjusted old +532186/+459502, strict +650554/+571226 B. Independent parser agrees with prior manual log arithmetic. No new native measurement, no owner or lifetime proof. Next exact stack-key #46117235382 result; no host action, GIO HOLD.
 
 ### UPDATE 2026-11-28 JST — **existing 256 logs show late median drift; offline audit added; stack-key build PASS**
 
