@@ -2,6 +2,11 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-28 JST — **graph lifetime pinned source preflight PASS**
+
+- [#46129015856 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46129015856) job140929874676 exact 82f70a79: C545D_GRAPH_LIFETIME_PATCH_PASS types6 extra_refs0 actual_finalizers1 raw_addresses0 and C545D_GRAPH_SOURCE_PREFLIGHT_PASS native_windows0 lifetime_measured0 release_HOLD1. Source anchors and diff check passed, no MSVC build or runtime lifetime data yet. Next prepare native cached-only two-arm census and strict counter audit. No production changes or host actions.
+
+
 ### UPDATE 2026-11-28 18:06 JST — **stack key removes allocations but no resource benefit; defer; graph lifetime census prepared**
 
 - Resumed exact PR62/main 39a155d0. [#46117235382 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46117235382) job140893683940 exact 676cbf36, all four arms 256 cycles, same DLL, actual child env24 bad0, exit0, worker/cache/bridge parity. Registry both hits8224 misses32 entries32 scans258 errors/injections/evictions0. Heap-key registry heap8256 fast0 vs stack-key heap0 fast8256, nochange heap32 vs fast32, confirmed 100% temporary lookup key heap-path elimination, not all allocations. Raw post-first registry heap/stack private +401408/+622592 B, total allocated +32418/+32418, committed +655360/+954368, handles -1/-1; control private -180224/-184320, total allocated -72684 both, commit0, handles -9 both. Adjusted private +581632/+806912 B (+38.73%), allocated +105102 both, committed +655360/+954368 (+45.625%), handles +8/+8. CPU registry post-first 72.15625/72.375s (+0.30%); elapsed 238540/317257/238228/316934ms. Last64 raw private -45056/+61440, allocated +2936/+15452, committed +69632/0, adjusted private same, allocated +13396/+25912. Settled 0–258 adjusted private +1110016/+843776, allocated +101400/+113916, committed +1085440/+991232. Different baseline/initial commit, fixed order and stochastic heap variation; no proof of systematic worsening. Stack strategy DEFER as memory fix, no new native rerun for stack alone, keep source/test evidence and existing event-cache baseline.
