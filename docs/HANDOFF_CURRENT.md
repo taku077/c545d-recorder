@@ -2,6 +2,11 @@
 
 <!-- CURRENT_HANDOFF_START: update this block, not only append to the archive -->
 
+### UPDATE 2026-11-28 JST — **offline block audit actual PASS**
+
+- [#46117452188 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46117452188) job140894336187 exact 25486df4. Actual selftest positive1/negative6 and both original runs' exact log audit passed (257 resources/11 heap points each across four arms per run). Final cached block median raw/adjusted old +268288/+444416 B, strict +442368/+647168 B; gap raw/adjusted old +532186/+459502, strict +650554/+571226 B. Independent parser agrees with prior manual log arithmetic. No new native measurement, no owner or lifetime proof. Next exact stack-key #46117235382 result; no host action, GIO HOLD.
+
+
 ### UPDATE 2026-11-28 JST — **existing 256 logs show late median drift; offline audit added; stack-key build PASS**
 
 - Resumed exact PR62/main b9d033bd. [#46117235382](https://github.com/taku077/c545d-recorder/actions/runs/46117235382) job 140893683940 exact 676cbf36: source/PDB and native MSVC build passed, measurement in progress at latest check, no new resource or path-count results. Do not duplicate.
