@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from statistics import median
 
-STAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ")
+STAMP = re.compile(r"^(?:[^\r\n]*?\t)?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ")
 BEGIN = re.compile(r"C545D_(256|STACK)_BEGIN,mode=([a-z-]+),arm=(nochange|registry),etw=0,external_handle_census=0,heapwalk=0,heapsummary=1")
 PASS = re.compile(r"C545D_(256|STACK)_ARM_PASS,mode=([a-z-]+),arm=(nochange|registry),elapsed_ms=\d+,etw=0,lineage_proven=0")
 RESOURCE = re.compile(r"C545D_256_RESOURCE,cycle=(\d+),private=(\d+),handles=(\d+),qpc=(\d+),cpu100ns=(\d+)")
