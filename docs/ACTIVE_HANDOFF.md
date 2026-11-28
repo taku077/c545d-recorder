@@ -3,17 +3,21 @@
 **Read this before the old main-branch HANDOFF_CURRENT.** The experiment branch is not installed on the user's recording PC.
 
 - **Active PR:** [#62](https://github.com/taku077/c545d-recorder/pull/62) / state `open`
-- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `1238173317a72aa6059d970ddd765dde655d0e0f`
-- **PR updated at (UTC):** `2026-11-28T09:08:26Z`
-- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/1238173317a72aa6059d970ddd765dde655d0e0f/docs/HANDOFF_CURRENT.md)
+- **Exact branch HEAD:** `investigate/c545d-status-only-monitor-20261120` / `c31b6cc921ad2fe15102accd453fb668b8205af7`
+- **PR updated at (UTC):** `2026-11-28T09:08:39Z`
+- **Verified snapshot source:** [HANDOFF_CURRENT.md at that commit](https://github.com/taku077/c545d-recorder/blob/c31b6cc921ad2fe15102accd453fb668b8205af7/docs/HANDOFF_CURRENT.md)
 
 ## CI runs at exactly this HEAD
 
 | Workflow | Outcome | Evidence |
 |---|---|---|
-| C545D active development handoff auto-refresh | in_progress | [#46129052532](https://github.com/taku077/c545d-recorder/actions/runs/46129052532) |
+| C545D active development handoff auto-refresh | in_progress | [#46129068179](https://github.com/taku077/c545d-recorder/actions/runs/46129068179) |
 
 ## Current development findings from the active PR
+
+### UPDATE 2026-11-28 JST — **graph lifetime pinned source preflight PASS**
+
+- [#46129015856 SUCCESS](https://github.com/taku077/c545d-recorder/actions/runs/46129015856) job140929874676 exact 82f70a79: C545D_GRAPH_LIFETIME_PATCH_PASS types6 extra_refs0 actual_finalizers1 raw_addresses0 and C545D_GRAPH_SOURCE_PREFLIGHT_PASS native_windows0 lifetime_measured0 release_HOLD1. Source anchors and diff check passed, no MSVC build or runtime lifetime data yet. Next prepare native cached-only two-arm census and strict counter audit. No production changes or host actions.
 
 ### UPDATE 2026-11-28 18:06 JST — **stack key removes allocations but no resource benefit; defer; graph lifetime census prepared**
 
